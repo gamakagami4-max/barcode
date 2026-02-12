@@ -1,0 +1,278 @@
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QTableWidgetItem, QLabel, QHBoxLayout, QHeaderView
+)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+
+from components.search_bar import StandardSearchBar
+from components.standard_page_header import StandardPageHeader
+from components.standard_table import StandardTable
+from components.sort_by_widget import SortByWidget
+
+# --- Design Tokens ---
+COLORS = {
+    "bg_main": "#F8FAFC",
+    "link": "#6366F1",
+    "border": "#E2E8F0",
+    "text_main": "#1E293B"
+}
+
+class BrandPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.all_data = []
+        self.filtered_data = []
+        self.current_page = 0
+        self.page_size = 25
+        self.available_page_sizes = [25, 50, 100]
+        self._last_filter_type = "NAME"
+        self._last_search_text = ""
+        self._sort_fields = []
+        self._sort_directions = {}
+        self.init_ui()
+        self.load_sample_data()
+
+    def init_ui(self):
+        self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(40, 20, 40, 12)
+        self.main_layout.setSpacing(0)
+
+        # 1. Header (standardized toolbar)
+        header = StandardPageHeader(
+            title="Brand",
+            subtitle="Organize and monitor brand assets across your enterprise.",
+        )
+        self.main_layout.addWidget(header)
+        self.main_layout.addSpacing(12)
+
+        # 2. Search Bar
+        self.search_bar = StandardSearchBar()
+        self.search_bar.searchChanged.connect(self.filter_table)
+        self.main_layout.addWidget(self.search_bar)
+        self.main_layout.addSpacing(5)
+
+        # 3. Table Configuration
+        self.table_comp = StandardTable([
+            "CODE", "NAME", "CASE", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+        ])
+        self.table = self.table_comp.table
+        
+        h_header = self.table.horizontalHeader()
+        # Fixed widths so columns don't get squeezed; total can exceed viewport → horizontal scroll
+        h_header.setSectionResizeMode(QHeaderView.Fixed)
+        self.table.setColumnWidth(0, 100)   # CODE
+        self.table.setColumnWidth(1, 280)   # NAME (wide so "Vanguard Systems Enterprise Edition" etc. fit)
+        self.table.setColumnWidth(2, 120)   # CASE
+        self.table.setColumnWidth(3, 120)   # ADDED BY
+        self.table.setColumnWidth(4, 110)   # ADDED ON
+        self.table.setColumnWidth(5, 120)   # CHANGE BY
+        self.table.setColumnWidth(6, 110)   # CHANGE ON
+        self.table.setColumnWidth(7, 90)    # CHANGE NO
+        
+        self.sort_bar = SortByWidget(self.table)
+
+        self.sort_bar.sortChanged.connect(self.on_sort_changed)
+        self.main_layout.addWidget(self.sort_bar)
+        self.main_layout.addSpacing(8)
+
+        self.main_layout.addWidget(self.table_comp)
+        self.main_layout.addSpacing(16)
+
+        # Shared pagination from StandardTable
+        self.pagination = self.table_comp.pagination
+        self.pagination.pageChanged.connect(self.on_page_changed)
+        self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+
+    def load_sample_data(self):
+        raw_brands = [
+            ("BR-001", "Lumina Tech International Solutions", "AVAILABLE", "#DCFCE7", "#166534", "Admin_User", "2026-02-01", "Systems", "2026-02-02", "102"),
+            ("BR-042", "Apex Global", "NOT AVAILABLE", "#F1F5F9", "#475569", "Super_Admin", "2026-02-04", "User_A", "2026-02-05", "45"),
+            ("BR-056", "Vanguard Systems Enterprise Edition", "AVAILABLE", "#DCFCE7", "#166534", "Admin_User", "2026-02-05", "-", "-", "0"),
+            ("BR-098", "Nexus Brands", "PENDING", "#FEF9C3", "#854D0E", "Manager_X", "2026-02-06", "Admin_User", "2026-02-07", "12"),
+        ]
+        self.all_data = raw_brands * 4
+        self._apply_filter_and_reset_page()
+
+    def render_page(self):
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        data = self.filtered_data if self.filtered_data is not None else []
+
+        total = len(data)
+        start_idx = self.current_page * self.page_size
+        end_idx = min(start_idx + self.page_size, total)
+        page_data = data[start_idx:end_idx]
+
+        for r, data in enumerate(page_data):
+            self.table.insertRow(r)
+            self.table.setRowHeight(r, 28) 
+
+            # CODE
+            code_item = QTableWidgetItem(data[0])
+            code_item.setForeground(QColor(COLORS["link"]))
+            font = code_item.font()
+            font.setPointSize(9)
+            code_item.setFont(font)
+            code_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.table.setItem(r, 0, code_item)
+            
+            # NAME (Fixed Background)
+            name_label = QLabel(data[1])
+            name_label.setWordWrap(True)
+            # FIX: background: transparent and border: none
+            name_label.setStyleSheet(f"font-size: 9pt; color: {COLORS['text_main']}; background: transparent; border: none;")
+            name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.table.setCellWidget(r, 1, name_label)
+
+            # CASE Badge (Fixed Background)
+            badge_container = QWidget()
+            # FIX: background: transparent
+            badge_container.setStyleSheet("background: transparent; border: none;")
+            badge_layout = QHBoxLayout(badge_container)
+            badge_layout.setContentsMargins(0, 0, 0, 0)
+            badge_layout.setAlignment(Qt.AlignCenter) 
+            
+            badge = QLabel(data[2])
+            badge.setFixedSize(95, 22)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setStyleSheet(f"""
+                background-color: {data[3]}; color: {data[4]};
+                border-radius: 4px; font-size: 9px; font-weight: 800;
+            """)
+            badge_layout.addWidget(badge)
+            self.table.setCellWidget(r, 2, badge_container)
+
+            # METADATA
+            cols = [(3, 5, Qt.AlignLeft), (4, 6, Qt.AlignLeft), (5, 7, Qt.AlignLeft), (6, 8, Qt.AlignLeft), (7, 9, Qt.AlignCenter)]
+            for col_idx, data_idx, align in cols:
+                item = QTableWidgetItem(str(data[data_idx]))
+                item.setTextAlignment(align | Qt.AlignVCenter)
+                self.table.setItem(r, col_idx, item)
+
+        # Global row numbers (1-based across all pages)
+        for r in range(len(page_data)):
+            self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
+
+        # Update pagination UI
+        has_prev = self.current_page > 0
+        has_next = end_idx < total
+        start_human = 0 if total == 0 else start_idx + 1
+        end_human = 0 if total == 0 else end_idx
+        self.pagination.update(
+            start=start_human,
+            end=end_human,
+            total=total,
+            has_prev=has_prev,
+            has_next=has_next,
+            current_page=self.current_page,
+            page_size=self.page_size,
+            available_page_sizes=self.available_page_sizes,
+        )
+
+    def filter_table(self, filter_type, search_text):
+        self._last_filter_type = filter_type
+        self._last_search_text = search_text
+        self._apply_filter_and_reset_page()
+
+    def _apply_filter_and_reset_page(self) -> None:
+        query = (self._last_search_text or "").lower().strip()
+
+        headers = self.table_comp.headers()
+        header_to_index = {h: i for i, h in enumerate(headers)}
+
+        col_index = header_to_index.get(self._last_filter_type, 1)
+
+        if not query:
+            self.filtered_data = list(self.all_data)
+        else:
+            out = []
+            for row in self.all_data:
+                if col_index >= len(row):
+                    continue
+
+                val = "" if row[col_index] is None else str(row[col_index])
+
+                if query in val.lower():
+                    out.append(row)
+
+            self.filtered_data = out
+
+        self._apply_sort()
+        self.current_page = 0
+        self.render_page()
+
+
+    def on_page_changed(self, page_action: int) -> None:
+        total = len(self.filtered_data) if self.filtered_data is not None else 0
+        total_pages = (total + self.page_size - 1) // self.page_size
+        if total_pages <= 0:
+            self.current_page = 0
+            self.render_page()
+            return
+
+        if page_action == -1:
+            self.current_page = max(0, self.current_page - 1)
+        elif page_action == 1:
+            self.current_page = min(total_pages - 1, self.current_page + 1)
+        else:
+            self.current_page = max(0, min(int(page_action), total_pages - 1))
+
+        self.render_page()
+
+    def on_page_size_changed(self, new_size: int) -> None:
+        """Handle page size change from pagination component."""
+        self.page_size = new_size
+        self.current_page = 0  # Reset to first page when changing page size
+        self.render_page()
+
+    def on_sort_changed(self, fields: list[str], field_directions: dict):
+        """
+        Handle sort changes from SortByWidget.
+        
+        Parameters
+        ----------
+        fields : list[str]
+            Ordered list of field names to sort by (priority order)
+        field_directions : dict
+            Mapping of field name to direction ("asc" or "desc")
+        """
+        self._sort_fields = fields or []
+        self._sort_directions = field_directions or {}
+        self._apply_filter_and_reset_page()
+
+
+
+    def _apply_sort(self):
+        """Apply multi-field sorting with individual directions to filtered_data."""
+        if not self._sort_fields or not self.filtered_data:
+            return
+
+        headers = self.table_comp.headers()
+        header_to_index = {h: i for i, h in enumerate(headers)}  # <-- 0-based
+
+        for field in reversed(self._sort_fields):
+            direction = self._sort_directions.get(field, "asc")
+            reverse = (direction == "desc")
+            idx = header_to_index.get(field)
+            if idx is None:
+                continue
+
+            self.filtered_data.sort(
+                key=lambda row, i=idx: self._get_sort_value(row, i),
+                reverse=reverse
+            )
+
+    def _get_sort_value(self, row, idx):
+        val = row[idx] if idx < len(row) else ""
+        str_val = "" if val is None else str(val)
+
+        numeric_cols = ["CHANGED NO"]  # only numeric columns
+        if self.table_comp.headers()[idx] in numeric_cols:
+            try:
+                return float(str_val)
+            except ValueError:
+                return 0
+
+        return str_val.lower()
+
