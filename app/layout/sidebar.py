@@ -472,7 +472,18 @@ class Sidebar(QFrame):
         user_layout = QHBoxLayout(self.user_panel)
         user_layout.setContentsMargins(16, 14, 16, 14)
         
-        # Professional Avatar
+        # Professional User Panel
+        self.user_panel = QWidget()
+        self.user_panel.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border-top: 1px solid #E5E7EB;
+            }
+        """)
+        user_layout = QHBoxLayout(self.user_panel)
+        user_layout.setContentsMargins(16, 14, 16, 14)
+
+        # --- Avatar ---
         avatar_container = QWidget()
         avatar_container.setFixedSize(36, 36)
         avatar_container.setStyleSheet("""
@@ -483,12 +494,13 @@ class Sidebar(QFrame):
         avatar_layout = QHBoxLayout(avatar_container)
         avatar_layout.setContentsMargins(0, 0, 0, 0)
         avatar_layout.setAlignment(Qt.AlignCenter)
-        
+
         avatar = QLabel()
         avatar.setStyleSheet("background: transparent; border: none;")
         avatar.setPixmap(qta.icon("fa5s.user", color="#2563EB").pixmap(QSize(16, 16)))
         avatar_layout.addWidget(avatar)
-        
+
+        # --- User Info ---
         user_info = QLabel("Administrator<br><span style='color:#6B7280; font-size: 10px;'>System User</span>")
         user_info.setTextFormat(Qt.RichText)
         user_info.setStyleSheet("""
@@ -497,15 +509,15 @@ class Sidebar(QFrame):
             color: #111827;
             background: transparent;
         """)
-        
-        # Settings icon
-        settings_btn = QPushButton()
-        settings_btn.setIcon(qta.icon("fa5s.cog", color="#9CA3AF"))
-        settings_btn.setIconSize(QSize(16, 16))
-        settings_btn.setFixedSize(28, 28)
-        settings_btn.setCursor(Qt.PointingHandCursor)
-        settings_btn.setFocusPolicy(Qt.NoFocus)
-        settings_btn.setStyleSheet("""
+
+        # --- Exit Button ---
+        exit_btn = QPushButton()
+        exit_btn.setIcon(qta.icon("fa5s.sign-out-alt", color="#9CA3AF"))
+        exit_btn.setIconSize(QSize(16, 16))
+        exit_btn.setFixedSize(28, 28)
+        exit_btn.setCursor(Qt.PointingHandCursor)
+        exit_btn.setFocusPolicy(Qt.NoFocus)
+        exit_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
                 border: none;
@@ -513,16 +525,20 @@ class Sidebar(QFrame):
                 outline: none;
             }
             QPushButton:hover {
-                background-color: #F3F4F6;
+                background-color: #FEE2E2;  /* light red on hover */
+                color: #DC2626;               /* icon turns red */
             }
         """)
-        
+        # Optional: connect exit
+        # exit_btn.clicked.connect(self.handle_exit)
+
+        # --- Add to layout in order ---
         user_layout.addWidget(avatar_container)
         user_layout.addSpacing(10)
         user_layout.addWidget(user_info)
-        user_layout.addStretch()
-        user_layout.addWidget(settings_btn)
-        
+        user_layout.addStretch()  # Push exit button to the far right
+        user_layout.addWidget(exit_btn)
+
         self.main_sidebar_layout.addWidget(self.user_panel)
 
     def create_label(self, text):

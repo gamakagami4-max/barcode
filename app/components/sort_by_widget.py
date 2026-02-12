@@ -256,11 +256,20 @@ class SortByWidget(QWidget):
         self._input.repaint()
 
     # -------------------------------------------------
+    # -------------------------------------------------
     def _update_selection(self):
 
-        self._selected_fields = [
-            item.text() for item in self._list.selectedItems()
-        ]
+        # Get currently selected items
+        selected_items = [item.text() for item in self._list.selectedItems()]
+
+        # Enforce max 5 selection
+        if len(selected_items) > 5:
+            # Deselect items beyond the 5th
+            for item in self._list.selectedItems()[5:]:
+                item.setSelected(False)
+            selected_items = [item.text() for item in self._list.selectedItems()]
+
+        self._selected_fields = selected_items
 
         # Initialize direction for newly selected fields
         for field in self._selected_fields:
@@ -275,13 +284,11 @@ class SortByWidget(QWidget):
             else:
                 item.setIcon(QIcon())
 
-
         # clear tags
         while self._tag_layout.count():
             item = self._tag_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-
 
         # add tags
         for field in self._selected_fields:
@@ -291,6 +298,7 @@ class SortByWidget(QWidget):
         self._input.updateGeometry()
         self._input.repaint()
         self._emit_changed()
+
 
 
     # -------------------------------------------------
