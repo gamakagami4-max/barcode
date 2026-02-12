@@ -38,11 +38,13 @@ class FilterTypePage(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
+        enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Header Component (standardized toolbar)
         header = StandardPageHeader(
             title="Filter Type",
             subtitle="Manage categories and audit logs for filter types.",
+            enabled_actions=enabled
         )
         self.main_layout.addWidget(header)
         self.main_layout.addSpacing(12)

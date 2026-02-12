@@ -35,10 +35,12 @@ class ProductTypePage(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
+        enabled = ["Add", "Excel", "Refresh"]
 
         header = StandardPageHeader(
             title="Product Type",
             subtitle="Manage multilingual labels for your product catalog.",
+            enabled_actions=enabled
         )
         self.main_layout.addWidget(header)
         self.main_layout.addSpacing(12)

@@ -41,11 +41,13 @@ class MasterItemPage(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
+        enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Page Header (standardized toolbar)
         header = StandardPageHeader(
             title="Master Item",
             subtitle="View and manage core product inventory and part mappings.",
+            enabled_actions=enabled
         )
         self.main_layout.addWidget(header)
         self.main_layout.addSpacing(12)
