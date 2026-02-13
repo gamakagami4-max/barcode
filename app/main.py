@@ -415,43 +415,47 @@ class Dashboard(QMainWindow):
 
     # ── Navigation ─────────────────────────────────────────────────────────
     def navigate_to(self, page_id: int):
-        """
-        Page 0 (Dashboard): show dashboard content, no tab.
-        Other pages: open in a tab; show tab bar. If tab exists, switch to it.
-        """
         entry = PAGE_REGISTRY.get(page_id)
         if entry is None:
             return
 
         title = entry["title"]
 
-        # Dashboard is not a tab — show dashboard in the main area
         if page_id == 0:
             self._stack.setCurrentWidget(self._dashboard_widget)
+            self._sidebar.set_active(0)  # sync sidebar
             return
 
-        # If the tab already exists, switch to it
         existing = self._tabs.find_tab_by_title(title)
         if existing is not None:
             self._stack.setCurrentWidget(self._tabs)
             self._tabs.setCurrentIndex(existing)
+            self._sidebar.set_active(page_id)  # sync sidebar
             return
 
-        # Add new tab and show it
         page_widget = build_page(page_id)
-        
-        # Connect navigation signal if it's the Barcode Design page
-        if page_id == 9 and hasattr(page_widget, 'navigate_to_editor'):
-            page_widget.navigate_to_editor.connect(lambda: self.navigate_to(10))
-        
+
+        if page_id == 9 and hasattr(page_widget, "navigate_to_editor"):
+            page_widget.navigate_to_editor.connect(
+                lambda: self.navigate_to(10)
+            )
+
         idx = self._tabs.addTab(page_widget, title)
         self._stack.setCurrentWidget(self._tabs)
         self._tabs.setCurrentIndex(idx)
+        self._sidebar.set_active(page_id)
 
     def _on_tab_changed(self, index: int):
-        """When last tab is closed (index -1), show dashboard."""
         if self._tabs.count() == 0:
             self._stack.setCurrentWidget(self._dashboard_widget)
+            self._sidebar.set_active(0)  # reset to Dashboard
+        else:
+            title = self._tabs.tabText(index)
+            for pid, entry in PAGE_REGISTRY.items():
+                if entry["title"] == title:
+                    self._sidebar.set_active(pid)  # sync sidebar
+                    break
+
 
     # ── Tab close handling ─────────────────────────────────────────────────
     def _on_tab_close_requested(self, index: int):

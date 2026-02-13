@@ -541,6 +541,42 @@ class Sidebar(QFrame):
 
         self.main_sidebar_layout.addWidget(self.user_panel)
 
+    def set_active(self, page_id: int):
+        """Highlight the sidebar item that corresponds to the given page_id."""
+
+        # First clear all selections
+        self.clear_all_selections()
+
+        # Map page_id → button text (must match your CollapsibleMenu labels)
+        mapping = {
+            0: "Dashboard",
+            2: "Source Data Group",
+            3: "Master Sticker",
+            4: "Master Filter Type",
+            5: "Master Brand",
+            6: "Master Product Type",
+            7: "Master Item",
+            8: "Master Brand Case",
+            9: "Barcode Design",
+            10: "Barcode Editor",
+        }
+
+        target_text = mapping.get(page_id)
+        if not target_text:
+            return
+
+        # Loop through menus and sub_buttons to find the matching one
+        for menu in self.menus:
+            for btn in menu.sub_buttons:
+                if btn.text() == target_text:
+                    btn.setStyleSheet(STYLE_ACTIVE)
+
+                    # Expand parent menu if collapsed
+                    if not menu.is_expanded:
+                        menu.toggle_expansion(None)
+
+                    return
+
     def create_label(self, text):
         lbl = QLabel(text)
         lbl.setStyleSheet("""
