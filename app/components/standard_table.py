@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtCore import QTimer
 from components.pagination_widget import PaginationWidget
+from PySide6.QtCore import Signal
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +193,8 @@ class StandardTable(QFrame):
         Column labels for the horizontal header.
     """
 
+    rowDoubleClicked = Signal(list)
+    
     def __init__(self, headers: list[str], parent=None) -> None:
         super().__init__(parent)
         self._headers = headers
@@ -241,6 +244,10 @@ class StandardTable(QFrame):
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setFocusPolicy(Qt.StrongFocus)
 
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        table.itemDoubleClicked.connect(self._handle_double_click)
+
         # Smooth scrolling: by pixel instead of by row/item
         table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
@@ -264,6 +271,17 @@ class StandardTable(QFrame):
 
 
         return table
+    
+    def _handle_double_click(self, item):
+        row = item.row()
+        row_data = []
+
+        for col in range(self.table.columnCount()):
+            cell_item = self.table.item(row, col)
+            row_data.append(cell_item.text() if cell_item else "")
+
+        self.rowDoubleClicked.emit(row_data)
+
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -422,6 +440,7 @@ class StandardTable(QFrame):
             
             self._original_data.append(row_items)
 
+    
     # ------------------------------------------------------------------
     # Public API — thin delegation to the inner QTableWidget
     # ------------------------------------------------------------------
