@@ -66,6 +66,9 @@ class StickerSizePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+        
+        # Initialize default sort AFTER pagination is set up
+        self.sort_bar.initialize_default_sort()
 
         DPI = 96  # 1 inch = 96 pixels
 

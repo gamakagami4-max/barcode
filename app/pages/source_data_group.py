@@ -118,6 +118,9 @@ class SourceDataPage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+        
+        # Initialize default sort AFTER pagination is set up
+        self.sort_bar.initialize_default_sort()
 
         self.form_schema = [
             {"name": "conn", "label": "Connection", "type": "text", "placeholder": "Enter connection name", "required": True},
