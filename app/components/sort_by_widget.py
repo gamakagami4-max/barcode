@@ -114,6 +114,14 @@ class SortByWidget(QWidget):
             item = QListWidgetItem(field)
             self._list.addItem(item)
 
+        # ----------------------------
+        # Auto-select the first item
+        # ----------------------------
+        if self._list.count() > 0:
+            first_item = self._list.item(0)
+            first_item.setSelected(True)
+            self._update_selection()
+
         
         # -------------------------------------------------
         # Clear Button

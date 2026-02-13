@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-
+from PySide6.QtCore import QTimer
 from components.pagination_widget import PaginationWidget
 
 
@@ -249,6 +249,19 @@ class StandardTable(QFrame):
 
         _configure_horizontal_header(table.horizontalHeader())
         _configure_vertical_header(table.verticalHeader())
+
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.verticalHeader().setMinimumSectionSize(_Theme.row_height)
+
+        table.model().rowsInserted.connect(
+            lambda *_: QTimer.singleShot(0, table.resizeRowsToContents)
+        )
+
+        table.horizontalHeader().sectionResized.connect(
+            lambda *_: QTimer.singleShot(0, table.resizeRowsToContents)
+        )
+
+
 
         return table
 

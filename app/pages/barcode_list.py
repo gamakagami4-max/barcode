@@ -203,17 +203,18 @@ class BarcodeListPage(QWidget):
                 self.table.setItem(r, c, item)
 
             status_val = str(row_data[3])
-            is_active = "NOT" not in status_val
-            badge = QLabel(status_val)
-            badge.setAlignment(Qt.AlignCenter)
-            bg = COLORS["status_green_bg"] if is_active else COLORS["status_gray_bg"]
-            txt = COLORS["status_green_text"] if is_active else COLORS["status_gray_text"]
-            badge.setStyleSheet(f"""
-                background: {bg}; color: {txt}; 
-                border-radius: 6px; font-weight: 800; font-size: 10px; 
-                margin: 15px 2px; padding: 0px 8px;
-            """)
-            self.table.setCellWidget(r, 3, badge)
+
+            status_item = QTableWidgetItem(status_val)
+            status_item.setTextAlignment(Qt.AlignCenter)
+
+            # optional: keep colored text without badge
+            if "NOT" in status_val:
+                status_item.setForeground(QColor(COLORS["status_gray_text"]))
+            else:
+                status_item.setForeground(QColor(COLORS["status_green_text"]))
+
+            self.table.setItem(r, 3, status_item)
+
 
             self.table.setItem(r, 4, QTableWidgetItem(str(row_data[4])))   # ADDED BY
             self.table.setItem(r, 5, QTableWidgetItem(str(row_data[5])))   # ADDED AT
