@@ -124,6 +124,41 @@ class SourceDataPage(QWidget):
             {"name": "table_name", "label": "Table Name", "type": "text", "placeholder": "Enter table name", "required": True},
             {"name": "query", "label": "Query", "type": "text", "placeholder": "Enter SQL query", "required": True},
         ]
+        # Track table selection to enable Edit/Delete
+        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
+
+        # Initially disable edit/delete
+        self._update_edit_delete_state(False)
+
+
+    def _on_row_selection_changed(self):
+        has_selection = bool(self.table.selectedItems())
+        self._update_edit_delete_state(has_selection)
+
+    def _update_edit_delete_state(self, enabled: bool):
+        edit_btn = self.header.get_action_button("Edit")
+        delete_btn = self.header.get_action_button("Delete")
+
+        if edit_btn:
+            edit_btn.setEnabled(enabled)
+        if delete_btn:
+            delete_btn.setEnabled(enabled)
+
+    def _get_selected_global_index(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        table_row = selected_rows[0].row()
+        global_index = (self.current_page * self.page_size) + table_row
+
+        if global_index >= len(self.filtered_data):
+            return None
+
+        actual_row = self.filtered_data[global_index]
+        return self.all_data.index(actual_row)
+
+
 
 
     def add_data_row(self, conn, table_name, query, added_by, added_at, changed_by, changed_at, changed_no):
@@ -411,7 +446,61 @@ class SourceDataPage(QWidget):
         print("Export clicked")
 
     def handle_edit_action(self):
-        print("Edit clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        modal = GenericFormModal(
+            title="Edit Source Data",
+            fields=self.form_schema,
+            parent=self,
+            mode="edit",
+            initial_data={
+                "conn": row[1],
+                "table_name": row[2],
+                "query": row[3],
+            }
+        )
+
+        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+        modal.exec()
+
+    def _on_edit_submitted(self, idx, data):
+        conn = data.get("conn", "").strip()
+        table_name = data.get("table_name", "").strip()
+        query = data.get("query", "").strip()
+
+        if not conn or not table_name or not query:
+            print("All fields required")
+            return
+
+        import datetime
+        today = datetime.date.today().strftime("%Y-%m-%d")
+
+        old_row = self.all_data[idx]
+
+        updated_row = (
+            old_row[0],
+            conn,
+            table_name,
+            query,
+            old_row[4],
+            old_row[5],
+            "Admin",
+            today,
+            str(int(old_row[8]) + 1 if old_row[8].isdigit() else 1)
+        )
+
+        self.all_data[idx] = updated_row
+        self._apply_filter_and_reset_page()
+
 
     def handle_delete_action(self):
-        print("Delete clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        del self.all_data[idx]
+        self._apply_filter_and_reset_page()
