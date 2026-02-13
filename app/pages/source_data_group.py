@@ -7,6 +7,7 @@ from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 ROW_STANDARD = "standard"
 QUERY_COLUMN_INDEX = 2
@@ -63,12 +64,13 @@ class SourceDataPage(QWidget):
         enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Header (standardized toolbar)
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Source Data Group",
             subtitle="Manage and query your enterprise data sources from a single pane.",
             enabled_actions=enabled
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
+        self._connect_header_actions()
         self.main_layout.addSpacing(12)
 
         # 2. Search
@@ -117,7 +119,14 @@ class SourceDataPage(QWidget):
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
-    def add_data_row(self, conn, table_name, query):
+        self.form_schema = [
+            {"name": "conn", "label": "Connection", "type": "text", "placeholder": "Enter connection name", "required": True},
+            {"name": "table_name", "label": "Table Name", "type": "text", "placeholder": "Enter table name", "required": True},
+            {"name": "query", "label": "Query", "type": "text", "placeholder": "Enter SQL query", "required": True},
+        ]
+
+
+    def add_data_row(self, conn, table_name, query, added_by, added_at, changed_by, changed_at, changed_no):
         row = self.table.rowCount()
         self.table.insertRow(row)
         query_display = wrap_query_text(query)
@@ -135,13 +144,26 @@ class SourceDataPage(QWidget):
         item_query.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.table.setItem(row, 2, item_query)
 
-        item_dash1 = QTableWidgetItem("-")
-        item_dash1.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.table.setItem(row, 3, item_dash1)
+        # Metadata columns
+        item_added_by = QTableWidgetItem(added_by)
+        item_added_by.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.table.setItem(row, 3, item_added_by)
 
-        item_dash2 = QTableWidgetItem("-")
-        item_dash2.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.table.setItem(row, 4, item_dash2)
+        item_added_at = QTableWidgetItem(added_at)
+        item_added_at.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.table.setItem(row, 4, item_added_at)
+
+        item_changed_by = QTableWidgetItem(changed_by)
+        item_changed_by.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.table.setItem(row, 5, item_changed_by)
+
+        item_changed_at = QTableWidgetItem(changed_at)
+        item_changed_at.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.table.setItem(row, 6, item_changed_at)
+
+        item_changed_no = QTableWidgetItem(changed_no)
+        item_changed_no.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.table.setItem(row, 7, item_changed_no)
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -154,7 +176,8 @@ class SourceDataPage(QWidget):
         page_data = data[start_idx:end_idx]
 
         for item in page_data:
-            self.add_data_row(item[1], item[2], item[3])
+            # item structure: (row_type, CONNECTION, TABLE NAME, QUERY, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+            self.add_data_row(item[1], item[2], item[3], item[4], item[5], item[6], item[7], item[8])
 
         # Global row numbers (1-based across all pages)
         for r in range(len(page_data)):
@@ -162,7 +185,8 @@ class SourceDataPage(QWidget):
 
         # Let Qt measure actual rendered text height — avoids clipping on wrapped rows
         self.table.resizeRowsToContents()
-        self.table.setSortingEnabled(True)
+        # Keep sorting disabled to avoid conflicts
+        # self.table.setSortingEnabled(True)
 
         # Update pagination UI
         has_prev = self.current_page > 0
@@ -184,9 +208,30 @@ class SourceDataPage(QWidget):
         self.all_data = []
         for i in range(50):
             if i % 3 == 0:
-                self.all_data.append(("expandable", f"SQL Server {i}", "MITMAS", f"SELECT * FROM [Inventory] WHERE ID = {i}\nORDER BY CreatedAt DESC"))
+                # (row_type, CONNECTION, TABLE NAME, QUERY, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+                self.all_data.append((
+                    "expandable", 
+                    f"SQL Server {i}", 
+                    "MITMAS", 
+                    f"SELECT * FROM [Inventory] WHERE ID = {i}\nORDER BY CreatedAt DESC",
+                    "Admin",
+                    "2024-01-15",
+                    "User_A",
+                    "2024-02-10",
+                    "2"
+                ))
             else:
-                self.all_data.append(("standard", f"MySQL Connection {i}", "PROD_DATA", "Direct Link"))
+                self.all_data.append((
+                    "standard", 
+                    f"MySQL Connection {i}", 
+                    "PROD_DATA", 
+                    "Direct Link",
+                    "Admin",
+                    "2024-01-20",
+                    "-",
+                    "-",
+                    "0"
+                ))
         self._apply_filter_and_reset_page()
 
     def filter_table(self, filter_type, search_text):
@@ -311,3 +356,62 @@ class SourceDataPage(QWidget):
             return float(str_val.replace(',', ''))
         except (ValueError, AttributeError):
             return str_val.lower()
+        
+    def _connect_header_actions(self):
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_sample_data)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        modal = GenericFormModal(
+            title="Add Source Data",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+    def _on_add_submitted(self, data: dict):
+        import datetime
+        
+        conn = data.get("conn", "").strip()
+        table_name = data.get("table_name", "").strip()
+        query = data.get("query", "").strip()
+        
+        if not conn or not table_name or not query:
+            print("All fields are required")
+            return
+        
+        added_by = "Admin"
+        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+        
+        # Insert new row at the top
+        # (row_type, CONNECTION, TABLE NAME, QUERY, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+        new_row = ("standard", conn, table_name, query, added_by, added_at, changed_by, changed_at, changed_no)
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+
+
+    def handle_export_action(self):
+        print("Export clicked")
+
+    def handle_edit_action(self):
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        print("Delete clicked")

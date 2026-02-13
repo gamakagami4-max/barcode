@@ -439,6 +439,11 @@ class Dashboard(QMainWindow):
 
         # Add new tab and show it
         page_widget = build_page(page_id)
+        
+        # Connect navigation signal if it's the Barcode Design page
+        if page_id == 9 and hasattr(page_widget, 'navigate_to_editor'):
+            page_widget.navigate_to_editor.connect(lambda: self.navigate_to(10))
+        
         idx = self._tabs.addTab(page_widget, title)
         self._stack.setCurrentWidget(self._tabs)
         self._tabs.setCurrentIndex(idx)

@@ -42,7 +42,7 @@ class BrandCasePage(QWidget):
             {
                 "name": "type_case",
                 "label": "Type Case",
-                "type": "select",
+                "type": "combo",  # Fixed from "select" to "combo"
                 "options": ["TITLE", "UPPER"],
                 "required": True
             }
@@ -115,8 +115,8 @@ class BrandCasePage(QWidget):
 
     def load_sample_data(self):
         case_data = [
-            ("CAR", "TITLE", "Admin", "2024-01-01", "Admin", "2024-01-02", 1, "#DCFCE7", "#166534", "-"),
-            ("FVP", "UPPER", "User1", "2024-01-05", "-", "-", 0, "#FFEDD5", "#9A3412", "-"),
+            ("CAR", "TITLE", "Admin", "2024-01-01", "Admin", "2024-01-02", "1", "#DCFCE7", "#166534", "-"),
+            ("FVP", "UPPER", "User1", "2024-01-05", "-", "-", "0", "#FFEDD5", "#9A3412", "-"),
         ]
         self.all_data = case_data * 20
         self._apply_filter_and_reset_page()
@@ -156,7 +156,8 @@ class BrandCasePage(QWidget):
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
-        self.table.setSortingEnabled(True)
+        # Keep sorting disabled to avoid conflicts
+        # self.table.setSortingEnabled(True)
 
         # Update pagination
         has_prev = self.current_page > 0
@@ -260,26 +261,41 @@ class BrandCasePage(QWidget):
         modal = GenericFormModal(
             title="Add Brand Case",
             fields=self.form_schema,
-            parent=self
+            parent=self,
+            mode="add"
         )
         modal.formSubmitted.connect(self._on_add_submitted)
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
+        import datetime
+        
+        code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
+        
+        if not code:
+            print("Code is required")
+            return
+        
         if type_case == "TITLE":
             bg, fg = "#DCFCE7", "#166534"
         else:
             bg, fg = "#FFEDD5", "#9A3412"
 
+        added_by = "Admin"
+        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+
         new_row = (
-            data.get("code", ""),
+            code,
             type_case,
-            "Admin",
-            "2026-02-12",
-            "-",
-            "-",
-            0,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
             bg,
             fg,
             "-"
@@ -303,7 +319,8 @@ class BrandCasePage(QWidget):
             title="Edit Brand Case",
             fields=self.form_schema,
             initial_data=initial_data,
-            parent=self
+            parent=self,
+            mode="edit"
         )
         modal.formSubmitted.connect(
             lambda data, idx=global_index: self._on_edit_submitted(idx, data)
@@ -311,26 +328,48 @@ class BrandCasePage(QWidget):
         modal.exec()
 
     def _on_edit_submitted(self, index: int, data: dict):
+        import datetime
+        
+        code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
+        
+        if not code:
+            print("Code is required")
+            return
+        
         if type_case == "TITLE":
             bg, fg = "#DCFCE7", "#166534"
         else:
             bg, fg = "#FFEDD5", "#9A3412"
 
+        # Get original item to preserve original ADDED BY/AT
+        old_item = self.filtered_data[index]
+        added_by = old_item[2] if len(old_item) > 2 else "Admin"
+        added_at = old_item[3] if len(old_item) > 3 else "2024-01-01"
+        
+        changed_by = "Admin"
+        changed_at = datetime.date.today().strftime("%Y-%m-%d")
+        
+        # Increment change number
+        try:
+            old_change_no = int(old_item[6]) if len(old_item) > 6 else 0
+            changed_no = str(old_change_no + 1)
+        except (ValueError, TypeError):
+            changed_no = "1"
+
         updated_row = (
-            data.get("code", ""),
+            code,
             type_case,
-            "Admin",
-            "2026-02-12",
-            "-",
-            "-",
-            0,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
             bg,
             fg,
             "-"
         )
 
-        old_item = self.filtered_data[index]
         original_index = self.all_data.index(old_item)
         self.all_data[original_index] = updated_row
         self._apply_filter_and_reset_page()

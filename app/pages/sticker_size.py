@@ -5,6 +5,7 @@ from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 class StickerSizePage(QWidget):
     def __init__(self):
@@ -29,13 +30,14 @@ class StickerSizePage(QWidget):
 
         # 1. Header
         enabled = ["Add", "Excel", "Refresh"]
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Sticker Size",
             subtitle="Define physical dimensions for barcode stickers.",
             enabled_actions=enabled 
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
+        self._connect_header_actions()
 
         # 2. Search
         self.search_bar = StandardSearchBar()
@@ -64,6 +66,32 @@ class StickerSizePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+
+        DPI = 96  # 1 inch = 96 pixels
+
+        self.form_schema = [
+            {"name": "name", "label": "Sticker Name", "type": "text", "placeholder": "Enter sticker name", "required": True},
+            {
+                "name": "height", 
+                "label": "Height", 
+                "type": "text_with_unit", 
+                "placeholder": "Enter height", 
+                "required": True,
+                "units": ["inch", "px"],
+                "default_unit": "inch"
+            },
+            {
+                "name": "width", 
+                "label": "Width", 
+                "type": "text_with_unit", 
+                "placeholder": "Enter width", 
+                "required": True,
+                "units": ["inch", "px"],
+                "default_unit": "inch"
+            },
+        ]
+
+
 
     def load_sample_data(self):
         # Diverse test data to see sorting work
@@ -236,3 +264,102 @@ class StickerSizePage(QWidget):
             return float(str_val.replace(',', '').replace('×', '').replace('INCH', '').strip())
         except (ValueError, AttributeError):
             return str_val.lower()
+        
+    def _connect_header_actions(self):
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_sample_data)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        modal = GenericFormModal(
+            title="Add Sticker Size",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+
+    def _on_add_submitted(self, data: dict):
+        DPI = 96  # 1 inch = 96 pixels
+        
+        name = data.get("name", "").strip()
+        
+        # Get height value and unit
+        height_value = data.get("height", 0)
+        height_unit = data.get("height_unit", "inch")
+        
+        # Get width value and unit
+        width_value = data.get("width", 0)
+        width_unit = data.get("width_unit", "inch")
+        
+        try:
+            h_val = float(height_value)
+            w_val = float(width_value)
+            if h_val <= 0 or w_val <= 0:
+                raise ValueError
+        except ValueError:
+            print("Height and Width must be positive numbers")
+            return
+
+        # Convert to inches if needed
+        if height_unit == "px":
+            h_in = h_val / DPI
+            h_px = int(round(h_val))
+        else:  # inch
+            h_in = h_val
+            h_px = int(round(h_val * DPI))
+        
+        if width_unit == "px":
+            w_in = w_val / DPI
+            w_px = int(round(w_val))
+        else:  # inch
+            w_in = w_val
+            w_px = int(round(w_val * DPI))
+
+        import datetime
+        added_by = "Admin"
+        added_at = datetime.date.today().isoformat()
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+
+        new_row = (
+            name,
+            f"{h_in:.4f}",  # Height in inches
+            f"{w_in:.4f}",  # Width in inches
+            str(h_px),      # Height in pixels
+            str(w_px),      # Width in pixels
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
+        )
+
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+
+
+
+
+    def handle_export_action(self):
+        print("Export clicked")
+
+    def handle_edit_action(self):
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        print("Delete clicked")

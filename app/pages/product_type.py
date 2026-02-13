@@ -8,6 +8,7 @@ from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -37,13 +38,14 @@ class ProductTypePage(QWidget):
         self.main_layout.setSpacing(0)
         enabled = ["Add", "Excel", "Refresh"]
 
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Product Type",
             subtitle="Manage multilingual labels for your product catalog.",
             enabled_actions=enabled
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
+        self._connect_header_actions()
 
         self.search_bar = StandardSearchBar()
         self.search_bar.searchChanged.connect(self.filter_table)
@@ -65,13 +67,45 @@ class ProductTypePage(QWidget):
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
+        # Form schema for Add/Edit modal
+        self.form_schema = [
+            {
+                "name": "inggris", 
+                "label": "English (Inggris)", 
+                "type": "text", 
+                "placeholder": "Enter English translation", 
+                "required": True
+            },
+            {
+                "name": "spanyol", 
+                "label": "Spanish (Spanyol)", 
+                "type": "text", 
+                "placeholder": "Enter Spanish translation", 
+                "required": False
+            },
+            {
+                "name": "prancis", 
+                "label": "French (Prancis)", 
+                "type": "text", 
+                "placeholder": "Enter French translation", 
+                "required": False
+            },
+            {
+                "name": "jerman", 
+                "label": "German (Jerman)", 
+                "type": "text", 
+                "placeholder": "Enter German translation", 
+                "required": False
+            },
+        ]
+
     def load_translations(self):
         raw_data = [
-            ("Adapter", "Adaptador", "Adaptateur", "Einbauteil"),
-            ("Air Breather", "Respiradero", "Filtre air", "Be-Entlüftungsfilter"),
-            ("Air Cleaner", "Filtro de aire", "Filtre air", "Luftfilter"),
-            ("Air Dryer", "Secador de aire", "Dessiccateur", "Trockenmittelbox"),
-            ("Air Filter", "Filtro de aire", "Filtre air", "Luftfilter"),
+            ("Adapter", "Adaptador", "Adaptateur", "Einbauteil", "Admin", "2024-01-15", "-", "-", "0"),
+            ("Air Breather", "Respiradero", "Filtre air", "Be-Entlüftungsfilter", "Admin", "2024-01-20", "User_A", "2024-02-05", "1"),
+            ("Air Cleaner", "Filtro de aire", "Filtre air", "Luftfilter", "Admin", "2024-02-01", "-", "-", "0"),
+            ("Air Dryer", "Secador de aire", "Dessiccateur", "Trockenmittelbox", "Manager_X", "2024-02-10", "-", "-", "0"),
+            ("Air Filter", "Filtro de aire", "Filtre air", "Luftfilter", "Admin", "2024-02-15", "Admin", "2024-02-20", "2"),
         ]
         self.all_data = raw_data * 6
         self._apply_filter_and_reset_page()
@@ -89,20 +123,16 @@ class ProductTypePage(QWidget):
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
             self.table.setRowHeight(r, 28)
-            for c, val in enumerate(row_data):
+            
+            # Render all columns from the data
+            for c in range(len(row_data)):
+                val = row_data[c] if c < len(row_data) else "-"
                 item = QTableWidgetItem(str(val))
                 if c == 0:  # INGGRIS link color
                     item.setForeground(QColor(COLORS["link"]))
                     font = item.font()
                     item.setFont(font)
                 self.table.setItem(r, c, item)
-
-            # Add dummy metadata columns if missing
-            self.table.setItem(r, 4, QTableWidgetItem("-"))
-            self.table.setItem(r, 5, QTableWidgetItem("-"))
-            self.table.setItem(r, 6, QTableWidgetItem("-"))
-            self.table.setItem(r, 7, QTableWidgetItem("-"))
-            self.table.setItem(r, 8, QTableWidgetItem("0"))
 
         # Row numbers
         for r in range(len(page_data)):
@@ -199,3 +229,76 @@ class ProductTypePage(QWidget):
         self.page_size = new_size
         self.current_page = 0
         self.render_page()
+
+    def _connect_header_actions(self):
+        """Connect header action buttons to their handlers."""
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_translations)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        """Open the Add Product Type Translation modal."""
+        modal = GenericFormModal(
+            title="Add Product Type Translation",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+    def _on_add_submitted(self, data: dict):
+        """Handle form submission for adding a new product type translation."""
+        import datetime
+        
+        inggris = data.get("inggris", "").strip()
+        spanyol = data.get("spanyol", "").strip()
+        prancis = data.get("prancis", "").strip()
+        jerman = data.get("jerman", "").strip()
+        
+        if not inggris:
+            print("English translation is required")
+            return
+        
+        added_by = "Admin"
+        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+        
+        new_row = (
+            inggris,
+            spanyol,
+            prancis,
+            jerman,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
+        )
+        
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+    def handle_export_action(self):
+        """Handle Excel export action."""
+        print("Export to Excel clicked")
+
+    def handle_edit_action(self):
+        """Handle Edit action."""
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        """Handle Delete action."""
+        print("Delete clicked")

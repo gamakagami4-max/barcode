@@ -10,6 +10,7 @@ from components.standard_button import StandardButton
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -44,13 +45,14 @@ class MasterItemPage(QWidget):
         enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Page Header (standardized toolbar)
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Master Item",
             subtitle="View and manage core product inventory and part mappings.",
             enabled_actions=enabled
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
+        self._connect_header_actions()
 
         # 2. Search Bar
         self.search_bar = StandardSearchBar()
@@ -102,6 +104,87 @@ class MasterItemPage(QWidget):
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
+        # Form schema for Add/Edit modal
+        self.form_schema = [
+            {
+                "name": "item_code", 
+                "label": "Item Code", 
+                "type": "text", 
+                "placeholder": "e.g., EIF1-SFF1-FC-1001", 
+                "required": True
+            },
+            {
+                "name": "name", 
+                "label": "Item Name", 
+                "type": "text", 
+                "placeholder": "Enter item description", 
+                "required": True
+            },
+            {
+                "name": "brand", 
+                "label": "Brand", 
+                "type": "text", 
+                "placeholder": "Enter brand code", 
+                "required": True
+            },
+            {
+                "name": "warehouse", 
+                "label": "Warehouse", 
+                "type": "text", 
+                "placeholder": "e.g., EIF", 
+                "required": True
+            },
+            {
+                "name": "part_no", 
+                "label": "Part Number", 
+                "type": "text", 
+                "placeholder": "Enter part number", 
+                "required": True
+            },
+            {
+                "name": "interchange_1", 
+                "label": "Interchange 1", 
+                "type": "text", 
+                "placeholder": "Optional", 
+                "required": False
+            },
+            {
+                "name": "interchange_2", 
+                "label": "Interchange 2", 
+                "type": "text", 
+                "placeholder": "Optional", 
+                "required": False
+            },
+            {
+                "name": "interchange_3", 
+                "label": "Interchange 3", 
+                "type": "text", 
+                "placeholder": "Optional", 
+                "required": False
+            },
+            {
+                "name": "interchange_4", 
+                "label": "Interchange 4", 
+                "type": "text", 
+                "placeholder": "Optional", 
+                "required": False
+            },
+            {
+                "name": "qty", 
+                "label": "Quantity", 
+                "type": "text", 
+                "placeholder": "Enter quantity", 
+                "required": True
+            },
+            {
+                "name": "uom", 
+                "label": "Unit of Measure", 
+                "type": "combo", 
+                "options": ["PCS", "SET", "BOX", "KG", "LTR"], 
+                "required": True
+            },
+        ]
+
     def _create_detail_panel(self):
         panel = QFrame()
         panel.setFixedWidth(380)
@@ -137,7 +220,8 @@ class MasterItemPage(QWidget):
             self.all_data.append((
                 f"EIF1-SFF1-FC-{1001+i}", f"FILTER CARTRIDGE MD {1000+i}", 
                 "SFF", "EIF", f"FC-{1001+i}", "MB 220900", "5-13240032-0", 
-                "31973-44100", "Z636", f"{qty_val:,}", "PCS"
+                "31973-44100", "Z636", f"{qty_val:,}", "PCS",
+                "Admin", "2024-01-15", "-", "-", "0"
             ))
         self._apply_filter_and_reset_page()
 
@@ -153,10 +237,15 @@ class MasterItemPage(QWidget):
 
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            display_indices = [0, 1, 2, 3, 4, 9, 10]  # columns to display
+            # Display columns: ITEM CODE, NAME, BRAND, WHS, PART NO, QTY, UOM, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO
+            display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
 
             for c_idx, data_idx in enumerate(display_indices):
-                val = str(row_data[data_idx])
+                if data_idx < len(row_data):
+                    val = str(row_data[data_idx])
+                else:
+                    val = "-"
+                    
                 item = QTableWidgetItem(val)
                 font = item.font()
                 font.setPointSize(9)
@@ -169,16 +258,12 @@ class MasterItemPage(QWidget):
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 self.table.setItem(r, c_idx, item)
 
-            # Dummy cells for ADDED BY / ADDED AT
-            self.table.setItem(r, 7, QTableWidgetItem("-"))
-            self.table.setItem(r, 8, QTableWidgetItem("-"))
-
         # Row numbers (vertical header)
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
         # Do NOT enable native sorting to avoid conflicts with manual sort
-        self.table.setSortingEnabled(True)
+        # self.table.setSortingEnabled(True)  # REMOVED
 
         # Update pagination
         has_prev = self.current_page > 0
@@ -323,3 +408,89 @@ class MasterItemPage(QWidget):
                 return 0
         return str_val.lower()
 
+    def _connect_header_actions(self):
+        """Connect header action buttons to their handlers."""
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_data)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        """Open the Add Master Item modal."""
+        modal = GenericFormModal(
+            title="Add Master Item",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+    def _on_add_submitted(self, data: dict):
+        """Handle form submission for adding a new master item."""
+        import datetime
+        
+        item_code = data.get("item_code", "").strip()
+        name = data.get("name", "").strip()
+        brand = data.get("brand", "").strip()
+        warehouse = data.get("warehouse", "").strip()
+        part_no = data.get("part_no", "").strip()
+        interchange_1 = data.get("interchange_1", "").strip()
+        interchange_2 = data.get("interchange_2", "").strip()
+        interchange_3 = data.get("interchange_3", "").strip()
+        interchange_4 = data.get("interchange_4", "").strip()
+        qty = data.get("qty", "0").strip()
+        uom = data.get("uom", "PCS")
+        
+        if not all([item_code, name, brand, warehouse, part_no, qty]):
+            print("Required fields missing")
+            return
+        
+        added_by = "Admin"
+        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+        
+        new_row = (
+            item_code,
+            name,
+            brand,
+            warehouse,
+            part_no,
+            interchange_1,
+            interchange_2,
+            interchange_3,
+            interchange_4,
+            qty,
+            uom,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
+        )
+        
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+    def handle_export_action(self):
+        """Handle Excel export action."""
+        print("Export to Excel clicked")
+
+    def handle_edit_action(self):
+        """Handle Edit action."""
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        """Handle Delete action."""
+        print("Delete clicked")

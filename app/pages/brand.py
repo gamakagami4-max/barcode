@@ -8,6 +8,7 @@ from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -40,13 +41,14 @@ class BrandPage(QWidget):
         enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Header (standardized toolbar)
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Brand",
             subtitle="Organize and monitor brand assets across your enterprise.",
             enabled_actions=enabled
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
+        self._connect_header_actions()
 
         # 2. Search Bar
         self.search_bar = StandardSearchBar()
@@ -85,6 +87,31 @@ class BrandPage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+
+        # Form schema for Add/Edit modal
+        self.form_schema = [
+            {
+                "name": "code", 
+                "label": "Brand Code", 
+                "type": "text", 
+                "placeholder": "Enter brand code (e.g., BR-001)", 
+                "required": True
+            },
+            {
+                "name": "name", 
+                "label": "Brand Name", 
+                "type": "text", 
+                "placeholder": "Enter brand name", 
+                "required": True
+            },
+            {
+                "name": "case", 
+                "label": "Case Status", 
+                "type": "combo", 
+                "options": ["AVAILABLE", "NOT AVAILABLE", "PENDING"], 
+                "required": True
+            },
+        ]
 
     def load_sample_data(self):
         raw_brands = [
@@ -125,6 +152,12 @@ class BrandPage(QWidget):
             # FIX: background: transparent and border: none
             name_label.setStyleSheet(f"font-size: 9pt; color: {COLORS['text_main']}; background: transparent; border: none;")
             name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            
+            # Create an invisible table item to remove the cell's default background
+            invisible_name_item = QTableWidgetItem()
+            invisible_name_item.setBackground(QColor(0, 0, 0, 0))  # Fully transparent
+            self.table.setItem(r, 1, invisible_name_item)
+            
             self.table.setCellWidget(r, 1, name_label)
 
             # CASE Badge (Fixed Background)
@@ -143,6 +176,12 @@ class BrandPage(QWidget):
                 border-radius: 4px; font-size: 9px; font-weight: 800;
             """)
             badge_layout.addWidget(badge)
+            
+            # Create an invisible table item to remove the cell's default background
+            invisible_item = QTableWidgetItem()
+            invisible_item.setBackground(QColor(0, 0, 0, 0))  # Fully transparent
+            self.table.setItem(r, 2, invisible_item)
+            
             self.table.setCellWidget(r, 2, badge_container)
 
             # METADATA
@@ -278,3 +317,83 @@ class BrandPage(QWidget):
 
         return str_val.lower()
 
+    def _connect_header_actions(self):
+        """Connect header action buttons to their handlers."""
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_sample_data)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        """Open the Add Brand modal."""
+        modal = GenericFormModal(
+            title="Add Brand",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+    def _on_add_submitted(self, data: dict):
+        """Handle form submission for adding a new brand."""
+        import datetime
+        
+        code = data.get("code", "").strip()
+        name = data.get("name", "").strip()
+        case_status = data.get("case", "AVAILABLE")
+        
+        if not code or not name:
+            print("Brand Code and Name are required")
+            return
+        
+        # Map case status to badge colors
+        badge_colors = {
+            "AVAILABLE": ("#DCFCE7", "#166534"),
+            "NOT AVAILABLE": ("#F1F5F9", "#475569"),
+            "PENDING": ("#FEF9C3", "#854D0E"),
+        }
+        bg_color, text_color = badge_colors.get(case_status, ("#F1F5F9", "#475569"))
+        
+        added_by = "Admin_User"
+        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        changed_by = "-"
+        changed_at = "-"
+        changed_no = "0"
+        
+        new_row = (
+            code,
+            name,
+            case_status,
+            bg_color,
+            text_color,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
+        )
+        
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+    def handle_export_action(self):
+        """Handle Excel export action."""
+        print("Export to Excel clicked")
+
+    def handle_edit_action(self):
+        """Handle Edit action."""
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        """Handle Delete action."""
+        print("Delete clicked")

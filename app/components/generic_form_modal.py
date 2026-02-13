@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit,
     QComboBox, QDialogButtonBox, QFormLayout,
-    QMessageBox
+    QMessageBox, QHBoxLayout, QWidget
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -28,6 +28,7 @@ class GenericFormModal(QDialog):
         fields = [
             {"name": "username", "label": "Username", "type": "text", "required": True},
             {"name": "role", "label": "Role", "type": "combo", "options": ["Admin", "User"], "required": True},
+            {"name": "height", "label": "Height", "type": "text_with_unit", "units": ["inch", "px"], "default_unit": "inch", "required": True},
         ]
         modal = GenericFormModal("Create User", fields)
         modal.formSubmitted.connect(lambda data: print(data))
@@ -126,13 +127,48 @@ class GenericFormModal(QDialog):
         if field_type == "text":
             widget = QLineEdit()
             widget.setPlaceholderText(field.get("placeholder", ""))
+            self._style_input(widget)
+            
         elif field_type in ("combo", "select"):
             widget = QComboBox()
             widget.addItems(field.get("options", []))
+            self._style_input(widget)
+            
+        elif field_type == "text_with_unit":
+            # Create a container widget with horizontal layout
+            container = QWidget()
+            h_layout = QHBoxLayout(container)
+            h_layout.setContentsMargins(0, 0, 0, 0)
+            h_layout.setSpacing(8)
+            
+            # Text input for the value
+            text_input = QLineEdit()
+            text_input.setPlaceholderText(field.get("placeholder", ""))
+            self._style_input(text_input)
+            
+            # Dropdown for unit selection
+            unit_combo = QComboBox()
+            units = field.get("units", ["unit"])
+            unit_combo.addItems(units)
+            default_unit = field.get("default_unit")
+            if default_unit and default_unit in units:
+                unit_combo.setCurrentText(default_unit)
+            unit_combo.setFixedWidth(80)
+            self._style_input(unit_combo)
+            
+            # Add to layout
+            h_layout.addWidget(text_input, stretch=1)
+            h_layout.addWidget(unit_combo)
+            
+            # Store references to both widgets
+            container.text_input = text_input
+            container.unit_combo = unit_combo
+            
+            widget = container
+            
         else:
             raise ValueError(f"Unsupported field type: {field_type}")
 
-        self._style_input(widget)
         return widget
 
     # ------------------------------
@@ -162,10 +198,17 @@ class GenericFormModal(QDialog):
             if name not in self.initial_data:
                 continue
             value = self.initial_data[name]
+            
             if isinstance(widget, QLineEdit):
                 widget.setText(str(value))
             elif isinstance(widget, QComboBox):
                 widget.setCurrentText(str(value))
+            elif hasattr(widget, 'text_input'):  # text_with_unit type
+                widget.text_input.setText(str(value))
+                # Check if there's a corresponding unit value
+                unit_key = f"{name}_unit"
+                if unit_key in self.initial_data:
+                    widget.unit_combo.setCurrentText(str(self.initial_data[unit_key]))
 
     # ------------------------------
     # Validation
@@ -175,11 +218,20 @@ class GenericFormModal(QDialog):
         for field in self.fields_config:
             if not field.get("required"):
                 continue
+            
             widget = self.inputs[field["name"]]
-            if isinstance(widget, QLineEdit) and not widget.text().strip():
-                errors.append(f"{field.get('label', field['name'])} is required")
-            elif isinstance(widget, QComboBox) and not widget.currentText():
-                errors.append(f"{field.get('label', field['name'])} is required")
+            field_label = field.get('label', field['name'])
+            
+            if isinstance(widget, QLineEdit):
+                if not widget.text().strip():
+                    errors.append(f"{field_label} is required")
+            elif isinstance(widget, QComboBox):
+                if not widget.currentText():
+                    errors.append(f"{field_label} is required")
+            elif hasattr(widget, 'text_input'):  # text_with_unit type
+                if not widget.text_input.text().strip():
+                    errors.append(f"{field_label} is required")
+                    
         return errors
 
     # ------------------------------
@@ -192,6 +244,10 @@ class GenericFormModal(QDialog):
                 data[name] = widget.text().strip()
             elif isinstance(widget, QComboBox):
                 data[name] = widget.currentText()
+            elif hasattr(widget, 'text_input'):  # text_with_unit type
+                data[name] = widget.text_input.text().strip()
+                data[f"{name}_unit"] = widget.unit_combo.currentText()
+                
         return data
 
     # ------------------------------

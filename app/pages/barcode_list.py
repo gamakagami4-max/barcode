@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidgetItem, QHeaderView, 
     QHBoxLayout, QPushButton, QMessageBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics
 from datetime import datetime
 
@@ -27,6 +27,9 @@ COLORS = {
 }
 
 class BarcodeListPage(QWidget):
+    # Signal to request navigation to editor page
+    navigate_to_editor = Signal()
+    
     def __init__(self):
         super().__init__()
         self.all_data = []
@@ -434,10 +437,8 @@ class BarcodeListPage(QWidget):
 
     # --- Header Action Handlers ---
     def handle_add_action(self):
-        """Open modal to add a new barcode"""
-        dialog = BarcodeFormModal(self, mode="add")
-        dialog.formSubmitted.connect(self.on_barcode_added)
-        dialog.exec()
+        """Navigate to barcode editor page to create new barcode"""
+        self.navigate_to_editor.emit()
     
     def on_barcode_added(self, form_data):
         """Handle the submission of a new barcode"""
@@ -482,22 +483,13 @@ class BarcodeListPage(QWidget):
         QMessageBox.information(self, "Export", f"Exporting {count} records to Excel...")
 
     def handle_edit_action(self):
-        """Open modal to edit the selected barcode"""
+        """Navigate to barcode editor page to edit the selected barcode"""
         if not self.selected_row_data:
             QMessageBox.warning(self, "Edit", "Please select a row to edit.")
             return
         
-        # Prepare initial data for the form
-        initial_data = {
-            "code": self.selected_row_data[0],
-            "name": self.selected_row_data[1],
-            "sticker_size": self.selected_row_data[2],
-            "status": self.selected_row_data[3],
-        }
-        
-        dialog = BarcodeFormModal(self, mode="edit", initial_data=initial_data)
-        dialog.formSubmitted.connect(self.on_barcode_edited)
-        dialog.exec()
+        # Emit signal to navigate to editor (editor will handle loading the barcode)
+        self.navigate_to_editor.emit()
     
     def on_barcode_edited(self, form_data):
         """Handle the submission of edited barcode data"""

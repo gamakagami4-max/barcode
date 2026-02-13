@@ -8,6 +8,7 @@ from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
+from components.generic_form_modal import GenericFormModal
 
 # ======================
 # Design Tokens
@@ -41,13 +42,14 @@ class FilterTypePage(QWidget):
         enabled = ["Add", "Excel", "Refresh"]
 
         # 1. Header Component (standardized toolbar)
-        header = StandardPageHeader(
+        self.header = StandardPageHeader(
             title="Filter Type",
             subtitle="Manage categories and audit logs for filter types.",
             enabled_actions=enabled
         )
-        self.main_layout.addWidget(header)
+        self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
+        self._connect_header_actions()
 
         # 2. Search
         self.search_bar = StandardSearchBar()
@@ -74,6 +76,24 @@ class FilterTypePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+        
+        # Form schema for Add/Edit modal
+        self.form_schema = [
+            {
+                "name": "name", 
+                "label": "Filter Type Name", 
+                "type": "text", 
+                "placeholder": "Enter filter type name", 
+                "required": True
+            },
+            {
+                "name": "description", 
+                "label": "Description", 
+                "type": "text", 
+                "placeholder": "Enter description (optional)", 
+                "required": False
+            },
+        ]
 
     def load_data(self):
         # Sample data
@@ -227,3 +247,72 @@ class FilterTypePage(QWidget):
         self.page_size = new_size
         self.current_page = 0  # Reset to first page when changing page size
         self.render_page()
+
+    def _connect_header_actions(self):
+        """Connect header action buttons to their handlers."""
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+            btn = self.header.get_action_button(action)
+            if btn:
+                if action == "Refresh":
+                    btn.clicked.connect(self.load_data)
+                elif action == "Add":
+                    btn.clicked.connect(self.handle_add_action)
+                elif action == "Excel":
+                    btn.clicked.connect(self.handle_export_action)
+                elif action == "Edit":
+                    btn.clicked.connect(self.handle_edit_action)
+                elif action == "Delete":
+                    btn.clicked.connect(self.handle_delete_action)
+
+    def handle_add_action(self):
+        """Open the Add Filter Type modal."""
+        modal = GenericFormModal(
+            title="Add Filter Type",
+            fields=self.form_schema,
+            parent=self,
+            mode="add"
+        )
+        modal.formSubmitted.connect(self._on_add_submitted)
+        modal.exec()
+
+    def _on_add_submitted(self, data: dict):
+        """Handle form submission for adding a new filter type."""
+        import datetime
+        
+        name = data.get("name", "").strip()
+        description = data.get("description", "").strip()
+        
+        if not name:
+            print("Filter Type Name is required")
+            return
+        
+        added_by = "ADMIN"
+        added_at = datetime.date.today().strftime("%d-%b-%Y")
+        changed_by = ""
+        changed_at = ""
+        changed_no = "0"
+        
+        new_row = (
+            name,
+            description,
+            added_by,
+            added_at,
+            changed_by,
+            changed_at,
+            changed_no,
+        )
+        
+        self.all_data.insert(0, new_row)
+        self._apply_filter_and_reset_page()
+
+    def handle_export_action(self):
+        """Handle Excel export action."""
+        print("Export to Excel clicked")
+
+    def handle_edit_action(self):
+        """Handle Edit action."""
+        print("Edit clicked")
+
+    def handle_delete_action(self):
+        """Handle Delete action."""
+        print("Delete clicked")
