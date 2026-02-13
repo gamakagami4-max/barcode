@@ -115,10 +115,10 @@ class BrandPage(QWidget):
 
     def load_sample_data(self):
         raw_brands = [
-            ("BR-001", "Lumina Tech International Solutions", "AVAILABLE", "#DCFCE7", "#166534", "Admin_User", "2026-02-01", "Systems", "2026-02-02", "102"),
-            ("BR-042", "Apex Global", "NOT AVAILABLE", "#F1F5F9", "#475569", "Super_Admin", "2026-02-04", "User_A", "2026-02-05", "45"),
-            ("BR-056", "Vanguard Systems Enterprise Edition", "AVAILABLE", "#DCFCE7", "#166534", "Admin_User", "2026-02-05", "-", "-", "0"),
-            ("BR-098", "Nexus Brands", "PENDING", "#FEF9C3", "#854D0E", "Manager_X", "2026-02-06", "Admin_User", "2026-02-07", "12"),
+            ("BR-001", "Lumina Tech International Solutions", "AVAILABLE", "Admin_User", "2026-02-01", "Systems", "2026-02-02", "102"),
+            ("BR-042", "Apex Global", "NOT AVAILABLE", "Super_Admin", "2026-02-04", "User_A", "2026-02-05", "45"),
+            ("BR-056", "Vanguard Systems Enterprise Edition", "AVAILABLE", "Admin_User", "2026-02-05", "-", "-", "0"),
+            ("BR-098", "Nexus Brands", "PENDING", "Manager_X", "2026-02-06", "Admin_User", "2026-02-07", "12"),
         ]
         self.all_data = raw_brands * 4
         self._apply_filter_and_reset_page()
@@ -133,61 +133,47 @@ class BrandPage(QWidget):
         end_idx = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
-        for r, data in enumerate(page_data):
+        for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            self.table.setRowHeight(r, 28) 
+            self.table.setRowHeight(r, 28)
 
             # CODE
-            code_item = QTableWidgetItem(data[0])
+            code_item = QTableWidgetItem(row_data[0])
             code_item.setForeground(QColor(COLORS["link"]))
             font = code_item.font()
             font.setPointSize(9)
             code_item.setFont(font)
             code_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             self.table.setItem(r, 0, code_item)
-            
-            # NAME (Fixed Background)
-            name_label = QLabel(data[1])
+
+            # NAME
+            name_label = QLabel(row_data[1])
             name_label.setWordWrap(True)
-            # FIX: background: transparent and border: none
-            name_label.setStyleSheet(f"font-size: 9pt; color: {COLORS['text_main']}; background: transparent; border: none;")
+            name_label.setStyleSheet(
+                f"font-size: 9pt; color: {COLORS['text_main']}; background: transparent; border: none;"
+            )
             name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            
-            # Create an invisible table item to remove the cell's default background
             invisible_name_item = QTableWidgetItem()
-            invisible_name_item.setBackground(QColor(0, 0, 0, 0))  # Fully transparent
+            invisible_name_item.setBackground(QColor(0, 0, 0, 0))
             self.table.setItem(r, 1, invisible_name_item)
-            
             self.table.setCellWidget(r, 1, name_label)
 
-            # CASE Badge (Fixed Background)
-            badge_container = QWidget()
-            # FIX: background: transparent
-            badge_container.setStyleSheet("background: transparent; border: none;")
-            badge_layout = QHBoxLayout(badge_container)
-            badge_layout.setContentsMargins(0, 0, 0, 0)
-            badge_layout.setAlignment(Qt.AlignCenter) 
-            
-            badge = QLabel(data[2])
-            badge.setFixedSize(95, 22)
-            badge.setAlignment(Qt.AlignCenter)
-            badge.setStyleSheet(f"""
-                background-color: {data[3]}; color: {data[4]};
-                border-radius: 4px; font-size: 9px; font-weight: 800;
-            """)
-            badge_layout.addWidget(badge)
-            
-            # Create an invisible table item to remove the cell's default background
-            invisible_item = QTableWidgetItem()
-            invisible_item.setBackground(QColor(0, 0, 0, 0))  # Fully transparent
-            self.table.setItem(r, 2, invisible_item)
-            
-            self.table.setCellWidget(r, 2, badge_container)
+            # CASE (plain centered text, no badge)
+            case_item = QTableWidgetItem(row_data[2])
+            case_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            self.table.setItem(r, 2, case_item)
 
             # METADATA
-            cols = [(3, 5, Qt.AlignLeft), (4, 6, Qt.AlignLeft), (5, 7, Qt.AlignLeft), (6, 8, Qt.AlignLeft), (7, 9, Qt.AlignCenter)]
+            # Indices adjusted since CASE no longer uses extra color fields
+            cols = [
+                (3, 3, Qt.AlignLeft),  # ADDED BY
+                (4, 4, Qt.AlignLeft),  # ADDED AT
+                (5, 5, Qt.AlignLeft),  # CHANGED BY
+                (6, 6, Qt.AlignLeft),  # CHANGED AT
+                (7, 7, Qt.AlignCenter) # CHANGED NO
+            ]
             for col_idx, data_idx, align in cols:
-                item = QTableWidgetItem(str(data[data_idx]))
+                item = QTableWidgetItem(str(row_data[data_idx]))
                 item.setTextAlignment(align | Qt.AlignVCenter)
                 self.table.setItem(r, col_idx, item)
 
@@ -210,6 +196,8 @@ class BrandPage(QWidget):
             page_size=self.page_size,
             available_page_sizes=self.available_page_sizes,
         )
+
+
 
     def filter_table(self, filter_type, search_text):
         self._last_filter_type = filter_type
@@ -345,7 +333,6 @@ class BrandPage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        """Handle form submission for adding a new brand."""
         import datetime
         
         code = data.get("code", "").strip()
@@ -355,14 +342,6 @@ class BrandPage(QWidget):
         if not code or not name:
             print("Brand Code and Name are required")
             return
-        
-        # Map case status to badge colors
-        badge_colors = {
-            "AVAILABLE": ("#DCFCE7", "#166534"),
-            "NOT AVAILABLE": ("#F1F5F9", "#475569"),
-            "PENDING": ("#FEF9C3", "#854D0E"),
-        }
-        bg_color, text_color = badge_colors.get(case_status, ("#F1F5F9", "#475569"))
         
         added_by = "Admin_User"
         added_at = datetime.date.today().strftime("%Y-%m-%d")
@@ -374,8 +353,6 @@ class BrandPage(QWidget):
             code,
             name,
             case_status,
-            bg_color,
-            text_color,
             added_by,
             added_at,
             changed_by,
@@ -385,6 +362,7 @@ class BrandPage(QWidget):
         
         self.all_data.insert(0, new_row)
         self._apply_filter_and_reset_page()
+
 
     def handle_export_action(self):
         """Handle Excel export action."""
