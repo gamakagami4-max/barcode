@@ -250,10 +250,7 @@ class StandardTable(QFrame):
 
         self.rowDoubleClicked.emit(row_data)
 
-
-    # ------------------------------------------------------------------
     # Internal helpers
-    # ------------------------------------------------------------------
     def _fill_empty_cells(self, row: int) -> None:
         """
         Ensure every cell in *row* has a QTableWidgetItem.
@@ -284,7 +281,7 @@ class StandardTable(QFrame):
         item = self.table.item(row, col)
         if item:
             text = item.text()
-            # Try to convert to number if possible for better numeric sorting
+            # Convert to number if possible for better numeric sorting
             try:
                 return float(text.replace(',', ''))
             except (ValueError, AttributeError):
@@ -408,10 +405,6 @@ class StandardTable(QFrame):
             
             self._original_data.append(row_items)
 
-    
-    # ------------------------------------------------------------------
-    # Public API — thin delegation to the inner QTableWidget
-    # ------------------------------------------------------------------
     def row_count(self) -> int:
         return self.table.rowCount()
 
