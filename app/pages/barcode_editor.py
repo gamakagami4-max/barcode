@@ -468,35 +468,36 @@ class BarcodePropertyEditor(QWidget):
 
         old_scene_pos = self.item.scenePos()
 
-        # Clear children
-        for child in self.item.childItems():
+        # ✅ Properly clear all children
+        for child in list(self.item.childItems()):
             self.item.removeFromGroup(child)
             if child.scene():
                 child.scene().removeItem(child)
+            child.setParentItem(None)
+            del child
 
+        # ✅ Rebuild background
         self.item.design = new_design
-
-        # Background
         self.item.bg = QGraphicsRectItem(0, 0, self.item.container_width, self.item.container_height)
         self.item.bg.setPen(QPen(QColor("#CBD5E1"), 1, Qt.DashLine))
         self.item.bg.setBrush(QBrush(QColor(255, 255, 255, 100)))
         self.item.addToGroup(self.item.bg)
 
-        # Pattern
+        # ✅ Pattern
         if new_design == "MINIMAL":
-            bar_pattern = [4,2,4,2,4,2,4]
+            bar_pattern = [4, 2, 4, 2, 4, 2, 4]
         elif new_design == "EAN13":
-            bar_pattern = [2,2,3,2,2,4,3,2,3,2,2]
+            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
         elif new_design == "CODE39":
-            bar_pattern = [3,1,3,1,2,1,3,1,2,1,3]
+            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
         elif new_design == "QR MOCK":
-            square = QGraphicsRectItem(40,15,50,50)
+            square = QGraphicsRectItem(40, 15, 50, 50)
             square.setBrush(QBrush(Qt.black))
             square.setPen(Qt.NoPen)
             self.item.addToGroup(square)
             bar_pattern = []
-        else:
-            bar_pattern = [3,2,3,2,2,3,2,3,3,2,2,3,2,3,2,2,3,2,3]
+        else:  # CODE128 default
+            bar_pattern = [3, 2, 3, 2, 2, 3, 2, 3, 3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 3]
 
         x_offset = 15
         for i, width in enumerate(bar_pattern):
@@ -512,14 +513,14 @@ class BarcodePropertyEditor(QWidget):
         label.setPos(35, 58)
         self.item.addToGroup(label)
 
-        # Normalize children so boundingRect starts at (0,0)
+        # ✅ Normalize bounding rect to start at (0,0)
         new_rect = self.item.childrenBoundingRect()
         dx, dy = new_rect.topLeft().x(), new_rect.topLeft().y()
         if dx != 0 or dy != 0:
             for child in self.item.childItems():
                 child.setPos(child.pos() - QPointF(dx, dy))
 
-        # Restore scene position
+        # ✅ Restore scene position
         self.item.setPos(old_scene_pos)
 
         print(f"After rebuild: scenePos={self.item.scenePos()}, pos={self.item.pos()}, boundingRect={self.item.boundingRect()}")
