@@ -91,7 +91,41 @@ class StickerSizePage(QWidget):
             },
         ]
 
+        # Track table selection to enable Edit/Delete
+        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
 
+        # Initially disable edit/delete
+        self._update_edit_delete_state(False)
+
+
+
+
+    def _on_row_selection_changed(self):
+        has_selection = bool(self.table.selectedItems())
+        self._update_edit_delete_state(has_selection)
+
+    def _update_edit_delete_state(self, enabled: bool):
+        edit_btn = self.header.get_action_button("Edit")
+        delete_btn = self.header.get_action_button("Delete")
+
+        if edit_btn:
+            edit_btn.setEnabled(enabled)
+        if delete_btn:
+            delete_btn.setEnabled(enabled)
+
+    def _get_selected_global_index(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        table_row = selected_rows[0].row()
+        global_index = (self.current_page * self.page_size) + table_row
+
+        if global_index >= len(self.filtered_data):
+            return None
+
+        actual_row = self.filtered_data[global_index]
+        return self.all_data.index(actual_row)
 
     def load_sample_data(self):
         # Diverse test data to see sorting work
@@ -359,7 +393,91 @@ class StickerSizePage(QWidget):
         print("Export clicked")
 
     def handle_edit_action(self):
-        print("Edit clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        modal = GenericFormModal(
+            title="Edit Sticker Size",
+            fields=self.form_schema,
+            parent=self,
+            mode="edit",
+            initial_data={
+                "name": row[0],
+                "height": row[1],
+                "height_unit": "inch",
+                "width": row[2],
+                "width_unit": "inch",
+            }
+        )
+
+        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+        modal.exec()
+
+
+    def _on_edit_submitted(self, idx, data):
+        DPI = 96
+
+        name = data.get("name", "").strip()
+
+        height_value = data.get("height", 0)
+        height_unit = data.get("height_unit", "inch")
+
+        width_value = data.get("width", 0)
+        width_unit = data.get("width_unit", "inch")
+
+        try:
+            h_val = float(height_value)
+            w_val = float(width_value)
+            if h_val <= 0 or w_val <= 0:
+                raise ValueError
+        except ValueError:
+            print("Height and Width must be positive numbers")
+            return
+
+        if height_unit == "px":
+            h_in = h_val / DPI
+            h_px = int(round(h_val))
+        else:
+            h_in = h_val
+            h_px = int(round(h_val * DPI))
+
+        if width_unit == "px":
+            w_in = w_val / DPI
+            w_px = int(round(w_val))
+        else:
+            w_in = w_val
+            w_px = int(round(w_val * DPI))
+
+        import datetime
+        today = datetime.date.today().isoformat()
+
+        old_row = self.all_data[idx]
+
+        updated_row = (
+            name,
+            f"{h_in:.4f}",
+            f"{w_in:.4f}",
+            str(h_px),
+            str(w_px),
+            old_row[5],   # added_by
+            old_row[6],   # added_at
+            "Admin",      # changed_by
+            today,        # changed_at
+            str(int(old_row[9]) + 1 if old_row[9].isdigit() else 1),
+        )
+
+        self.all_data[idx] = updated_row
+        self._apply_filter_and_reset_page()
+
+
 
     def handle_delete_action(self):
-        print("Delete clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        del self.all_data[idx]
+        self._apply_filter_and_reset_page()

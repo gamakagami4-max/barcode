@@ -11,7 +11,7 @@ STANDARD_ACTIONS = [
     # label, icon_name, variant
     ("Add", "fa5s.plus", "primary"),
     ("Edit", "fa5s.edit", "primary"),
-    ("Delete", "fa5s.trash", "primary"),
+    ("Delete", "fa5s.trash", "danger"),
     ("View Detail", "fa5s.info-circle", "primary"),
     ("Print", "fa5s.print", "primary"),
     ("Excel", "fa5s.file-excel", "primary"),

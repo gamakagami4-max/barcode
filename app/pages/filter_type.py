@@ -95,6 +95,39 @@ class FilterTypePage(QWidget):
             },
         ]
 
+        # Track table selection to enable Edit/Delete
+        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
+
+        # Initially disable edit/delete
+        self._update_edit_delete_state(False)
+
+    def _on_row_selection_changed(self):
+        has_selection = bool(self.table.selectedItems())
+        self._update_edit_delete_state(has_selection)
+
+    def _update_edit_delete_state(self, enabled: bool):
+        edit_btn = self.header.get_action_button("Edit")
+        delete_btn = self.header.get_action_button("Delete")
+
+        if edit_btn:
+            edit_btn.setEnabled(enabled)
+        if delete_btn:
+            delete_btn.setEnabled(enabled)
+
+    def _get_selected_global_index(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        table_row = selected_rows[0].row()
+        global_index = (self.current_page * self.page_size) + table_row
+
+        if global_index >= len(self.filtered_data):
+            return None
+
+        actual_row = self.filtered_data[global_index]
+        return self.all_data.index(actual_row)
+
     def load_data(self):
         # Sample data
         raw_data = [
@@ -310,9 +343,60 @@ class FilterTypePage(QWidget):
         print("Export to Excel clicked")
 
     def handle_edit_action(self):
-        """Handle Edit action."""
-        print("Edit clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        modal = GenericFormModal(
+            title="Edit Filter Type",
+            fields=self.form_schema,
+            parent=self,
+            mode="edit",
+            initial_data={
+                "name": row[0],
+                "description": row[1],
+            }
+        )
+
+        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+        modal.exec()
+
+
+    def _on_edit_submitted(self, idx, data):
+        import datetime
+
+        name = data.get("name", "").strip()
+        description = data.get("description", "").strip()
+
+        if not name:
+            print("Filter Type Name is required")
+            return
+
+        old_row = self.all_data[idx]
+
+        today = datetime.date.today().strftime("%d-%b-%Y")
+
+        updated_row = (
+            name,
+            description,
+            old_row[2],   # added_by
+            old_row[3],   # added_at
+            "ADMIN",      # changed_by
+            today,        # changed_at
+            str(int(old_row[6]) + 1 if old_row[6].isdigit() else 1),
+        )
+
+        self.all_data[idx] = updated_row
+        self._apply_filter_and_reset_page()
+
+
 
     def handle_delete_action(self):
-        """Handle Delete action."""
-        print("Delete clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        del self.all_data[idx]
+        self._apply_filter_and_reset_page()

@@ -48,7 +48,15 @@ class BrandCasePage(QWidget):
             }
         ]
         self.init_ui()
+
+        # Track table selection to enable Edit/Delete
+        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
+
+        # Initially disable edit/delete
+        self._update_edit_delete_state(False)
+
         self.load_sample_data()
+
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
@@ -97,6 +105,33 @@ class BrandCasePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+
+    def _on_row_selection_changed(self):
+        has_selection = bool(self.table.selectedItems())
+        self._update_edit_delete_state(has_selection)
+
+    def _update_edit_delete_state(self, enabled: bool):
+        edit_btn = self.header.get_action_button("Edit")
+        delete_btn = self.header.get_action_button("Delete")
+
+        if edit_btn:
+            edit_btn.setEnabled(enabled)
+        if delete_btn:
+            delete_btn.setEnabled(enabled)
+
+    def _get_selected_global_index(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        table_row = selected_rows[0].row()
+        global_index = (self.current_page * self.page_size) + table_row
+
+        if global_index >= len(self.filtered_data):
+            return None
+
+        actual_row = self.filtered_data[global_index]
+        return self.all_data.index(actual_row)
 
     def _connect_header_actions(self):
         for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
@@ -304,78 +339,70 @@ class BrandCasePage(QWidget):
         self._apply_filter_and_reset_page()
 
     def handle_edit_action(self):
-        row = self.table.currentRow()
-        if row < 0:
+        idx = self._get_selected_global_index()
+        if idx is None:
             return
 
-        global_index = (self.current_page * self.page_size) + row
-        if global_index >= len(self.filtered_data):
-            return
-
-        item = self.filtered_data[global_index]
-        initial_data = {"code": item[0], "type_case": item[1]}
+        row = self.all_data[idx]
 
         modal = GenericFormModal(
             title="Edit Brand Case",
             fields=self.form_schema,
-            initial_data=initial_data,
             parent=self,
-            mode="edit"
+            mode="edit",
+            initial_data={
+                "code": row[0],
+                "type_case": row[1],
+            }
         )
-        modal.formSubmitted.connect(
-            lambda data, idx=global_index: self._on_edit_submitted(idx, data)
-        )
+
+        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
-    def _on_edit_submitted(self, index: int, data: dict):
+
+    def _on_edit_submitted(self, idx, data):
         import datetime
-        
+
         code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
-        
+
         if not code:
             print("Code is required")
             return
-        
+
         if type_case == "TITLE":
             bg, fg = "#DCFCE7", "#166534"
         else:
             bg, fg = "#FFEDD5", "#9A3412"
 
-        # Get original item to preserve original ADDED BY/AT
-        old_item = self.filtered_data[index]
-        added_by = old_item[2] if len(old_item) > 2 else "Admin"
-        added_at = old_item[3] if len(old_item) > 3 else "2024-01-01"
-        
-        changed_by = "Admin"
-        changed_at = datetime.date.today().strftime("%Y-%m-%d")
-        
-        # Increment change number
-        try:
-            old_change_no = int(old_item[6]) if len(old_item) > 6 else 0
-            changed_no = str(old_change_no + 1)
-        except (ValueError, TypeError):
-            changed_no = "1"
+        old_row = self.all_data[idx]
+        today = datetime.date.today().strftime("%Y-%m-%d")
 
         updated_row = (
             code,
             type_case,
-            added_by,
-            added_at,
-            changed_by,
-            changed_at,
-            changed_no,
+            old_row[2],  # added_by
+            old_row[3],  # added_at
+            "Admin",     # changed_by
+            today,       # changed_at
+            str(int(old_row[6]) + 1 if str(old_row[6]).isdigit() else 1),
             bg,
             fg,
-            "-"
+            old_row[9],  # misc
         )
 
-        original_index = self.all_data.index(old_item)
-        self.all_data[original_index] = updated_row
+        self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
 
+
+   
     def handle_export_action(self):
         print("Export clicked")
 
     def handle_delete_action(self):
-        print("Delete clicked")
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        del self.all_data[idx]
+        self._apply_filter_and_reset_page()
