@@ -462,23 +462,27 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(label("VISIBLE :"), self.visible_combo)
 
     def update_design(self, new_design):
-        """Rebuild the barcode with a new design pattern"""
-        # Remove all child items from the group
+        print("\n--- DEBUG: update_design called ---")
+        print(f"Requested design: {new_design}")
+        print(f"Before rebuild: scenePos={self.item.scenePos()}, pos={self.item.pos()}, boundingRect={self.item.boundingRect()}")
+
+        old_scene_pos = self.item.scenePos()
+
+        # Clear children
         for child in self.item.childItems():
             self.item.removeFromGroup(child)
             if child.scene():
                 child.scene().removeItem(child)
-        
-        # Update the design
+
         self.item.design = new_design
-        
-        # Recreate the background
+
+        # Background
         self.item.bg = QGraphicsRectItem(0, 0, self.item.container_width, self.item.container_height)
         self.item.bg.setPen(QPen(QColor("#CBD5E1"), 1, Qt.DashLine))
         self.item.bg.setBrush(QBrush(QColor(255, 255, 255, 100)))
         self.item.addToGroup(self.item.bg)
 
-        # Choose pattern based on design
+        # Pattern
         if new_design == "MINIMAL":
             bar_pattern = [4,2,4,2,4,2,4]
         elif new_design == "EAN13":
@@ -491,10 +495,9 @@ class BarcodePropertyEditor(QWidget):
             square.setPen(Qt.NoPen)
             self.item.addToGroup(square)
             bar_pattern = []
-        else:  # CODE128 default
+        else:
             bar_pattern = [3,2,3,2,2,3,2,3,3,2,2,3,2,3,2,2,3,2,3]
 
-        # Draw the barcode pattern
         x_offset = 15
         for i, width in enumerate(bar_pattern):
             if i % 2 == 0:
@@ -503,14 +506,25 @@ class BarcodePropertyEditor(QWidget):
                 bar.setPen(Qt.NoPen)
                 self.item.addToGroup(bar)
             x_offset += width
-        
-        # Add label
+
         label = QGraphicsTextItem("*12345678*")
         label.setFont(QFont("Courier", 9, QFont.Bold))
         label.setPos(35, 58)
         self.item.addToGroup(label)
-        
-        # Trigger update (position is maintained automatically by the group)
+
+        # Normalize children so boundingRect starts at (0,0)
+        new_rect = self.item.childrenBoundingRect()
+        dx, dy = new_rect.topLeft().x(), new_rect.topLeft().y()
+        if dx != 0 or dy != 0:
+            for child in self.item.childItems():
+                child.setPos(child.pos() - QPointF(dx, dy))
+
+        # Restore scene position
+        self.item.setPos(old_scene_pos)
+
+        print(f"After rebuild: scenePos={self.item.scenePos()}, pos={self.item.pos()}, boundingRect={self.item.boundingRect()}")
+        print("--- DEBUG END ---\n")
+
         self.update_callback()
 
     def update_size(self):
