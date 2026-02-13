@@ -461,21 +461,11 @@ class Sidebar(QFrame):
        
         self.content_layout.addStretch()
 
-        # Professional User Panel
+        # Professional User Panel - FIXED VERSION
         self.user_panel = QWidget()
+        self.user_panel.setObjectName("user_panel")
         self.user_panel.setStyleSheet("""
-            QWidget {
-                background-color: #FFFFFF;
-                border-top: 1px solid #E5E7EB;
-            }
-        """)
-        user_layout = QHBoxLayout(self.user_panel)
-        user_layout.setContentsMargins(16, 14, 16, 14)
-        
-        # Professional User Panel
-        self.user_panel = QWidget()
-        self.user_panel.setStyleSheet("""
-            QWidget {
+            #user_panel {
                 background-color: #FFFFFF;
                 border-top: 1px solid #E5E7EB;
             }
@@ -508,6 +498,7 @@ class Sidebar(QFrame):
             font-weight: 600; 
             color: #111827;
             background: transparent;
+            border: none;
         """)
 
         # --- Exit Button ---
