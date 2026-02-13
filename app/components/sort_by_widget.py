@@ -141,14 +141,6 @@ class SortByWidget(QWidget):
             item = QListWidgetItem(field)
             self._list.addItem(item)
 
-        # ----------------------------
-        # Auto-select the first item
-        # ----------------------------
-        if self._list.count() > 0:
-            first_item = self._list.item(0)
-            first_item.setSelected(True)
-            self._update_selection()
-
         
         # -------------------------------------------------
         # Clear Button
@@ -357,3 +349,13 @@ class SortByWidget(QWidget):
                 w.deleteLater()
 
         self._emit_changed()
+
+    def initialize_default_sort(self):
+        """
+        Auto-select the first field and apply it.
+        Should be called AFTER connecting to sortChanged signal.
+        """
+        if self._list.count() > 0:
+            first_item = self._list.item(0)
+            first_item.setSelected(True)
+            self._update_selection()

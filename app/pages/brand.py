@@ -77,6 +77,7 @@ class BrandPage(QWidget):
         self.sort_bar = SortByWidget(self.table)
 
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
+        
         self.main_layout.addWidget(self.sort_bar)
         self.main_layout.addSpacing(8)
 
@@ -87,6 +88,9 @@ class BrandPage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
+        
+        # Initialize default sort AFTER pagination is set up
+        self.sort_bar.initialize_default_sort()
 
         # Form schema for Add/Edit modal
         self.form_schema = [
