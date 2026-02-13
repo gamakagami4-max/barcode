@@ -2,16 +2,11 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame, QVBoxLayout,
     QAbstractItemView, QWidget
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtCore import QTimer
 from components.pagination_widget import PaginationWidget
-from PySide6.QtCore import Signal
 
-
-# ---------------------------------------------------------------------------
-# Design tokens — change here to retheme the entire widget
-# ---------------------------------------------------------------------------
+# Design tokens
 class _Theme:
     text_main        = "#0F172A"
     text_header      = "#000000"
@@ -32,9 +27,7 @@ class _Theme:
     font_weight_header = "bold"
 
 
-# ---------------------------------------------------------------------------
-# Style sheets — built from tokens, kept separate from layout logic
-# ---------------------------------------------------------------------------
+# Style sheets
 def _container_style() -> str:
     t = _Theme
     return f"""
@@ -83,7 +76,6 @@ def _container_style() -> str:
         }}
     """
 
-
 def _table_style() -> str:
     t = _Theme
     return f"""
@@ -120,7 +112,6 @@ def _table_style() -> str:
         }}
     """
 
-
 def _row_number_style() -> str:
     t = _Theme
     return f"""
@@ -134,24 +125,17 @@ def _row_number_style() -> str:
         }}
     """
 
-
-# ---------------------------------------------------------------------------
 # Header configuration helpers
-# ---------------------------------------------------------------------------
 def _configure_horizontal_header(header: QHeaderView) -> None:
     """Compact, horizontally scrollable column headers."""
     header.setMinimumHeight(_Theme.header_height)
     header.setDefaultAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-    # Ensure columns are never ultra-cramped: sensible defaults that prefer
-    # horizontal scrolling over squeezing.
     header.setDefaultSectionSize(140)
     header.setMinimumSectionSize(100)
-    # Use Interactive so callers (pages) and end‑users can override widths.
     header.setSectionResizeMode(QHeaderView.Interactive)
     header.setSortIndicatorShown(False)
     header.setSectionsClickable(False)
     
-    # Make header font bold programmatically
     header_font = QFont()
     header_font.setBold(True)
     header.setFont(header_font)
@@ -165,15 +149,11 @@ def _configure_vertical_header(header: QHeaderView) -> None:
     header.setDefaultAlignment(Qt.AlignCenter | Qt.AlignVCenter)
     header.setStyleSheet(_row_number_style())
     
-    # Make row number header font bold programmatically
     header_font = QFont()
     header_font.setBold(True)
     header.setFont(header_font)
 
-
-# ---------------------------------------------------------------------------
 # Main widget
-# ---------------------------------------------------------------------------
 class StandardTable(QFrame):
     """
     Excel-style table widget with sorting capability.
@@ -201,9 +181,7 @@ class StandardTable(QFrame):
         self._original_data = []  # Store original row data for sorting
         self._build_ui()
 
-    # ------------------------------------------------------------------
     # Construction
-    # ------------------------------------------------------------------
     def _build_ui(self) -> None:
         self.setStyleSheet(_container_style())
 
@@ -213,9 +191,6 @@ class StandardTable(QFrame):
         self.table = self._create_table()
         layout.addWidget(self.table)
 
-        # Integrated pagination bar (25 rows/page by default for callers).
-        # Pages can listen to `self.pagination.pageChanged` and call their own
-        # render/refresh logic, then feed back stats via `update(...)`.
         self.pagination = PaginationWidget(colors={
             "text_table": _Theme.text_main,
             "text_secondary": "#64748B",
@@ -229,17 +204,13 @@ class StandardTable(QFrame):
         table = QTableWidget(0, len(self._headers))
         table.setHorizontalHeaderLabels(self._headers)
         table.setSortingEnabled(False)
-
-        # Excel-like look
         table.setShowGrid(True)
         table.setFrameShape(QFrame.StyledPanel)
         table.setStyleSheet(_table_style())
 
-        # Word wrap: honour \n in cell text; avoid visual "..." truncation
         table.setWordWrap(True)
         table.setTextElideMode(Qt.ElideNone)
 
-        # Selection: single full-row highlight
         table.setSelectionMode(QTableWidget.SingleSelection)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setFocusPolicy(Qt.StrongFocus)
@@ -248,7 +219,6 @@ class StandardTable(QFrame):
 
         table.itemDoubleClicked.connect(self._handle_double_click)
 
-        # Smooth scrolling: by pixel instead of by row/item
         table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         table.verticalScrollBar().setSingleStep(12)
@@ -267,8 +237,6 @@ class StandardTable(QFrame):
         table.horizontalHeader().sectionResized.connect(
             lambda *_: QTimer.singleShot(0, table.resizeRowsToContents)
         )
-
-
 
         return table
     
