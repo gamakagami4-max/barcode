@@ -340,7 +340,27 @@ class FilterTypePage(QWidget):
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
-        print("Export to Excel clicked")
+        import openpyxl
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", "filter_type.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not path:
+            return
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Filter Type"
+
+        headers = ["NAME", "DESCRIPTION", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
+        ws.append(headers)
+
+        for row in self.filtered_data:
+            ws.append([str(val) if val is not None else "" for val in row])
+
+        wb.save(path)
+        QMessageBox.information(self, "Export Complete", f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
