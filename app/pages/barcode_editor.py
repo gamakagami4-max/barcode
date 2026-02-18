@@ -462,13 +462,10 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(label("VISIBLE :"), self.visible_combo)
 
     def update_design(self, new_design):
-        print("\n--- DEBUG: update_design called ---")
-        print(f"Requested design: {new_design}")
-        print(f"Before rebuild: scenePos={self.item.scenePos()}, pos={self.item.pos()}, boundingRect={self.item.boundingRect()}")
-
+        # scenePos() MUST be captured before removeFromGroup, which shifts the group
         old_scene_pos = self.item.scenePos()
 
-        # ✅ Properly clear all children
+        # Clear all children
         for child in list(self.item.childItems()):
             self.item.removeFromGroup(child)
             if child.scene():
@@ -476,14 +473,18 @@ class BarcodePropertyEditor(QWidget):
             child.setParentItem(None)
             del child
 
-        # ✅ Rebuild background
+        # After removeFromGroup, the group may have drifted — reset it to origin
+        # so all new child coordinates are relative to (0,0), then we restore scene pos at the end
+        self.item.setPos(0, 0)
+
+        # Rebuild background
         self.item.design = new_design
         self.item.bg = QGraphicsRectItem(0, 0, self.item.container_width, self.item.container_height)
         self.item.bg.setPen(QPen(QColor("#CBD5E1"), 1, Qt.DashLine))
         self.item.bg.setBrush(QBrush(QColor(255, 255, 255, 100)))
         self.item.addToGroup(self.item.bg)
 
-        # ✅ Pattern
+        # Pattern
         if new_design == "MINIMAL":
             bar_pattern = [4, 2, 4, 2, 4, 2, 4]
         elif new_design == "EAN13":
@@ -513,21 +514,10 @@ class BarcodePropertyEditor(QWidget):
         label.setPos(35, 58)
         self.item.addToGroup(label)
 
-        # ✅ Normalize bounding rect to start at (0,0)
-        new_rect = self.item.childrenBoundingRect()
-        dx, dy = new_rect.topLeft().x(), new_rect.topLeft().y()
-        if dx != 0 or dy != 0:
-            for child in self.item.childItems():
-                child.setPos(child.pos() - QPointF(dx, dy))
-
-        # ✅ Restore scene position
+        # Restore to where the barcode was on screen
         self.item.setPos(old_scene_pos)
 
-        print(f"After rebuild: scenePos={self.item.scenePos()}, pos={self.item.pos()}, boundingRect={self.item.boundingRect()}")
-        print("--- DEBUG END ---\n")
-
         self.update_callback()
-
     def update_size(self):
         self.item.container_width = self.width_spin.value()
         self.item.container_height = self.height_spin.value()
