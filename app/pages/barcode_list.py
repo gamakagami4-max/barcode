@@ -416,7 +416,7 @@ class BarcodeListPage(QWidget):
     def on_barcode_added(self, form_data):
         self.barcode_counter += 1
         new_code = f"ADR/BAR/{self.barcode_counter}"
-        current_date = datetime.now().strftime("%d-%b-%Y")
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         new_record = (
             new_code,
@@ -461,7 +461,7 @@ class BarcodeListPage(QWidget):
 
         for i, record in enumerate(self.all_data):
             if record[0] == code_to_edit:
-                current_date = datetime.now().strftime("%d-%b-%Y")
+                current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 try:
                     change_no = int(record[8]) + 1
                 except (ValueError, IndexError):

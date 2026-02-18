@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-
+from PySide6.QtWidgets import QMessageBox
 from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
@@ -345,7 +345,7 @@ class BrandCasePage(QWidget):
 
         bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
         added_by = "Admin"
-        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         new_row = (code, type_case, added_by, added_at, "-", "-", "0", bg, fg, "-")
         self.all_data.insert(0, new_row)
@@ -407,7 +407,7 @@ class BrandCasePage(QWidget):
 
         bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
         old_row = self.all_data[idx]
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         updated_row = (
             code,
@@ -415,7 +415,7 @@ class BrandCasePage(QWidget):
             old_row[2],  # added_by
             old_row[3],  # added_at
             "Admin",     # changed_by
-            today,       # changed_at
+            now,       # changed_at
             str(int(old_row[6]) + 1 if str(old_row[6]).isdigit() else 1),
             bg,
             fg,
@@ -430,5 +430,16 @@ class BrandCasePage(QWidget):
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        code = row[0]
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete \"{code}\"?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()

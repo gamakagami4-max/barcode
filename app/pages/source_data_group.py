@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidgetItem, QHeaderView
 )
+from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import Qt
 
 from components.search_bar import StandardSearchBar
@@ -9,6 +10,7 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 from components.view_detail_modal import ViewDetailModal
+import datetime
 
 ROW_STANDARD = "standard"
 QUERY_COLUMN_INDEX = 2
@@ -115,9 +117,9 @@ class SourceDataPage(QWidget):
         self.table.setColumnWidth(0, 150)
         self.table.setColumnWidth(1, 120)
         self.table.setColumnWidth(3, 100)
-        self.table.setColumnWidth(4, 100)
+        col_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED AT
         self.table.setColumnWidth(5, 110)
-        self.table.setColumnWidth(6, 110)
+        col_header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # CHANGED AT
         self.table.setColumnWidth(7, 100)
 
         self.sort_bar = SortByWidget(self.table)
@@ -136,9 +138,21 @@ class SourceDataPage(QWidget):
         # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
-        self.form_schema = [
-            {"name": "conn", "label": "Connection", "type": "text", "placeholder": "Enter connection name", "required": True},
-            {"name": "table_name", "label": "Table Name", "type": "text", "placeholder": "Enter table name", "required": True},
+
+        self.form_schema = [{
+                "name": "conn",
+                "label": "Connection",
+                "type": "combo",
+                "options": ["a", "s"],
+                "required": True
+            },
+            {
+                "name": "table_name",
+                "label": "Table Name",
+                "type": "combo",
+                "options": ["a", "s"],
+                "required": True
+            },
             {"name": "query", "label": "Query", "type": "text", "placeholder": "Enter SQL query", "required": True},
         ]
 
@@ -411,7 +425,6 @@ class SourceDataPage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        import datetime
 
         conn = data.get("conn", "").strip()
         table_name = data.get("table_name", "").strip()
@@ -422,7 +435,7 @@ class SourceDataPage(QWidget):
             return
 
         added_by = "Admin"
-        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
         changed_by = "-"
         changed_at = "-"
         changed_no = "0"
@@ -430,9 +443,28 @@ class SourceDataPage(QWidget):
         new_row = ("standard", conn, table_name, query, added_by, added_at, changed_by, changed_at, changed_no)
         self.all_data.insert(0, new_row)
         self._apply_filter_and_reset_page()
-
     def handle_export_action(self):
-        print("Export clicked")
+        import openpyxl
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", "source_data.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not path:
+            return
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Source Data"
+
+        headers = ["CONNECTION", "TABLE NAME", "QUERY / LINK SERVER", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
+        ws.append(headers)
+
+        for row in self.filtered_data:
+            ws.append([str(row[i]) if row[i] is not None else "" for i in range(1, 9)])
+
+        wb.save(path)
+        QMessageBox.information(self, "Export Complete", f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
@@ -486,8 +518,7 @@ class SourceDataPage(QWidget):
             print("All fields required")
             return
 
-        import datetime
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         old_row = self.all_data[idx]
 
@@ -499,17 +530,29 @@ class SourceDataPage(QWidget):
             old_row[4],
             old_row[5],
             "Admin",
-            today,
+            now,
             str(int(old_row[8]) + 1 if old_row[8].isdigit() else 1)
         )
 
         self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
-
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        conn = row[1]
+        table_name = row[2]
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete this record?")
+        msg.setInformativeText(f"Connection: {conn}\nTable Name: {table_name}")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()

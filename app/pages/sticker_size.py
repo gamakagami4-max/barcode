@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidgetItem
 from PySide6.QtCore import Qt
-
+from PySide6.QtWidgets import QMessageBox
 from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
@@ -361,7 +361,7 @@ class StickerSizePage(QWidget):
 
         import datetime
         added_by = "Admin"
-        added_at = datetime.date.today().isoformat()
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         new_row = (
             name,
@@ -459,7 +459,7 @@ class StickerSizePage(QWidget):
             w_px = int(round(w_val * DPI))
 
         import datetime
-        today = datetime.date.today().isoformat()
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         old_row = self.all_data[idx]
 
@@ -472,7 +472,7 @@ class StickerSizePage(QWidget):
             old_row[5],
             old_row[6],
             "Admin",
-            today,
+            now,
             str(int(old_row[9]) + 1 if old_row[9].isdigit() else 1),
         )
 
@@ -484,5 +484,16 @@ class StickerSizePage(QWidget):
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        sticker_name = row[0]
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete \"{sticker_name}\"?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()

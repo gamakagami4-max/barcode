@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
+from PySide6.QtWidgets import QMessageBox
 from components.search_bar import StandardSearchBar
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
@@ -82,9 +83,9 @@ class BrandPage(QWidget):
         self.table.setColumnWidth(1, 280)
         self.table.setColumnWidth(2, 120)
         self.table.setColumnWidth(3, 120)
-        self.table.setColumnWidth(4, 110)
+        h_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED AT
         self.table.setColumnWidth(5, 120)
-        self.table.setColumnWidth(6, 110)
+        h_header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # ADDED ATself.table.setColumnWidth(6, 110)
         self.table.setColumnWidth(7, 90)
 
         self.sort_bar = SortByWidget(self.table)
@@ -386,7 +387,7 @@ class BrandPage(QWidget):
             return
 
         added_by = "Admin_User"
-        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         new_row = (code, name, case_status, added_by, added_at, "-", "-", "0")
         self.all_data.insert(0, new_row)
@@ -449,7 +450,7 @@ class BrandPage(QWidget):
             return
 
         old_row = self.all_data[idx]
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         updated_row = (
             code,
@@ -458,7 +459,7 @@ class BrandPage(QWidget):
             old_row[3],
             old_row[4],
             "Admin_User",
-            today,
+            now,
             str(int(old_row[7]) + 1 if old_row[7].isdigit() else 1),
         )
 
@@ -470,5 +471,16 @@ class BrandPage(QWidget):
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        code = row[0]  # Brand Name is more descriptive than code
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete \"{code}\"?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()

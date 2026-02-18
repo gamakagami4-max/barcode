@@ -10,6 +10,7 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 from components.view_detail_modal import ViewDetailModal
+from PySide6.QtWidgets import QMessageBox
 
 # ======================
 # Design Tokens
@@ -332,7 +333,7 @@ class FilterTypePage(QWidget):
             return
 
         added_by = "ADMIN"
-        added_at = datetime.date.today().strftime("%d-%b-%Y")
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         new_row = (name, description, added_by, added_at, "", "", "0")
         self.all_data.insert(0, new_row)
@@ -393,7 +394,7 @@ class FilterTypePage(QWidget):
             return
 
         old_row = self.all_data[idx]
-        today = datetime.date.today().strftime("%d-%b-%Y")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         updated_row = (
             name,
@@ -401,7 +402,7 @@ class FilterTypePage(QWidget):
             old_row[2],
             old_row[3],
             "ADMIN",
-            today,
+            now,
             str(int(old_row[6]) + 1 if old_row[6].isdigit() else 1),
         )
 
@@ -413,5 +414,16 @@ class FilterTypePage(QWidget):
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        name = row[0]
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete \"{name}\"?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()

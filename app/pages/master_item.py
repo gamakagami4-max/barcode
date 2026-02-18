@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-
+from PySide6.QtWidgets import QMessageBox
 from components.search_bar import StandardSearchBar
 from components.standard_button import StandardButton
 from components.standard_page_header import StandardPageHeader
@@ -101,8 +101,9 @@ class MasterItemPage(QWidget):
         self.table.setColumnWidth(5, 110)
         self.table.setColumnWidth(6, 80)
         self.table.setColumnWidth(7, 100)
-        self.table.setColumnWidth(8, 100)
+        h_header.setSectionResizeMode(8, QHeaderView.ResizeToContents)   # ADDED AT
         self.table.setColumnWidth(9, 60)
+        h_header.setSectionResizeMode(10, QHeaderView.ResizeToContents)  # CHANGED AT
         h_header.setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
@@ -444,7 +445,7 @@ class MasterItemPage(QWidget):
             return
 
         added_by = "Admin"
-        added_at = datetime.date.today().strftime("%Y-%m-%d")
+        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
 
         new_row = (
             item_code, name, brand, warehouse, part_no,
@@ -528,7 +529,7 @@ class MasterItemPage(QWidget):
             return
 
         old_row = self.all_data[idx]
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         updated_row = (
             item_code, name, brand, warehouse, part_no,
@@ -537,7 +538,7 @@ class MasterItemPage(QWidget):
             old_row[11],  # added_by
             old_row[12],  # added_at
             "Admin",      # changed_by
-            today,        # changed_at
+            now,        # changed_at
             str(int(old_row[15]) + 1 if old_row[15].isdigit() else 1),
         )
 
@@ -549,5 +550,17 @@ class MasterItemPage(QWidget):
         if idx is None:
             return
 
-        del self.all_data[idx]
-        self._apply_filter_and_reset_page()
+        row = self.all_data[idx]
+        item_code = row[0]
+        name = row[1]
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Confirm Delete")
+        msg.setText(f"Are you sure you want to delete \"{item_code} – {name}\"?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setIcon(QMessageBox.Warning)
+
+        if msg.exec() == QMessageBox.Yes:
+            del self.all_data[idx]
+            self._apply_filter_and_reset_page()
