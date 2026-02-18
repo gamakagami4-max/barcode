@@ -19,8 +19,7 @@ COLORS = {
     "link": "#6366F1"
 }
 
-# Maps human-readable labels to their index inside a row tuple.
-# Row tuple shape: (NAME, DESCRIPTION, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+# Row tuple shape: (NAME, DESCRIPTION, ADDED_BY, ADDED_AT, CHANGED_BY, CHANGED_AT, CHANGED_NO)
 VIEW_DETAIL_FIELDS = [
     ("Name",        0),
     ("Description", 1),
@@ -30,6 +29,40 @@ VIEW_DETAIL_FIELDS = [
     ("Changed At",  5),
     ("Changed No",  6),
 ]
+
+
+def _build_form_schema(mode: str = "add") -> list[dict]:
+    """
+    Add mode  → editable Name + Description only.
+    Edit mode → same editable fields + 5 readonly audit fields below.
+    """
+    schema = [
+        {
+            "name": "name",
+            "label": "Filter Type Name",
+            "type": "text",
+            "placeholder": "Enter filter type name",
+            "required": True,
+        },
+        {
+            "name": "description",
+            "label": "Description",
+            "type": "text",
+            "placeholder": "Enter description (optional)",
+            "required": False,
+        },
+    ]
+
+    if mode == "edit":
+        schema += [
+            {"name": "added_by",   "label": "Added By",   "type": "readonly"},
+            {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+            {"name": "changed_by", "label": "Changed By", "type": "readonly"},
+            {"name": "changed_at", "label": "Changed At", "type": "readonly"},
+            {"name": "changed_no", "label": "Changed No", "type": "readonly"},
+        ]
+
+    return schema
 
 
 class FilterTypePage(QWidget):
@@ -73,7 +106,8 @@ class FilterTypePage(QWidget):
 
         # 3. Table
         self.table_comp = StandardTable([
-            "NAME", "DESCRIPTION", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+            "NAME", "DESCRIPTION", "ADDED BY", "ADDED AT",
+            "CHANGED BY", "CHANGED AT", "CHANGED NO"
         ])
         self.table = self.table_comp.table
         self.sort_bar = SortByWidget(self.table)
@@ -93,27 +127,8 @@ class FilterTypePage(QWidget):
         # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
-        self.form_schema = [
-            {
-                "name": "name",
-                "label": "Filter Type Name",
-                "type": "text",
-                "placeholder": "Enter filter type name",
-                "required": True
-            },
-            {
-                "name": "description",
-                "label": "Description",
-                "type": "text",
-                "placeholder": "Enter description (optional)",
-                "required": False
-            },
-        ]
-
         # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
-
-        # Initially disable selection-dependent buttons
         self._update_selection_dependent_state(False)
 
     # ------------------------------------------------------------------
@@ -121,8 +136,7 @@ class FilterTypePage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_row_selection_changed(self):
-        has_selection = bool(self.table.selectedItems())
-        self._update_selection_dependent_state(has_selection)
+        self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
         for label in ("Edit", "Delete", "View Detail"):
@@ -134,13 +148,10 @@ class FilterTypePage(QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return None
-
         table_row = selected_rows[0].row()
         global_index = (self.current_page * self.page_size) + table_row
-
         if global_index >= len(self.filtered_data):
             return None
-
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
@@ -150,9 +161,9 @@ class FilterTypePage(QWidget):
 
     def load_data(self):
         raw_data = [
-            ("ADAPTER",     "ADAPTER",      "ADMIN", "20-Jun-2023", "",               "",            "0"),
-            ("AIR BREATHER","",             "ADMIN", "20-Jun-2023", "YOSAFAT.YACOB",  "20-Jun-2023", "1"),
-            ("AIR FILTER",  "FILTER UDARA", "ADMIN", "20-Jun-2023", "",               "",            "0"),
+            ("ADAPTER",      "ADAPTER",      "ADMIN", "20-Jun-2023", "",              "",            "0"),
+            ("AIR BREATHER", "",             "ADMIN", "20-Jun-2023", "YOSAFAT.YACOB", "20-Jun-2023", "1"),
+            ("AIR FILTER",   "FILTER UDARA", "ADMIN", "20-Jun-2023", "",              "",            "0"),
         ]
         self.all_data = raw_data * 5
         self._apply_filter_and_reset_page()
@@ -181,11 +192,9 @@ class FilterTypePage(QWidget):
 
         has_prev = self.current_page > 0
         has_next = end_idx < total
-        start_human = 0 if total == 0 else start_idx + 1
-        end_human = 0 if total == 0 else end_idx
         self.pagination.update(
-            start=start_human,
-            end=end_human,
+            start=0 if total == 0 else start_idx + 1,
+            end=0 if total == 0 else end_idx,
             total=total,
             has_prev=has_prev,
             has_next=has_next,
@@ -205,7 +214,6 @@ class FilterTypePage(QWidget):
 
     def _apply_filter_and_reset_page(self) -> None:
         query = (self._last_search_text or "").lower().strip()
-
         headers = self.table_comp.headers()
         header_to_index = {h: i for i, h in enumerate(headers)}
         col_index = header_to_index.get(self._last_filter_type, 0)
@@ -213,14 +221,10 @@ class FilterTypePage(QWidget):
         if not query:
             self.filtered_data = list(self.all_data)
         else:
-            out = []
-            for row in self.all_data:
-                if col_index >= len(row):
-                    continue
-                val = "" if row[col_index] is None else str(row[col_index])
-                if query in val.lower():
-                    out.append(row)
-            self.filtered_data = out
+            self.filtered_data = [
+                row for row in self.all_data
+                if col_index < len(row) and query in str(row[col_index]).lower()
+            ]
 
         self._apply_sort()
         self.current_page = 0
@@ -240,25 +244,22 @@ class FilterTypePage(QWidget):
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
-            reverse = (direction == "desc")
             idx = header_to_index.get(field)
             if idx is None:
                 continue
             self.filtered_data.sort(
                 key=lambda row, i=idx: self._get_sort_value(row, i),
-                reverse=reverse
+                reverse=(direction == "desc")
             )
 
     def _get_sort_value(self, row, idx):
+        """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
         val = row[idx] if idx < len(row) else ""
-        str_val = "" if val is None else str(val)
-        numeric_cols = ["CHANGED NO"]
-        if self.table_comp.headers()[idx] in numeric_cols:
-            try:
-                return float(str_val)
-            except ValueError:
-                return 0
-        return str_val.lower()
+        str_val = "" if val is None else str(val).strip()
+        try:
+            return (0, float(str_val))
+        except (ValueError, AttributeError):
+            return (1, str_val.lower())
 
     # ------------------------------------------------------------------
     # Pagination
@@ -271,14 +272,12 @@ class FilterTypePage(QWidget):
             self.current_page = 0
             self.render_page()
             return
-
         if page_action == -1:
             self.current_page = max(0, self.current_page - 1)
         elif page_action == 1:
             self.current_page = min(total_pages - 1, self.current_page + 1)
         else:
             self.current_page = max(0, min(int(page_action), total_pages - 1))
-
         self.render_page()
 
     def on_page_size_changed(self, new_size: int) -> None:
@@ -294,18 +293,16 @@ class FilterTypePage(QWidget):
         for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
-                if action == "Refresh":
-                    btn.clicked.connect(self.load_data)
-                elif action == "Add":
-                    btn.clicked.connect(self.handle_add_action)
-                elif action == "Excel":
-                    btn.clicked.connect(self.handle_export_action)
-                elif action == "Edit":
-                    btn.clicked.connect(self.handle_edit_action)
-                elif action == "Delete":
-                    btn.clicked.connect(self.handle_delete_action)
-                elif action == "View Detail":
-                    btn.clicked.connect(self.handle_view_detail_action)
+                mapping = {
+                    "Refresh":     self.load_data,
+                    "Add":         self.handle_add_action,
+                    "Excel":       self.handle_export_action,
+                    "Edit":        self.handle_edit_action,
+                    "Delete":      self.handle_delete_action,
+                    "View Detail": self.handle_view_detail_action,
+                }
+                if action in mapping:
+                    btn.clicked.connect(mapping[action])
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -314,9 +311,9 @@ class FilterTypePage(QWidget):
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Filter Type",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="add"),
             parent=self,
-            mode="add"
+            mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
         modal.exec()
@@ -324,18 +321,21 @@ class FilterTypePage(QWidget):
     def _on_add_submitted(self, data: dict):
         import datetime
 
-        name = data.get("name", "").strip()
+        name        = data.get("name", "").strip()
         description = data.get("description", "").strip()
 
         if not name:
-            print("Filter Type Name is required")
+            QMessageBox.warning(self, "Validation Error", "Filter Type Name is required.")
             return
 
-        added_by = "ADMIN"
-        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
+        for row in self.all_data:
+            if row[0].lower() == name.lower():
+                QMessageBox.warning(self, "Duplicate Name",
+                                    f'Filter Type "{name}" already exists.')
+                return
 
-        new_row = (name, description, added_by, added_at, "", "", "0")
-        self.all_data.insert(0, new_row)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.all_data.insert(0, (name, description, "ADMIN", now, "", "", "0"))
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
@@ -351,34 +351,29 @@ class FilterTypePage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Filter Type"
-
-        headers = ["NAME", "DESCRIPTION", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
-        ws.append(headers)
-
+        ws.append(["NAME", "DESCRIPTION", "ADDED BY", "ADDED AT",
+                   "CHANGED BY", "CHANGED AT", "CHANGED NO"])
         for row in self.filtered_data:
-            ws.append([str(val) if val is not None else "" for val in row])
-
+            ws.append([str(v) if v is not None else "" for v in row])
         wb.save(path)
-        QMessageBox.information(self, "Export Complete", f"Exported {len(self.filtered_data)} records to:\n{path}")
+        QMessageBox.information(self, "Export Complete",
+                                f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
-
         fields = [
             (label, str(row[i]) if i < len(row) and row[i] is not None else "")
             for label, i in VIEW_DETAIL_FIELDS
         ]
-
         modal = GenericFormModal(
             title="Filter Type Detail",
             subtitle="Full details for the selected filter type.",
             fields=fields,
             parent=self,
-            mode="view"
+            mode="view",
         )
         modal.exec()
 
@@ -386,64 +381,67 @@ class FilterTypePage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
+
+        initial = {
+            "name":        row[0],
+            "description": row[1],
+            # audit (readonly)
+            "added_by":    row[2],
+            "added_at":    row[3],
+            "changed_by":  row[4],
+            "changed_at":  row[5],
+            "changed_no":  row[6],
+        }
 
         modal = GenericFormModal(
             title="Edit Filter Type",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="edit"),
             parent=self,
             mode="edit",
-            initial_data={
-                "name": row[0],
-                "description": row[1],
-            }
+            initial_data=initial,
         )
-
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
     def _on_edit_submitted(self, idx, data):
         import datetime
 
-        name = data.get("name", "").strip()
+        name        = data.get("name", "").strip()
         description = data.get("description", "").strip()
 
         if not name:
-            print("Filter Type Name is required")
+            QMessageBox.warning(self, "Validation Error", "Filter Type Name is required.")
             return
 
-        old_row = self.all_data[idx]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for i, row in enumerate(self.all_data):
+            if i != idx and row[0].lower() == name.lower():
+                QMessageBox.warning(self, "Duplicate Name",
+                                    f'Filter Type "{name}" already exists.')
+                return
 
-        updated_row = (
-            name,
-            description,
-            old_row[2],
-            old_row[3],
-            "ADMIN",
-            now,
-            str(int(old_row[6]) + 1 if old_row[6].isdigit() else 1),
+        old_row    = self.all_data[idx]
+        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed_no = str(int(old_row[6]) + 1) if str(old_row[6]).isdigit() else "1"
+
+        self.all_data[idx] = (
+            name, description,
+            old_row[2], old_row[3],   # added_by, added_at unchanged
+            "ADMIN", now, changed_no,
         )
-
-        self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
-        row = self.all_data[idx]
-        name = row[0]
-
+        name = self.all_data[idx][0]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
-        msg.setText(f"Are you sure you want to delete \"{name}\"?")
+        msg.setText(f'Are you sure you want to delete "{name}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
-
         if msg.exec() == QMessageBox.Yes:
             del self.all_data[idx]
             self._apply_filter_and_reset_page()

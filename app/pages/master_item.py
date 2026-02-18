@@ -14,36 +14,67 @@ from components.generic_form_modal import GenericFormModal
 
 # --- Design Tokens ---
 COLORS = {
-    "bg_main": "#F8FAFC",
-    "link": "#6366F1",
-    "border": "#E2E8F0",
-    "panel_bg": "#FFFFFF",
+    "bg_main":   "#F8FAFC",
+    "link":      "#6366F1",
+    "border":    "#E2E8F0",
+    "panel_bg":  "#FFFFFF",
     "text_main": "#1E293B",
-    "text_muted": "#64748B"
+    "text_muted":"#64748B"
 }
 
 # Row tuple shape:
 # (ITEM CODE, NAME, BRAND, WHS, PART NO,
 #  INTERCHANGE 1, INTERCHANGE 2, INTERCHANGE 3, INTERCHANGE 4,
-#  QTY, UOM, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+#  QTY, UOM, ADDED_BY, ADDED_AT, CHANGED_BY, CHANGED_AT, CHANGED_NO)
 VIEW_DETAIL_FIELDS = [
-    ("Item Code",      0),
-    ("Name",           1),
-    ("Brand",          2),
-    ("Warehouse",      3),
-    ("Part No",        4),
-    ("Interchange 1",  5),
-    ("Interchange 2",  6),
-    ("Interchange 3",  7),
-    ("Interchange 4",  8),
-    ("Quantity",       9),
-    ("UOM",           10),
-    ("Added By",      11),
-    ("Added At",      12),
-    ("Changed By",    13),
-    ("Changed At",    14),
-    ("Changed No",    15),
+    ("Item Code",     0),
+    ("Name",          1),
+    ("Brand",         2),
+    ("Warehouse",     3),
+    ("Part No",       4),
+    ("Interchange 1", 5),
+    ("Interchange 2", 6),
+    ("Interchange 3", 7),
+    ("Interchange 4", 8),
+    ("Quantity",      9),
+    ("UOM",          10),
+    ("Added By",     11),
+    ("Added At",     12),
+    ("Changed By",   13),
+    ("Changed At",   14),
+    ("Changed No",   15),
 ]
+
+
+def _build_form_schema(mode: str = "add") -> list[dict]:
+    """
+    Add mode  → editable item fields only.
+    Edit mode → same editable fields + 5 readonly audit fields below.
+    """
+    schema = [
+        {"name": "item_code",     "label": "Item Code",      "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
+        {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True},
+        {"name": "brand",         "label": "Brand",           "type": "text",  "placeholder": "Enter brand code",        "required": True},
+        {"name": "warehouse",     "label": "Warehouse",       "type": "text",  "placeholder": "e.g., EIF",              "required": True},
+        {"name": "part_no",       "label": "Part Number",     "type": "text",  "placeholder": "Enter part number",       "required": True},
+        {"name": "interchange_1", "label": "Interchange 1",   "type": "text",  "placeholder": "Optional",               "required": False},
+        {"name": "interchange_2", "label": "Interchange 2",   "type": "text",  "placeholder": "Optional",               "required": False},
+        {"name": "interchange_3", "label": "Interchange 3",   "type": "text",  "placeholder": "Optional",               "required": False},
+        {"name": "interchange_4", "label": "Interchange 4",   "type": "text",  "placeholder": "Optional",               "required": False},
+        {"name": "qty",           "label": "Quantity",        "type": "text",  "placeholder": "Enter quantity",          "required": True},
+        {"name": "uom",           "label": "Unit of Measure", "type": "combo", "options": ["PCS", "SET", "BOX", "KG", "LTR"], "required": True},
+    ]
+
+    if mode == "edit":
+        schema += [
+            {"name": "added_by",   "label": "Added By",   "type": "readonly"},
+            {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+            {"name": "changed_by", "label": "Changed By", "type": "readonly"},
+            {"name": "changed_at", "label": "Changed At", "type": "readonly"},
+            {"name": "changed_no", "label": "Changed No", "type": "readonly"},
+        ]
+
+    return schema
 
 
 class MasterItemPage(QWidget):
@@ -87,7 +118,10 @@ class MasterItemPage(QWidget):
         # 3. Content Area
         self.content_layout = QHBoxLayout()
 
-        headers = ["ITEM CODE", "NAME", "BRAND", "WHS", "PART NO", "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
+        headers = [
+            "ITEM CODE", "NAME", "BRAND", "WHS", "PART NO", "QTY", "UOM",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+        ]
         self.table_comp = StandardTable(headers)
         self.table = self.table_comp.table
 
@@ -100,10 +134,10 @@ class MasterItemPage(QWidget):
         self.table.setColumnWidth(5, 110)
         self.table.setColumnWidth(6, 80)
         self.table.setColumnWidth(7, 100)
-        h_header.setSectionResizeMode(8, QHeaderView.ResizeToContents)   # ADDED AT
+        h_header.setSectionResizeMode(8,  QHeaderView.ResizeToContents)  # ADDED AT
         self.table.setColumnWidth(9, 60)
         h_header.setSectionResizeMode(10, QHeaderView.ResizeToContents)  # CHANGED AT
-        h_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        h_header.setSectionResizeMode(1,  QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         self.content_layout.addWidget(self.table_comp, stretch=4)
@@ -128,27 +162,9 @@ class MasterItemPage(QWidget):
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
-        # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
-        self.form_schema = [
-            {"name": "item_code",     "label": "Item Code",       "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
-            {"name": "name",          "label": "Item Name",        "type": "text",  "placeholder": "Enter item description",  "required": True},
-            {"name": "brand",         "label": "Brand",            "type": "text",  "placeholder": "Enter brand code",        "required": True},
-            {"name": "warehouse",     "label": "Warehouse",        "type": "text",  "placeholder": "e.g., EIF",              "required": True},
-            {"name": "part_no",       "label": "Part Number",      "type": "text",  "placeholder": "Enter part number",       "required": True},
-            {"name": "interchange_1", "label": "Interchange 1",    "type": "text",  "placeholder": "Optional",               "required": False},
-            {"name": "interchange_2", "label": "Interchange 2",    "type": "text",  "placeholder": "Optional",               "required": False},
-            {"name": "interchange_3", "label": "Interchange 3",    "type": "text",  "placeholder": "Optional",               "required": False},
-            {"name": "interchange_4", "label": "Interchange 4",    "type": "text",  "placeholder": "Optional",               "required": False},
-            {"name": "qty",           "label": "Quantity",         "type": "text",  "placeholder": "Enter quantity",          "required": True},
-            {"name": "uom",           "label": "Unit of Measure",  "type": "combo", "options": ["PCS", "SET", "BOX", "KG", "LTR"], "required": True},
-        ]
-
-        # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
-
-        # Initially disable selection-dependent buttons
         self._update_selection_dependent_state(False)
 
     # ------------------------------------------------------------------
@@ -156,8 +172,7 @@ class MasterItemPage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_row_selection_changed(self):
-        has_selection = bool(self.table.selectedItems())
-        self._update_selection_dependent_state(has_selection)
+        self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
         for label in ("Edit", "Delete", "View Detail"):
@@ -169,13 +184,10 @@ class MasterItemPage(QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return None
-
         table_row = selected_rows[0].row()
         global_index = (self.current_page * self.page_size) + table_row
-
         if global_index >= len(self.filtered_data):
             return None
-
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
@@ -186,7 +198,9 @@ class MasterItemPage(QWidget):
     def _create_detail_panel(self):
         panel = QFrame()
         panel.setFixedWidth(380)
-        panel.setStyleSheet(f"background: {COLORS['panel_bg']}; border-left: 1px solid {COLORS['border']};")
+        panel.setStyleSheet(
+            f"background: {COLORS['panel_bg']}; border-left: 1px solid {COLORS['border']};"
+        )
 
         layout = QVBoxLayout(panel)
         top_bar = QHBoxLayout()
@@ -232,7 +246,10 @@ class MasterItemPage(QWidget):
         ]
 
         for label, val in fields:
-            lbl = QLabel(f"<b>{label}</b><br><span style='color:{COLORS['text_muted']}'>{val}</span>")
+            lbl = QLabel(
+                f"<b>{label}</b><br>"
+                f"<span style='color:{COLORS['text_muted']}'>{val}</span>"
+            )
             lbl.setWordWrap(True)
             self.info_layout.addWidget(lbl)
             self.info_layout.addSpacing(10)
@@ -248,8 +265,9 @@ class MasterItemPage(QWidget):
             qty_val = 25899 + i
             self.all_data.append((
                 f"EIF1-SFF1-FC-{1001+i}", f"FILTER CARTRIDGE MD {1000+i}",
-                "SFF", "EIF", f"FC-{1001+i}", "MB 220900", "5-13240032-0",
-                "31973-44100", "Z636", f"{qty_val:,}", "PCS",
+                "SFF", "EIF", f"FC-{1001+i}",
+                "MB 220900", "5-13240032-0", "31973-44100", "Z636",
+                f"{qty_val:,}", "PCS",
                 "Admin", "2024-01-15", "-", "-", "0"
             ))
         self._apply_filter_and_reset_page()
@@ -264,10 +282,11 @@ class MasterItemPage(QWidget):
         end_idx = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
+        # Columns shown in the table (data tuple indices)
+        display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
+
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
-
             for c_idx, data_idx in enumerate(display_indices):
                 val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
                 item = QTableWidgetItem(val)
@@ -284,11 +303,9 @@ class MasterItemPage(QWidget):
 
         has_prev = self.current_page > 0
         has_next = end_idx < total
-        start_human = 0 if total == 0 else start_idx + 1
-        end_human = 0 if total == 0 else end_idx
         self.pagination.update(
-            start=start_human,
-            end=end_human,
+            start=0 if total == 0 else start_idx + 1,
+            end=0 if total == 0 else end_idx,
             total=total,
             has_prev=has_prev,
             has_next=has_next,
@@ -308,7 +325,6 @@ class MasterItemPage(QWidget):
 
     def _apply_filter_and_reset_page(self) -> None:
         query = (self._last_search_text or "").lower().strip()
-
         headers = self.table_comp.headers()
         header_to_index = {h: i for i, h in enumerate(headers)}
         col_index = header_to_index.get(self._last_filter_type, 0)
@@ -316,14 +332,10 @@ class MasterItemPage(QWidget):
         if not query:
             self.filtered_data = list(self.all_data)
         else:
-            out = []
-            for row in self.all_data:
-                if col_index >= len(row):
-                    continue
-                val = "" if row[col_index] is None else str(row[col_index])
-                if query in val.lower():
-                    out.append(row)
-            self.filtered_data = out
+            self.filtered_data = [
+                row for row in self.all_data
+                if col_index < len(row) and query in str(row[col_index] or "").lower()
+            ]
 
         self._apply_sort()
         self.current_page = 0
@@ -343,25 +355,22 @@ class MasterItemPage(QWidget):
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
-            reverse = (direction == "desc")
             idx = header_to_index.get(field)
             if idx is None:
                 continue
             self.filtered_data.sort(
                 key=lambda row, i=idx: self._get_sort_value(row, i),
-                reverse=reverse
+                reverse=(direction == "desc")
             )
 
     def _get_sort_value(self, row, idx):
+        """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
         val = row[idx] if idx < len(row) else ""
-        str_val = "" if val is None else str(val)
-        numeric_cols = ["CHANGED NO", "QTY"]
-        if self.table_comp.headers()[idx] in numeric_cols:
-            try:
-                return float(str_val.replace(",", ""))
-            except ValueError:
-                return 0
-        return str_val.lower()
+        str_val = "" if val is None else str(val).replace(",", "").strip()
+        try:
+            return (0, float(str_val))
+        except (ValueError, AttributeError):
+            return (1, str_val.lower())
 
     # ------------------------------------------------------------------
     # Pagination
@@ -374,14 +383,12 @@ class MasterItemPage(QWidget):
             self.current_page = 0
             self.render_page()
             return
-
         if page_action == -1:
             self.current_page = max(0, self.current_page - 1)
         elif page_action == 1:
             self.current_page = min(total_pages - 1, self.current_page + 1)
         else:
             self.current_page = max(0, min(int(page_action), total_pages - 1))
-
         self.render_page()
 
     def on_page_size_changed(self, new_size: int) -> None:
@@ -397,18 +404,16 @@ class MasterItemPage(QWidget):
         for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
-                if action == "Refresh":
-                    btn.clicked.connect(self.load_data)
-                elif action == "Add":
-                    btn.clicked.connect(self.handle_add_action)
-                elif action == "Excel":
-                    btn.clicked.connect(self.handle_export_action)
-                elif action == "Edit":
-                    btn.clicked.connect(self.handle_edit_action)
-                elif action == "Delete":
-                    btn.clicked.connect(self.handle_delete_action)
-                elif action == "View Detail":
-                    btn.clicked.connect(self.handle_view_detail_action)
+                mapping = {
+                    "Refresh":     self.load_data,
+                    "Add":         self.handle_add_action,
+                    "Excel":       self.handle_export_action,
+                    "Edit":        self.handle_edit_action,
+                    "Delete":      self.handle_delete_action,
+                    "View Detail": self.handle_view_detail_action,
+                }
+                if action in mapping:
+                    btn.clicked.connect(mapping[action])
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -417,9 +422,9 @@ class MasterItemPage(QWidget):
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Master Item",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="add"),
             parent=self,
-            mode="add"
+            mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
         modal.exec()
@@ -427,32 +432,34 @@ class MasterItemPage(QWidget):
     def _on_add_submitted(self, data: dict):
         import datetime
 
-        item_code    = data.get("item_code",     "").strip()
-        name         = data.get("name",           "").strip()
-        brand        = data.get("brand",          "").strip()
-        warehouse    = data.get("warehouse",      "").strip()
-        part_no      = data.get("part_no",        "").strip()
+        item_code     = data.get("item_code",     "").strip()
+        name          = data.get("name",          "").strip()
+        brand         = data.get("brand",         "").strip()
+        warehouse     = data.get("warehouse",     "").strip()
+        part_no       = data.get("part_no",       "").strip()
         interchange_1 = data.get("interchange_1", "").strip()
         interchange_2 = data.get("interchange_2", "").strip()
         interchange_3 = data.get("interchange_3", "").strip()
         interchange_4 = data.get("interchange_4", "").strip()
-        qty          = data.get("qty",            "0").strip()
-        uom          = data.get("uom",            "PCS")
+        qty           = data.get("qty",           "0").strip()
+        uom           = data.get("uom",           "PCS")
 
         if not all([item_code, name, brand, warehouse, part_no, qty]):
-            print("Required fields missing")
+            QMessageBox.warning(self, "Validation Error", "All required fields must be filled in.")
             return
 
-        added_by = "Admin"
-        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
+        for row in self.all_data:
+            if row[0].strip().lower() == item_code.lower():
+                QMessageBox.warning(self, "Duplicate Item Code",
+                                    f'Item Code "{item_code}" already exists.')
+                return
 
-        new_row = (
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.all_data.insert(0, (
             item_code, name, brand, warehouse, part_no,
             interchange_1, interchange_2, interchange_3, interchange_4,
-            qty, uom, added_by, added_at, "-", "-", "0",
-        )
-
-        self.all_data.insert(0, new_row)
+            qty, uom, "Admin", now, "-", "-", "0",
+        ))
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
@@ -468,38 +475,32 @@ class MasterItemPage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Master Item"
-
-        headers = [
+        ws.append([
             "ITEM CODE", "NAME", "BRAND", "WAREHOUSE", "PART NO",
             "INTERCHANGE 1", "INTERCHANGE 2", "INTERCHANGE 3", "INTERCHANGE 4",
             "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
-        ]
-        ws.append(headers)
-
+        ])
         for row in self.filtered_data:
-            ws.append([str(val) if val is not None else "" for val in row])
-
+            ws.append([str(v) if v is not None else "" for v in row])
         wb.save(path)
-        QMessageBox.information(self, "Export Complete", f"Exported {len(self.filtered_data)} records to:\n{path}")
+        QMessageBox.information(self, "Export Complete",
+                                f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
-
         fields = [
             (label, str(row[i]) if i < len(row) and row[i] is not None else "")
             for label, i in VIEW_DETAIL_FIELDS
         ]
-
         modal = GenericFormModal(
             title="Master Item Detail",
             subtitle="Full details for the selected item.",
             fields=fields,
             parent=self,
-            mode="view"
+            mode="view",
         )
         modal.exec()
 
@@ -507,84 +508,88 @@ class MasterItemPage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
+
+        initial = {
+            "item_code":     row[0],
+            "name":          row[1],
+            "brand":         row[2],
+            "warehouse":     row[3],
+            "part_no":       row[4],
+            "interchange_1": row[5],
+            "interchange_2": row[6],
+            "interchange_3": row[7],
+            "interchange_4": row[8],
+            "qty":           row[9],
+            "uom":           row[10],
+            # audit (readonly)
+            "added_by":      row[11],
+            "added_at":      row[12],
+            "changed_by":    row[13],
+            "changed_at":    row[14],
+            "changed_no":    row[15],
+        }
 
         modal = GenericFormModal(
             title="Edit Master Item",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="edit"),
             parent=self,
             mode="edit",
-            initial_data={
-                "item_code":     row[0],
-                "name":          row[1],
-                "brand":         row[2],
-                "warehouse":     row[3],
-                "part_no":       row[4],
-                "interchange_1": row[5],
-                "interchange_2": row[6],
-                "interchange_3": row[7],
-                "interchange_4": row[8],
-                "qty":           row[9],
-                "uom":           row[10],
-            }
+            initial_data=initial,
         )
-
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
     def _on_edit_submitted(self, idx, data):
         import datetime
 
-        item_code    = data.get("item_code",     "").strip()
-        name         = data.get("name",           "").strip()
-        brand        = data.get("brand",          "").strip()
-        warehouse    = data.get("warehouse",      "").strip()
-        part_no      = data.get("part_no",        "").strip()
+        item_code     = data.get("item_code",     "").strip()
+        name          = data.get("name",          "").strip()
+        brand         = data.get("brand",         "").strip()
+        warehouse     = data.get("warehouse",     "").strip()
+        part_no       = data.get("part_no",       "").strip()
         interchange_1 = data.get("interchange_1", "").strip()
         interchange_2 = data.get("interchange_2", "").strip()
         interchange_3 = data.get("interchange_3", "").strip()
         interchange_4 = data.get("interchange_4", "").strip()
-        qty          = data.get("qty",            "0").strip()
-        uom          = data.get("uom",            "PCS")
+        qty           = data.get("qty",           "0").strip()
+        uom           = data.get("uom",           "PCS")
 
         if not all([item_code, name, brand, warehouse, part_no, qty]):
-            print("Required fields missing")
+            QMessageBox.warning(self, "Validation Error", "All required fields must be filled in.")
             return
 
-        old_row = self.all_data[idx]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for i, row in enumerate(self.all_data):
+            if i != idx and row[0].strip().lower() == item_code.lower():
+                QMessageBox.warning(self, "Duplicate Item Code",
+                                    f'Item Code "{item_code}" already exists.')
+                return
 
-        updated_row = (
+        old_row    = self.all_data[idx]
+        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed_no = str(int(old_row[15]) + 1) if str(old_row[15]).isdigit() else "1"
+
+        self.all_data[idx] = (
             item_code, name, brand, warehouse, part_no,
             interchange_1, interchange_2, interchange_3, interchange_4,
             qty, uom,
-            old_row[11],  # added_by
-            old_row[12],  # added_at
-            "Admin",      # changed_by
-            now,        # changed_at
-            str(int(old_row[15]) + 1 if old_row[15].isdigit() else 1),
+            old_row[11], old_row[12],   # added_by, added_at unchanged
+            "Admin", now, changed_no,
         )
-
-        self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
-        row = self.all_data[idx]
-        item_code = row[0]
-        name = row[1]
-
+        item_code = self.all_data[idx][0]
+        name      = self.all_data[idx][1]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
-        msg.setText(f"Are you sure you want to delete \"{item_code} – {name}\"?")
+        msg.setText(f'Are you sure you want to delete "{item_code} – {name}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
-
         if msg.exec() == QMessageBox.Yes:
             del self.all_data[idx]
             self._apply_filter_and_reset_page()

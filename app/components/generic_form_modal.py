@@ -31,6 +31,20 @@ Usage — Form mode (replaces GenericFormModal):
         {"name": "role",  "label": "Role",  "type": "combo", "options": ["Admin", "User"], "required": True},
         {"name": "height","label": "Height","type": "text_with_unit",
          "units": ["inch", "px"], "default_unit": "inch", "required": True},
+
+        # Read-only audit field — shown greyed out with a forbidden cursor
+        {"name": "added_by", "label": "Added By", "type": "readonly"},
+
+        # Cascading combo — selecting the first populates the second
+        {
+            "name": "conn", "label": "Connection", "type": "cascade_combo",
+            "options": {"Server A": ["Table1", "Table2"], "Server B": ["Orders"]},
+            "child": "table_name",          # name of the dependent field
+        },
+        {"name": "table_name", "label": "Table Name", "type": "combo", "options": []},
+
+        # Dual inch+px inputs that live-convert each other (DPI=96 by default)
+        {"name": "height", "label": "Height", "type": "dimension_pair", "dpi": 96, "required": True},
     ]
     modal = GenericModal(
         title="Add Record",
@@ -40,6 +54,7 @@ Usage — Form mode (replaces GenericFormModal):
     )
     modal.formSubmitted.connect(lambda data: print(data))
     modal.exec()
+    # dimension_pair emits:  data["height_in"]  and  data["height_px"]
 """
 
 from PySide6.QtWidgets import (
@@ -48,7 +63,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QPushButton, QSizePolicy, QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QCursor
 
 # ------------------------------------------------------------------
 # Shared design tokens
@@ -63,8 +78,9 @@ COLORS = {
     "link":           "#6366F1",
     "field_bg":       "#F9FAFB",
     "white":          "#FFFFFF",
+    "readonly_bg":    "#F3F4F6",
+    "readonly_text":  "#9CA3AF",
 }
-
 
 
 class GenericFormModal(QDialog):
@@ -85,8 +101,11 @@ class GenericFormModal(QDialog):
     fields : list
         - In **view** mode: ``list[tuple[str, str]]`` → ``[(label, value), ...]``
         - In **add/edit** mode: ``list[dict]`` → form schema dicts with keys:
-            ``name``, ``label``, ``type`` (``"text"`` | ``"combo"`` | ``"text_with_unit"``),
-            ``required``, ``options``, ``placeholder``, ``units``, ``default_unit``
+            ``name``, ``label``, ``type`` (``"text"`` | ``"combo"`` | ``"text_with_unit"``
+            | ``"readonly"`` | ``"cascade_combo"`` | ``"dimension_pair"``),
+            ``required``, ``options``, ``placeholder``, ``units``, ``default_unit``,
+            ``child`` (for cascade_combo → name of dependent combo field),
+            ``dpi`` (for dimension_pair, default 96)
     initial_data : dict
         Pre-populated values for add/edit mode (keyed by field ``name``).
     parent : QWidget | None
@@ -118,12 +137,16 @@ class GenericFormModal(QDialog):
         self.initial_data = initial_data or {}
         self.inputs: dict[str, QWidget] = {}
 
+        # Internal map: cascade_combo parent name → child field name
+        self._cascade_map: dict[str, str] = {}
+        # Internal map: cascade_combo parent name → {parent_option: [child_options]}
+        self._cascade_options: dict[str, dict] = {}
+
         self.setWindowTitle(title)
         self.setMinimumWidth(min_width)
         self.setModal(True)
 
         if mode == "view":
-            # Frameless card style for view modal
             self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground, False)
             self.setStyleSheet(f"""
@@ -173,7 +196,6 @@ class GenericFormModal(QDialog):
         header_row.addLayout(text_block)
         header_row.addStretch()
 
-        # Close button only in view mode (form mode uses the Cancel button)
         if self.mode == "view":
             close_btn = QPushButton("✕")
             close_btn.setFixedSize(32, 32)
@@ -293,12 +315,21 @@ class GenericFormModal(QDialog):
             label = field.get("label", field["name"])
             if field.get("required"):
                 label += " *"
-            form_layout.addRow(label, widget)
+
+            # Style the form label differently for readonly fields
+            if field.get("type") == "readonly":
+                lbl = QLabel(label)
+                lbl.setStyleSheet(f"color: {COLORS['readonly_text']}; font-size: 13px;")
+                form_layout.addRow(lbl, widget)
+            else:
+                form_layout.addRow(label, widget)
 
         root.addLayout(form_layout)
         root.addStretch()
 
-        # Buttons
+        # ── Section divider above audit fields ─────────────────────────
+        # (already rendered inline; just add buttons)
+
         submit_text = "Create" if self.mode == "add" else "Save Changes"
         buttons = QDialogButtonBox()
         buttons.addButton(submit_text, QDialogButtonBox.AcceptRole)
@@ -329,18 +360,60 @@ class GenericFormModal(QDialog):
     def _create_form_widget(self, field: dict) -> QWidget:
         field_type = field.get("type", "text")
 
+        # ── readonly ──────────────────────────────────────────────────
+        if field_type == "readonly":
+            w = QLineEdit()
+            w.setReadOnly(True)
+            w.setPlaceholderText("—")
+            w.setCursor(QCursor(Qt.ForbiddenCursor))
+            w.setStyleSheet(f"""
+                QLineEdit {{
+                    padding: 8px 12px;
+                    border: 1px solid {COLORS['border_light']};
+                    border-radius: 6px;
+                    background-color: {COLORS['readonly_bg']};
+                    color: {COLORS['readonly_text']};
+                    font-size: 13px;
+                    font-style: italic;
+                }}
+            """)
+            w.setMinimumHeight(36)
+            return w
+
+        # ── text ──────────────────────────────────────────────────────
         if field_type == "text":
             w = QLineEdit()
             w.setPlaceholderText(field.get("placeholder", ""))
             self._style_input(w)
             return w
 
+        # ── combo / select ────────────────────────────────────────────
         elif field_type in ("combo", "select"):
             w = QComboBox()
             w.addItems(field.get("options", []))
             self._style_input(w)
             return w
 
+        # ── cascade_combo ─────────────────────────────────────────────
+        elif field_type == "cascade_combo":
+            options_map: dict = field.get("options", {})  # {parent_val: [child_vals]}
+            child_name: str = field.get("child", "")
+
+            w = QComboBox()
+            w.addItems(list(options_map.keys()))
+            self._style_input(w)
+
+            # Store for wiring after all fields are created
+            self._cascade_map[field["name"]] = child_name
+            self._cascade_options[field["name"]] = options_map
+
+            # Wire signal — must be done after child widget exists, so defer
+            w.currentTextChanged.connect(
+                lambda text, pname=field["name"]: self._on_cascade_changed(pname, text)
+            )
+            return w
+
+        # ── text_with_unit ────────────────────────────────────────────
         elif field_type == "text_with_unit":
             container = QWidget()
             h = QHBoxLayout(container)
@@ -367,6 +440,132 @@ class GenericFormModal(QDialog):
             container.unit_combo = unit_combo
             return container
 
+        # ── dimension_pair ────────────────────────────────────────────
+        # Two side-by-side inputs (inch and px) that live-convert each other.
+        # Emits: data["{name}_in"] and data["{name}_px"]
+        elif field_type == "dimension_pair":
+            from PySide6.QtGui import QDoubleValidator, QIntValidator
+            from PySide6.QtCore import QLocale
+
+            dpi = field.get("dpi", 96)
+            container = QWidget()
+            container.setStyleSheet("background: transparent;")
+            outer = QHBoxLayout(container)
+            outer.setContentsMargins(0, 0, 0, 0)
+            outer.setSpacing(10)
+
+            def _labeled_input(label_text, placeholder):
+                """Return (cell_widget, QLineEdit, error_label) with labels above and below."""
+                cell = QWidget()
+                cell.setStyleSheet("background: transparent;")
+                vl = QVBoxLayout(cell)
+                vl.setContentsMargins(0, 0, 0, 0)
+                vl.setSpacing(3)
+
+                header_lbl = QLabel(label_text)
+                header_lbl.setStyleSheet(
+                    f"font-size: 11px; font-weight: 600; color: {COLORS['text_muted']};"
+                    " letter-spacing: 0.04em; background: transparent;"
+                )
+
+                inp = QLineEdit()
+                inp.setPlaceholderText(placeholder)
+                self._style_input(inp)
+
+                err_lbl = QLabel("")
+                err_lbl.setStyleSheet(
+                    "font-size: 11px; color: #EF4444; background: transparent;"
+                )
+                err_lbl.setVisible(False)
+
+                vl.addWidget(header_lbl)
+                vl.addWidget(inp)
+                vl.addWidget(err_lbl)
+                return cell, inp, err_lbl
+
+            inch_cell, inch_input, inch_err = _labeled_input("INCH", "e.g. 2.5")
+            px_cell,   px_input,   px_err   = _labeled_input("PX",   "e.g. 240")
+
+            outer.addWidget(inch_cell, stretch=1)
+            outer.addWidget(px_cell,   stretch=1)
+
+            # ── Validators: only allow positive decimals / positive integers ──
+            inch_validator = QDoubleValidator(0.0001, 99999.0, 4)
+            inch_validator.setLocale(QLocale(QLocale.English))
+            inch_validator.setNotation(QDoubleValidator.StandardNotation)
+            inch_input.setValidator(inch_validator)
+
+            px_validator = QIntValidator(1, 999999)
+            px_input.setValidator(px_validator)
+
+            # ── Live conversion + live error feedback ──────────────────
+            container._converting = False
+
+            def _set_error(inp_widget, err_widget, msg: str):
+                if msg:
+                    inp_widget.setStyleSheet(
+                        f"QLineEdit {{ padding: 8px 12px; border: 1.5px solid #EF4444;"
+                        f" border-radius: 6px; background-color: #FEF2F2;"
+                        f" color: {COLORS['text_primary']}; font-size: 13px; }}"
+                    )
+                    err_widget.setText(msg)
+                    err_widget.setVisible(True)
+                else:
+                    self._style_input(inp_widget)
+                    err_widget.setVisible(False)
+
+            def _inch_changed(text, _dpi=dpi):
+                if container._converting:
+                    return
+                container._converting = True
+                try:
+                    val = float(text)
+                    if val <= 0:
+                        raise ValueError("zero")
+                    px_input.setText(str(int(round(val * _dpi))))
+                    _set_error(inch_input, inch_err, "")
+                    _set_error(px_input,   px_err,   "")
+                except ValueError:
+                    px_input.clear()
+                    if text.strip():
+                        _set_error(inch_input, inch_err, "Must be a positive number")
+                    else:
+                        _set_error(inch_input, inch_err, "")
+                finally:
+                    container._converting = False
+
+            def _px_changed(text, _dpi=dpi):
+                if container._converting:
+                    return
+                container._converting = True
+                try:
+                    val = int(text)
+                    if val <= 0:
+                        raise ValueError("zero")
+                    inch_input.setText(f"{val / _dpi:.4f}")
+                    _set_error(px_input,   px_err,   "")
+                    _set_error(inch_input, inch_err, "")
+                except ValueError:
+                    inch_input.clear()
+                    if text.strip():
+                        _set_error(px_input, px_err, "Must be a positive whole number")
+                    else:
+                        _set_error(px_input, px_err, "")
+                finally:
+                    container._converting = False
+
+            inch_input.textEdited.connect(_inch_changed)
+            px_input.textEdited.connect(_px_changed)
+
+            # Attach sub-widgets so populate/validate/collect can reach them
+            container.inch_input = inch_input
+            container.px_input   = px_input
+            container.inch_err   = inch_err
+            container.px_err     = px_err
+            container._set_error = _set_error
+            container._field_type = "dimension_pair"
+            return container
+
         else:
             raise ValueError(f"Unsupported field type: {field_type!r}")
 
@@ -387,19 +586,73 @@ class GenericFormModal(QDialog):
         """)
 
     # ------------------------------------------------------------------
+    # Cascade logic
+    # ------------------------------------------------------------------
+
+    def _on_cascade_changed(self, parent_name: str, selected_text: str):
+        """Repopulate the child combo when the parent selection changes."""
+        child_name = self._cascade_map.get(parent_name)
+        if not child_name or child_name not in self.inputs:
+            return
+
+        child_widget = self.inputs[child_name]
+        if not isinstance(child_widget, QComboBox):
+            return
+
+        options_map = self._cascade_options.get(parent_name, {})
+        child_options = options_map.get(selected_text, [])
+
+        child_widget.blockSignals(True)
+        child_widget.clear()
+        child_widget.addItems(child_options)
+        child_widget.blockSignals(False)
+
+    # ------------------------------------------------------------------
     # Form helpers
     # ------------------------------------------------------------------
 
     def _populate_initial_data(self):
         for name, widget in self.inputs.items():
-            if name not in self.initial_data:
+            if name not in self.initial_data and \
+               f"{name}_in" not in self.initial_data and \
+               f"{name}_px" not in self.initial_data:
                 continue
-            value = self.initial_data[name]
+
+            # dimension_pair: accepts {name}_in / {name}_px  OR  just {name} (treated as inch)
+            if getattr(widget, "_field_type", None) == "dimension_pair":
+                in_val = self.initial_data.get(f"{name}_in") or self.initial_data.get(name, "")
+                px_val = self.initial_data.get(f"{name}_px", "")
+                if in_val:
+                    widget.inch_input.setText(str(in_val))
+                    # derive px if not supplied
+                    if not px_val:
+                        try:
+                            dpi = next(
+                                (f.get("dpi", 96) for f in self.fields_config if f.get("name") == name), 96
+                            )
+                            px_val = str(int(round(float(in_val) * dpi)))
+                        except ValueError:
+                            pass
+                if px_val:
+                    widget.px_input.setText(str(px_val))
+                continue
+
+            value = self.initial_data.get(name)
+            if value is None:
+                continue
 
             if isinstance(widget, QLineEdit):
                 widget.setText(str(value))
             elif isinstance(widget, QComboBox):
+                if name in self._cascade_map:
+                    self._on_cascade_changed(name, str(value))
                 widget.setCurrentText(str(value))
+                if name in self._cascade_map:
+                    child_name = self._cascade_map[name]
+                    child_val = self.initial_data.get(child_name, "")
+                    child_widget = self.inputs.get(child_name)
+                    if isinstance(child_widget, QComboBox) and child_val:
+                        child_widget.setCurrentText(str(child_val))
             elif hasattr(widget, "text_input"):
                 widget.text_input.setText(str(value))
                 unit_key = f"{name}_unit"
@@ -409,26 +662,75 @@ class GenericFormModal(QDialog):
     def _validate(self) -> list[str]:
         errors = []
         for field in self.fields_config:
-            if not field.get("required"):
+            if field.get("type") in ("readonly",):
                 continue
             widget = self.inputs[field["name"]]
-            label = field.get("label", field["name"])
+            label  = field.get("label", field["name"])
+            is_required = field.get("required", False)
 
-            if isinstance(widget, QLineEdit):
-                if not widget.text().strip():
+            if getattr(widget, "_field_type", None) == "dimension_pair":
+                in_text = widget.inch_input.text().strip()
+                px_text = widget.px_input.text().strip()
+
+                # Required check
+                if is_required and not in_text and not px_text:
+                    errors.append(f"{label}: both Inch and PX are empty")
+                    widget._set_error(widget.inch_input, widget.inch_err, "Required")
+                    widget._set_error(widget.px_input,   widget.px_err,   "Required")
+                    continue
+
+                # Inch value check
+                if in_text:
+                    try:
+                        v = float(in_text)
+                        if v <= 0:
+                            raise ValueError
+                        widget._set_error(widget.inch_input, widget.inch_err, "")
+                    except ValueError:
+                        errors.append(f"{label} (Inch): must be a positive number")
+                        widget._set_error(widget.inch_input, widget.inch_err,
+                                          "Must be a positive number")
+
+                # PX value check
+                if px_text:
+                    try:
+                        v = int(px_text)
+                        if v <= 0:
+                            raise ValueError
+                        widget._set_error(widget.px_input, widget.px_err, "")
+                    except ValueError:
+                        errors.append(f"{label} (PX): must be a positive whole number")
+                        widget._set_error(widget.px_input, widget.px_err,
+                                          "Must be a positive whole number")
+
+            elif isinstance(widget, QLineEdit):
+                if is_required and not widget.text().strip():
                     errors.append(f"{label} is required")
+                    widget.setStyleSheet(
+                        f"QLineEdit {{ padding: 8px 12px; border: 1.5px solid #EF4444;"
+                        f" border-radius: 6px; background-color: #FEF2F2;"
+                        f" color: {COLORS['text_primary']}; font-size: 13px; }}"
+                    )
+                else:
+                    self._style_input(widget)
+
             elif isinstance(widget, QComboBox):
-                if not widget.currentText():
+                if is_required and not widget.currentText():
                     errors.append(f"{label} is required")
+
             elif hasattr(widget, "text_input"):
-                if not widget.text_input.text().strip():
+                if is_required and not widget.text_input.text().strip():
                     errors.append(f"{label} is required")
+
         return errors
 
     def _collect_data(self) -> dict:
         data = {}
         for name, widget in self.inputs.items():
-            if isinstance(widget, QLineEdit):
+            if getattr(widget, "_field_type", None) == "dimension_pair":
+                data[f"{name}_in"] = widget.inch_input.text().strip()
+                data[f"{name}_px"] = widget.px_input.text().strip()
+            elif isinstance(widget, QLineEdit):
                 data[name] = widget.text().strip()
             elif isinstance(widget, QComboBox):
                 data[name] = widget.currentText()

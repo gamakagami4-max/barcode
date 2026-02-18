@@ -13,23 +13,57 @@ from components.generic_form_modal import GenericFormModal
 
 # --- Design Tokens ---
 COLORS = {
-    "bg_main": "#F8FAFC",
-    "link": "#6366F1",
-    "border": "#E2E8F0",
-    "text_muted": "#94A3B8"
+    "bg_main":   "#F8FAFC",
+    "link":      "#6366F1",
+    "border":    "#E2E8F0",
+    "text_muted":"#94A3B8"
 }
 
 # Row tuple shape:
-# (CODE, TYPE CASE, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO, bg, fg, misc)
+# (CODE, TYPE_CASE, ADDED_BY, ADDED_AT, CHANGED_BY, CHANGED_AT, CHANGED_NO, bg, fg, misc)
 VIEW_DETAIL_FIELDS = [
-    ("Code",        0),
-    ("Type Case",   1),
-    ("Added By",    2),
-    ("Added At",    3),
-    ("Changed By",  4),
-    ("Changed At",  5),
-    ("Changed No",  6),
+    ("Code",       0),
+    ("Type Case",  1),
+    ("Added By",   2),
+    ("Added At",   3),
+    ("Changed By", 4),
+    ("Changed At", 5),
+    ("Changed No", 6),
 ]
+
+
+def _build_form_schema(mode: str = "add") -> list[dict]:
+    """
+    Add mode  → editable Code + Type Case only.
+    Edit mode → same editable fields + 5 readonly audit fields below.
+    """
+    schema = [
+        {
+            "name": "code",
+            "label": "Code",
+            "type": "text",
+            "required": True,
+            "placeholder": "Enter brand code",
+        },
+        {
+            "name": "type_case",
+            "label": "Type Case",
+            "type": "combo",
+            "options": ["TITLE", "UPPER"],
+            "required": True,
+        },
+    ]
+
+    if mode == "edit":
+        schema += [
+            {"name": "added_by",   "label": "Added By",   "type": "readonly"},
+            {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+            {"name": "changed_by", "label": "Changed By", "type": "readonly"},
+            {"name": "changed_at", "label": "Changed At", "type": "readonly"},
+            {"name": "changed_no", "label": "Changed No", "type": "readonly"},
+        ]
+
+    return schema
 
 
 class BrandCasePage(QWidget):
@@ -44,28 +78,9 @@ class BrandCasePage(QWidget):
         self._last_search_text = ""
         self._sort_fields = []
         self._sort_directions = {}
-        self.form_schema = [
-            {
-                "name": "code",
-                "label": "Code",
-                "type": "text",
-                "required": True,
-                "placeholder": "Enter brand code"
-            },
-            {
-                "name": "type_case",
-                "label": "Type Case",
-                "type": "combo",
-                "options": ["TITLE", "UPPER"],
-                "required": True
-            }
-        ]
         self.init_ui()
 
-        # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
-
-        # Initially disable selection-dependent buttons
         self._update_selection_dependent_state(False)
 
         self.load_sample_data()
@@ -94,7 +109,10 @@ class BrandCasePage(QWidget):
         self.main_layout.addSpacing(5)
 
         # 3. Table
-        self.table_comp = StandardTable(["CODE", "TYPE CASE", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"])
+        self.table_comp = StandardTable([
+            "CODE", "TYPE CASE", "ADDED BY", "ADDED AT",
+            "CHANGED BY", "CHANGED AT", "CHANGED NO"
+        ])
         self.table = self.table_comp.table
 
         h_header = self.table.horizontalHeader()
@@ -118,7 +136,6 @@ class BrandCasePage(QWidget):
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
-        # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
     # ------------------------------------------------------------------
@@ -126,8 +143,7 @@ class BrandCasePage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_row_selection_changed(self):
-        has_selection = bool(self.table.selectedItems())
-        self._update_selection_dependent_state(has_selection)
+        self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
         for label in ("Edit", "Delete", "View Detail"):
@@ -139,13 +155,10 @@ class BrandCasePage(QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return None
-
         table_row = selected_rows[0].row()
         global_index = (self.current_page * self.page_size) + table_row
-
         if global_index >= len(self.filtered_data):
             return None
-
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
@@ -157,18 +170,16 @@ class BrandCasePage(QWidget):
         for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
-                if action == "Refresh":
-                    btn.clicked.connect(self.load_sample_data)
-                elif action == "Add":
-                    btn.clicked.connect(self.handle_add_action)
-                elif action == "Excel":
-                    btn.clicked.connect(self.handle_export_action)
-                elif action == "Edit":
-                    btn.clicked.connect(self.handle_edit_action)
-                elif action == "Delete":
-                    btn.clicked.connect(self.handle_delete_action)
-                elif action == "View Detail":
-                    btn.clicked.connect(self.handle_view_detail_action)
+                mapping = {
+                    "Refresh":     self.load_sample_data,
+                    "Add":         self.handle_add_action,
+                    "Excel":       self.handle_export_action,
+                    "Edit":        self.handle_edit_action,
+                    "Delete":      self.handle_delete_action,
+                    "View Detail": self.handle_view_detail_action,
+                }
+                if action in mapping:
+                    btn.clicked.connect(mapping[action])
 
     # ------------------------------------------------------------------
     # Data
@@ -192,10 +203,10 @@ class BrandCasePage(QWidget):
         end_idx = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
+        display_indices = [0, 1, 2, 3, 4, 5, 6]
+
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            display_indices = [0, 1, 2, 3, 4, 5, 6]
-
             for c_idx, data_idx in enumerate(display_indices):
                 val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
                 item = QTableWidgetItem(val)
@@ -215,11 +226,9 @@ class BrandCasePage(QWidget):
 
         has_prev = self.current_page > 0
         has_next = end_idx < total
-        start_human = 0 if total == 0 else start_idx + 1
-        end_human = 0 if total == 0 else end_idx
         self.pagination.update(
-            start=start_human,
-            end=end_human,
+            start=0 if total == 0 else start_idx + 1,
+            end=0 if total == 0 else end_idx,
             total=total,
             has_prev=has_prev,
             has_next=has_next,
@@ -272,25 +281,22 @@ class BrandCasePage(QWidget):
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
-            reverse = direction == "desc"
             idx = header_to_index.get(field)
             if idx is None:
                 continue
             self.filtered_data.sort(
                 key=lambda row, i=idx: self._get_sort_value(row, i),
-                reverse=reverse
+                reverse=(direction == "desc")
             )
 
     def _get_sort_value(self, row, idx):
+        """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
         val = row[idx] if idx < len(row) else ""
-        str_val = "" if val is None else str(val)
-        numeric_cols = ["CHANGED NO", "QTY"]
-        if self.table_comp.headers()[idx] in numeric_cols:
-            try:
-                return float(str_val)
-            except ValueError:
-                return 0
-        return str_val.lower()
+        str_val = "" if val is None else str(val).strip()
+        try:
+            return (0, float(str_val))
+        except (ValueError, AttributeError):
+            return (1, str_val.lower())
 
     # ------------------------------------------------------------------
     # Pagination
@@ -303,14 +309,12 @@ class BrandCasePage(QWidget):
             self.current_page = 0
             self.render_page()
             return
-
         if page_action == -1:
             self.current_page = max(0, self.current_page - 1)
         elif page_action == 1:
             self.current_page = min(total_pages - 1, self.current_page + 1)
         else:
             self.current_page = max(0, min(int(page_action), total_pages - 1))
-
         self.render_page()
 
     def on_page_size_changed(self, new_size: int):
@@ -325,9 +329,9 @@ class BrandCasePage(QWidget):
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Brand Case",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="add"),
             parent=self,
-            mode="add"
+            mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
         modal.exec()
@@ -335,19 +339,23 @@ class BrandCasePage(QWidget):
     def _on_add_submitted(self, data: dict):
         import datetime
 
-        code = data.get("code", "").strip()
+        code      = data.get("code",      "").strip()
         type_case = data.get("type_case", "TITLE")
 
         if not code:
-            print("Code is required")
+            QMessageBox.warning(self, "Validation Error", "Code is required.")
             return
 
-        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
-        added_by = "Admin"
-        added_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date + time
+        for row in self.all_data:
+            if row[0].strip().lower() == code.lower():
+                QMessageBox.warning(self, "Duplicate Code",
+                                    f'Code "{code}" already exists.')
+                return
 
-        new_row = (code, type_case, added_by, added_at, "-", "-", "0", bg, fg, "-")
-        self.all_data.insert(0, new_row)
+        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        self.all_data.insert(0, (code, type_case, "Admin", now, "-", "-", "0", bg, fg, "-"))
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
@@ -363,34 +371,29 @@ class BrandCasePage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Brand Case"
-
-        headers = ["CODE", "TYPE CASE", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
-        ws.append(headers)
-
+        ws.append(["CODE", "TYPE CASE", "ADDED BY", "ADDED AT",
+                   "CHANGED BY", "CHANGED AT", "CHANGED NO"])
         for row in self.filtered_data:
             ws.append([str(row[i]) if row[i] is not None else "" for i in range(7)])
-
         wb.save(path)
-        QMessageBox.information(self, "Export Complete", f"Exported {len(self.filtered_data)} records to:\n{path}")
+        QMessageBox.information(self, "Export Complete",
+                                f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
-
         fields = [
             (label, str(row[i]) if i < len(row) and row[i] is not None else "")
             for label, i in VIEW_DETAIL_FIELDS
         ]
-
         modal = GenericFormModal(
             title="Brand Case Detail",
             subtitle="Full details for the selected brand case.",
             fields=fields,
             parent=self,
-            mode="view"
+            mode="view",
         )
         modal.exec()
 
@@ -398,68 +401,69 @@ class BrandCasePage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
         row = self.all_data[idx]
+
+        initial = {
+            "code":      row[0],
+            "type_case": row[1],
+            # audit (readonly)
+            "added_by":   row[2],
+            "added_at":   row[3],
+            "changed_by": row[4],
+            "changed_at": row[5],
+            "changed_no": row[6],
+        }
 
         modal = GenericFormModal(
             title="Edit Brand Case",
-            fields=self.form_schema,
+            fields=_build_form_schema(mode="edit"),
             parent=self,
             mode="edit",
-            initial_data={
-                "code":      row[0],
-                "type_case": row[1],
-            }
+            initial_data=initial,
         )
-
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
     def _on_edit_submitted(self, idx, data):
         import datetime
 
-        code = data.get("code", "").strip()
+        code      = data.get("code",      "").strip()
         type_case = data.get("type_case", "TITLE")
 
         if not code:
-            print("Code is required")
+            QMessageBox.warning(self, "Validation Error", "Code is required.")
             return
 
+        for i, row in enumerate(self.all_data):
+            if i != idx and row[0].strip().lower() == code.lower():
+                QMessageBox.warning(self, "Duplicate Code",
+                                    f'Code "{code}" already exists.')
+                return
+
         bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
-        old_row = self.all_data[idx]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        old_row    = self.all_data[idx]
+        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed_no = str(int(old_row[6]) + 1) if str(old_row[6]).isdigit() else "1"
 
-        updated_row = (
-            code,
-            type_case,
-            old_row[2],  # added_by
-            old_row[3],  # added_at
-            "Admin",     # changed_by
-            now,       # changed_at
-            str(int(old_row[6]) + 1 if str(old_row[6]).isdigit() else 1),
-            bg,
-            fg,
-            old_row[9],  # misc
+        self.all_data[idx] = (
+            code, type_case,
+            old_row[2], old_row[3],   # added_by, added_at unchanged
+            "Admin", now, changed_no,
+            bg, fg, old_row[9],
         )
-
-        self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-
-        row = self.all_data[idx]
-        code = row[0]
-
+        code = self.all_data[idx][0]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
-        msg.setText(f"Are you sure you want to delete \"{code}\"?")
+        msg.setText(f'Are you sure you want to delete "{code}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
-
         if msg.exec() == QMessageBox.Yes:
             del self.all_data[idx]
             self._apply_filter_and_reset_page()
