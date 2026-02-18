@@ -117,7 +117,7 @@ class BrandCasePage(QWidget):
 
         h_header = self.table.horizontalHeader()
         h_header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 250)
+        h_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         h_header.setSectionResizeMode(1, QHeaderView.Stretch)
         h_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         h_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
