@@ -9,7 +9,7 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-
+import re
 # --- Design Tokens ---
 COLORS = {
     "bg_main": "#F8FAFC",
@@ -315,6 +315,31 @@ class ProductTypePage(QWidget):
     # Action handlers
     # ------------------------------------------------------------------
 
+    import re
+
+    def _validate_translation_input(self, value: str, field_label: str) -> bool:
+        """
+        Allows only letters, spaces, hyphen and apostrophe.
+        No numbers or special symbols.
+        """
+        if not value:
+            QMessageBox.warning(self, "Validation Error",
+                                f"{field_label} cannot be empty.")
+            return False
+
+        pattern = r"^[A-Za-zÀ-ÿ\s'-]+$"  # allows accented characters too
+        if not re.fullmatch(pattern, value):
+            QMessageBox.warning(
+                self,
+                "Invalid Input",
+                f"{field_label} must contain only letters.\n"
+                "Numbers and special characters are not allowed."
+            )
+            return False
+
+        return True
+
+
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Product Type Translation",
@@ -331,20 +356,38 @@ class ProductTypePage(QWidget):
         inggris = data.get("inggris", "").strip()
         spanyol = data.get("spanyol", "").strip()
         prancis = data.get("prancis", "").strip()
-        jerman  = data.get("jerman",  "").strip()
+        jerman  = data.get("jerman", "").strip()
 
-        if not inggris:
-            QMessageBox.warning(self, "Validation Error", "English (Inggris) translation is required.")
+        # --- Required English ---
+        if not self._validate_translation_input(inggris, "English (Inggris)"):
             return
 
+        # --- Optional fields (validate only if filled) ---
+        for value, label in [
+            (spanyol, "Spanish (Spanyol)"),
+            (prancis, "French (Prancis)"),
+            (jerman,  "German (Jerman)")
+        ]:
+            if value and not self._validate_translation_input(value, label):
+                return
+
+        # --- Duplicate check ---
         for row in self.all_data:
             if row[0].strip().lower() == inggris.lower():
-                QMessageBox.warning(self, "Duplicate Entry",
-                                    f'English "{inggris}" already exists.')
+                QMessageBox.warning(
+                    self,
+                    "Duplicate Entry",
+                    f'English "{inggris}" already exists.'
+                )
                 return
 
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_data.insert(0, (inggris, spanyol, prancis, jerman, "Admin", now, "-", "-", "0"))
+
+        self.all_data.insert(0, (
+            inggris, spanyol, prancis, jerman,
+            "Admin", now, "-", "-", "0"
+        ))
+
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
@@ -421,27 +464,53 @@ class ProductTypePage(QWidget):
         inggris = data.get("inggris", "").strip()
         spanyol = data.get("spanyol", "").strip()
         prancis = data.get("prancis", "").strip()
-        jerman  = data.get("jerman",  "").strip()
+        jerman  = data.get("jerman", "").strip()
 
-        if not inggris:
-            QMessageBox.warning(self, "Validation Error", "English (Inggris) translation is required.")
+        # --- Required English ---
+        if not self._validate_translation_input(inggris, "English (Inggris)"):
             return
 
-        for i, row in enumerate(self.all_data):
-            if i != idx and row[0].strip().lower() == inggris.lower():
-                QMessageBox.warning(self, "Duplicate Entry",
-                                    f'English "{inggris}" already exists.')
+        # --- Optional fields ---
+        for value, label in [
+            (spanyol, "Spanish (Spanyol)"),
+            (prancis, "French (Prancis)"),
+            (jerman,  "German (Jerman)")
+        ]:
+            if value and not self._validate_translation_input(value, label):
                 return
 
-        old_row    = self.all_data[idx]
-        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # --- Duplicate check ---
+        for i, row in enumerate(self.all_data):
+            if i != idx and row[0].strip().lower() == inggris.lower():
+                QMessageBox.warning(
+                    self,
+                    "Duplicate Entry",
+                    f'English "{inggris}" already exists.'
+                )
+                return
+
+        # --- Confirmation ---
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Update",
+            f'Are you sure you want to update "{inggris}"?',
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel
+        )
+
+        if confirm != QMessageBox.Yes:
+            return
+
+        old_row = self.all_data[idx]
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         changed_no = str(int(old_row[8]) + 1) if str(old_row[8]).isdigit() else "1"
 
         self.all_data[idx] = (
             inggris, spanyol, prancis, jerman,
-            old_row[4], old_row[5],   # added_by, added_at unchanged
+            old_row[4], old_row[5],  # keep added_by, added_at
             "Admin", now, changed_no,
         )
+
         self._apply_filter_and_reset_page()
 
     def handle_delete_action(self):
