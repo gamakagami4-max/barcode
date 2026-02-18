@@ -164,6 +164,10 @@ class GenericFormModal(QDialog):
         if mode in ("add", "edit"):
             self._populate_initial_data()
 
+    def exec(self):
+        """Override exec() to use show() so the main window stays fully interactive."""
+        self.show()
+
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
