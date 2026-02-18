@@ -144,7 +144,7 @@ class GenericFormModal(QDialog):
 
         self.setWindowTitle(title)
         self.setMinimumWidth(min_width)
-        self.setModal(True)
+        self.setModal(False)
 
         if mode == "view":
             self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
@@ -304,8 +304,33 @@ class GenericFormModal(QDialog):
     # ------------------------------------------------------------------
 
     def _build_form_body(self, root: QVBoxLayout):
-        form_layout = QFormLayout()
+        from PySide6.QtWidgets import QAbstractScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setMaximumHeight(460)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.verticalScrollBar().setSingleStep(12)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent; width: 6px; margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D5DB; border-radius: 3px; min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover { background: #9CA3AF; }
+            QScrollBar::handle:vertical:pressed { background: #6B7280; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+        """)
+
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background: transparent;")
+
+        form_layout = QFormLayout(scroll_content)
         form_layout.setSpacing(12)
+        form_layout.setContentsMargins(0, 0, 12, 0)
         form_layout.setLabelAlignment(Qt.AlignRight)
 
         for field in self.fields_config:
@@ -316,7 +341,6 @@ class GenericFormModal(QDialog):
             if field.get("required"):
                 label += " *"
 
-            # Style the form label differently for readonly fields
             if field.get("type") == "readonly":
                 lbl = QLabel(label)
                 lbl.setStyleSheet(f"color: {COLORS['readonly_text']}; font-size: 13px;")
@@ -324,11 +348,10 @@ class GenericFormModal(QDialog):
             else:
                 form_layout.addRow(label, widget)
 
-        root.addLayout(form_layout)
+        scroll.setWidget(scroll_content)
+        root.addWidget(scroll)
+        root.addSpacing(16)
         root.addStretch()
-
-        # ── Section divider above audit fields ─────────────────────────
-        # (already rendered inline; just add buttons)
 
         submit_text = "Create" if self.mode == "add" else "Save Changes"
         buttons = QDialogButtonBox()
