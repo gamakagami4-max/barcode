@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, 
+    QWidget, QVBoxLayout, QLabel,
     QTableWidgetItem, QHBoxLayout, QHeaderView
 )
 from PySide6.QtCore import Qt
@@ -10,6 +10,7 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+from components.view_detail_modal import ViewDetailModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -18,6 +19,19 @@ COLORS = {
     "border": "#E2E8F0",
     "text_muted": "#94A3B8"
 }
+
+# Row tuple shape:
+# (CODE, TYPE CASE, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO, bg, fg, misc)
+VIEW_DETAIL_FIELDS = [
+    ("Code",        0),
+    ("Type Case",   1),
+    ("Added By",    2),
+    ("Added At",    3),
+    ("Changed By",  4),
+    ("Changed At",  5),
+    ("Changed No",  6),
+]
+
 
 class BrandCasePage(QWidget):
     def __init__(self):
@@ -42,21 +56,20 @@ class BrandCasePage(QWidget):
             {
                 "name": "type_case",
                 "label": "Type Case",
-                "type": "combo",  # Fixed from "select" to "combo"
+                "type": "combo",
                 "options": ["TITLE", "UPPER"],
                 "required": True
             }
         ]
         self.init_ui()
 
-        # Track table selection to enable Edit/Delete
+        # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
 
-        # Initially disable edit/delete
-        self._update_edit_delete_state(False)
+        # Initially disable selection-dependent buttons
+        self._update_selection_dependent_state(False)
 
         self.load_sample_data()
-
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
@@ -65,7 +78,7 @@ class BrandCasePage(QWidget):
         self.main_layout.setSpacing(0)
 
         # 1. Header
-        enabled = ["Add", "Excel", "Refresh"]
+        enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Brand Case",
             subtitle="Configure casing rules for brand codes (TITLE vs UPPER).",
@@ -87,7 +100,7 @@ class BrandCasePage(QWidget):
 
         h_header = self.table.horizontalHeader()
         h_header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 250)  # CODE
+        self.table.setColumnWidth(0, 250)
         h_header.setSectionResizeMode(1, QHeaderView.Stretch)
         h_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         h_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
@@ -105,22 +118,23 @@ class BrandCasePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
-        
+
         # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
+    # ------------------------------------------------------------------
+    # Selection helpers
+    # ------------------------------------------------------------------
+
     def _on_row_selection_changed(self):
         has_selection = bool(self.table.selectedItems())
-        self._update_edit_delete_state(has_selection)
+        self._update_selection_dependent_state(has_selection)
 
-    def _update_edit_delete_state(self, enabled: bool):
-        edit_btn = self.header.get_action_button("Edit")
-        delete_btn = self.header.get_action_button("Delete")
-
-        if edit_btn:
-            edit_btn.setEnabled(enabled)
-        if delete_btn:
-            delete_btn.setEnabled(enabled)
+    def _update_selection_dependent_state(self, enabled: bool):
+        for label in ("Edit", "Delete", "View Detail"):
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(enabled)
 
     def _get_selected_global_index(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -136,8 +150,12 @@ class BrandCasePage(QWidget):
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
+    # ------------------------------------------------------------------
+    # Header action wiring
+    # ------------------------------------------------------------------
+
     def _connect_header_actions(self):
-        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
                 if action == "Refresh":
@@ -150,11 +168,17 @@ class BrandCasePage(QWidget):
                     btn.clicked.connect(self.handle_edit_action)
                 elif action == "Delete":
                     btn.clicked.connect(self.handle_delete_action)
+                elif action == "View Detail":
+                    btn.clicked.connect(self.handle_view_detail_action)
+
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
 
     def load_sample_data(self):
         case_data = [
             ("CAR", "TITLE", "Admin", "2024-01-01", "Admin", "2024-01-02", "1", "#DCFCE7", "#166534", "-"),
-            ("FVP", "UPPER", "User1", "2024-01-05", "-", "-", "0", "#FFEDD5", "#9A3412", "-"),
+            ("FVP", "UPPER", "User1", "2024-01-05", "-",     "-",          "0", "#FFEDD5", "#9A3412", "-"),
         ]
         self.all_data = case_data * 20
         self._apply_filter_and_reset_page()
@@ -171,7 +195,7 @@ class BrandCasePage(QWidget):
 
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            display_indices = [0, 1, 2, 3, 4, 5, 6]  # Table columns to display
+            display_indices = [0, 1, 2, 3, 4, 5, 6]
 
             for c_idx, data_idx in enumerate(display_indices):
                 val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
@@ -179,25 +203,17 @@ class BrandCasePage(QWidget):
                 font = item.font()
                 font.setPointSize(9)
                 item.setFont(font)
-
                 if c_idx == 0:
                     item.setForeground(QColor(COLORS["link"]))
-
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 self.table.setItem(r, c_idx, item)
 
-            # Fill missing columns if necessary
             for col in range(len(display_indices), self.table.columnCount()):
                 self.table.setItem(r, col, QTableWidgetItem("-"))
 
-        # Row numbers
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
-        # Keep sorting disabled to avoid conflicts
-        # self.table.setSortingEnabled(True)
-
-        # Update pagination
         has_prev = self.current_page > 0
         has_next = end_idx < total
         start_human = 0 if total == 0 else start_idx + 1
@@ -212,6 +228,10 @@ class BrandCasePage(QWidget):
             page_size=self.page_size,
             available_page_sizes=self.available_page_sizes,
         )
+
+    # ------------------------------------------------------------------
+    # Filter / sort
+    # ------------------------------------------------------------------
 
     def filter_table(self, filter_type, search_text):
         self._last_filter_type = filter_type
@@ -236,28 +256,6 @@ class BrandCasePage(QWidget):
             ]
 
         self._apply_sort()
-        self.current_page = 0
-        self.render_page()
-
-    def on_page_changed(self, page_action: int):
-        total = len(self.filtered_data) if self.filtered_data else 0
-        total_pages = (total + self.page_size - 1) // self.page_size
-        if total_pages <= 0:
-            self.current_page = 0
-            self.render_page()
-            return
-
-        if page_action == -1:
-            self.current_page = max(0, self.current_page - 1)
-        elif page_action == 1:
-            self.current_page = min(total_pages - 1, self.current_page + 1)
-        else:
-            self.current_page = max(0, min(int(page_action), total_pages - 1))
-
-        self.render_page()
-
-    def on_page_size_changed(self, new_size: int):
-        self.page_size = new_size
         self.current_page = 0
         self.render_page()
 
@@ -295,6 +293,36 @@ class BrandCasePage(QWidget):
                 return 0
         return str_val.lower()
 
+    # ------------------------------------------------------------------
+    # Pagination
+    # ------------------------------------------------------------------
+
+    def on_page_changed(self, page_action: int):
+        total = len(self.filtered_data) if self.filtered_data else 0
+        total_pages = (total + self.page_size - 1) // self.page_size
+        if total_pages <= 0:
+            self.current_page = 0
+            self.render_page()
+            return
+
+        if page_action == -1:
+            self.current_page = max(0, self.current_page - 1)
+        elif page_action == 1:
+            self.current_page = min(total_pages - 1, self.current_page + 1)
+        else:
+            self.current_page = max(0, min(int(page_action), total_pages - 1))
+
+        self.render_page()
+
+    def on_page_size_changed(self, new_size: int):
+        self.page_size = new_size
+        self.current_page = 0
+        self.render_page()
+
+    # ------------------------------------------------------------------
+    # Action handlers
+    # ------------------------------------------------------------------
+
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Brand Case",
@@ -307,39 +335,44 @@ class BrandCasePage(QWidget):
 
     def _on_add_submitted(self, data: dict):
         import datetime
-        
+
         code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
-        
+
         if not code:
             print("Code is required")
             return
-        
-        if type_case == "TITLE":
-            bg, fg = "#DCFCE7", "#166534"
-        else:
-            bg, fg = "#FFEDD5", "#9A3412"
 
+        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
         added_by = "Admin"
         added_at = datetime.date.today().strftime("%Y-%m-%d")
-        changed_by = "-"
-        changed_at = "-"
-        changed_no = "0"
 
-        new_row = (
-            code,
-            type_case,
-            added_by,
-            added_at,
-            changed_by,
-            changed_at,
-            changed_no,
-            bg,
-            fg,
-            "-"
-        )
+        new_row = (code, type_case, added_by, added_at, "-", "-", "0", bg, fg, "-")
         self.all_data.insert(0, new_row)
         self._apply_filter_and_reset_page()
+
+    def handle_export_action(self):
+        print("Export clicked")
+
+    def handle_view_detail_action(self):
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        fields = [
+            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
+            for label, i in VIEW_DETAIL_FIELDS
+        ]
+
+        modal = ViewDetailModal(
+            title="Brand Case Detail",
+            subtitle="Full details for the selected brand case.",
+            fields=fields,
+            parent=self,
+        )
+        modal.exec()
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -354,14 +387,13 @@ class BrandCasePage(QWidget):
             parent=self,
             mode="edit",
             initial_data={
-                "code": row[0],
+                "code":      row[0],
                 "type_case": row[1],
             }
         )
 
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
-
 
     def _on_edit_submitted(self, idx, data):
         import datetime
@@ -373,11 +405,7 @@ class BrandCasePage(QWidget):
             print("Code is required")
             return
 
-        if type_case == "TITLE":
-            bg, fg = "#DCFCE7", "#166534"
-        else:
-            bg, fg = "#FFEDD5", "#9A3412"
-
+        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
         old_row = self.all_data[idx]
         today = datetime.date.today().strftime("%Y-%m-%d")
 
@@ -396,11 +424,6 @@ class BrandCasePage(QWidget):
 
         self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
-
-
-   
-    def handle_export_action(self):
-        print("Export clicked")
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()

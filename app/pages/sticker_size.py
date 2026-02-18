@@ -6,6 +6,23 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+from components.view_detail_modal import ViewDetailModal
+
+# Maps human-readable labels to their index inside a row tuple.
+# Row tuple shape: (NAME, HEIGHT_IN, WIDTH_IN, HEIGHT_PX, WIDTH_PX, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+VIEW_DETAIL_FIELDS = [
+    ("Name",              0),
+    ("Height (inch)",     1),
+    ("Width (inch)",      2),
+    ("Height (pixel)",    3),
+    ("Width (pixel)",     4),
+    ("Added By",          5),
+    ("Added At",          6),
+    ("Changed By",        7),
+    ("Changed At",        8),
+    ("Changed No",        9),
+]
+
 
 class StickerSizePage(QWidget):
     def __init__(self):
@@ -29,11 +46,11 @@ class StickerSizePage(QWidget):
         self.main_layout.setSpacing(0)
 
         # 1. Header
-        enabled = ["Add", "Excel", "Refresh"]
+        enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Sticker Size",
             subtitle="Define physical dimensions for barcode stickers.",
-            enabled_actions=enabled 
+            enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
@@ -54,7 +71,6 @@ class StickerSizePage(QWidget):
 
         # 4. Sort bar — sits above the table
         self.sort_bar = SortByWidget(self.table)
-
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
         self.main_layout.addWidget(self.sort_bar)
         self.main_layout.addSpacing(8)
@@ -66,55 +82,51 @@ class StickerSizePage(QWidget):
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
-        
+
         # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
-
-        DPI = 96  # 1 inch = 96 pixels
 
         self.form_schema = [
             {"name": "name", "label": "Sticker Name", "type": "text", "placeholder": "Enter sticker name", "required": True},
             {
-                "name": "height", 
-                "label": "Height", 
-                "type": "text_with_unit", 
-                "placeholder": "Enter height", 
+                "name": "height",
+                "label": "Height",
+                "type": "text_with_unit",
+                "placeholder": "Enter height",
                 "required": True,
                 "units": ["inch", "px"],
                 "default_unit": "inch"
             },
             {
-                "name": "width", 
-                "label": "Width", 
-                "type": "text_with_unit", 
-                "placeholder": "Enter width", 
+                "name": "width",
+                "label": "Width",
+                "type": "text_with_unit",
+                "placeholder": "Enter width",
                 "required": True,
                 "units": ["inch", "px"],
                 "default_unit": "inch"
             },
         ]
 
-        # Track table selection to enable Edit/Delete
+        # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
 
-        # Initially disable edit/delete
-        self._update_edit_delete_state(False)
+        # Initially disable selection-dependent buttons
+        self._update_selection_dependent_state(False)
 
-
-
+    # ------------------------------------------------------------------
+    # Selection helpers
+    # ------------------------------------------------------------------
 
     def _on_row_selection_changed(self):
         has_selection = bool(self.table.selectedItems())
-        self._update_edit_delete_state(has_selection)
+        self._update_selection_dependent_state(has_selection)
 
-    def _update_edit_delete_state(self, enabled: bool):
-        edit_btn = self.header.get_action_button("Edit")
-        delete_btn = self.header.get_action_button("Delete")
-
-        if edit_btn:
-            edit_btn.setEnabled(enabled)
-        if delete_btn:
-            delete_btn.setEnabled(enabled)
+    def _update_selection_dependent_state(self, enabled: bool):
+        for label in ("Edit", "Delete", "View Detail"):
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(enabled)
 
     def _get_selected_global_index(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -130,25 +142,27 @@ class StickerSizePage(QWidget):
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
+
     def load_sample_data(self):
-        # Diverse test data to see sorting work
         raw_data = [
-            ("A - Small Square", "1.0000", "1.0000", "96", "96", "Admin", "2024-01-15", "-", "-", "0"),
-            ("B - Medium Rectangle", "2.0000", "3.0000", "192", "288", "John", "2024-02-20", "-", "-", "1"),
-            ("C - Large Label", "3.5000", "5.0000", "336", "480", "Sarah", "2024-03-10", "-", "-", "2"),
-            ("D - Tiny Sticker", "0.5000", "0.5000", "48", "48", "Admin", "2024-01-05", "-", "-", "3"),
-            ("E - Wide Banner", "1.5000", "6.0000", "144", "576", "Mike", "2024-04-12", "-", "-", "4"),
-            ("F - Tall Label", "4.0000", "2.0000", "384", "192", "John", "2024-02-28", "-", "-", "5"),
-            ("G - Standard", "2.5000", "2.5000", "240", "240", "Sarah", "2024-03-15", "-", "-", "6"),
-            ("H - Mini", "0.7500", "1.2500", "72", "120", "Admin", "2024-01-20", "-", "-", "7"),
-            ("I - Jumbo", "5.0000", "7.0000", "480", "672", "Mike", "2024-04-05", "-", "-", "8"),
-            ("J - Custom A", "1.2500", "3.7500", "120", "360", "John", "2024-02-10", "-", "-", "9"),
+            ("A - Small Square",    "1.0000", "1.0000", "96",  "96",  "Admin", "2024-01-15", "-", "-", "0"),
+            ("B - Medium Rectangle","2.0000", "3.0000", "192", "288", "John",  "2024-02-20", "-", "-", "1"),
+            ("C - Large Label",     "3.5000", "5.0000", "336", "480", "Sarah", "2024-03-10", "-", "-", "2"),
+            ("D - Tiny Sticker",    "0.5000", "0.5000", "48",  "48",  "Admin", "2024-01-05", "-", "-", "3"),
+            ("E - Wide Banner",     "1.5000", "6.0000", "144", "576", "Mike",  "2024-04-12", "-", "-", "4"),
+            ("F - Tall Label",      "4.0000", "2.0000", "384", "192", "John",  "2024-02-28", "-", "-", "5"),
+            ("G - Standard",        "2.5000", "2.5000", "240", "240", "Sarah", "2024-03-15", "-", "-", "6"),
+            ("H - Mini",            "0.7500", "1.2500", "72",  "120", "Admin", "2024-01-20", "-", "-", "7"),
+            ("I - Jumbo",           "5.0000", "7.0000", "480", "672", "Mike",  "2024-04-05", "-", "-", "8"),
+            ("J - Custom A",        "1.2500", "3.7500", "120", "360", "John",  "2024-02-10", "-", "-", "9"),
         ]
         self.all_data = raw_data
         self._apply_filter_and_reset_page()
 
     def render_page(self):
-        # IMPORTANT: Keep sorting disabled - we handle sorting ourselves!
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         data = self.filtered_data if self.filtered_data is not None else []
@@ -162,19 +176,12 @@ class StickerSizePage(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setRowHeight(row, 28)
-
-            # Now we can iterate through all columns since data matches headers
             for col in range(len(item)):
                 self.table.setItem(row, col, QTableWidgetItem(item[col]))
 
-        # Global row numbers (1-based across all pages)
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
-        # DON'T re-enable sorting here - it will override our sort!
-        # self.table.setSortingEnabled(True)  # ← REMOVED THIS LINE
-
-        # Update pagination UI
         has_prev = self.current_page > 0
         has_next = end_idx < total
         start_human = 0 if total == 0 else start_idx + 1
@@ -190,6 +197,10 @@ class StickerSizePage(QWidget):
             available_page_sizes=self.available_page_sizes,
         )
 
+    # ------------------------------------------------------------------
+    # Filter / sort
+    # ------------------------------------------------------------------
+
     def filter_table(self, filter_type, search_text):
         self._last_filter_type = filter_type
         self._last_search_text = search_text
@@ -200,8 +211,7 @@ class StickerSizePage(QWidget):
 
         headers = self.table_comp.headers()
         header_to_index = {h: i for i, h in enumerate(headers)}
-
-        col_index = header_to_index.get(self._last_filter_type, 0)  # Default to 0 (NAME)
+        col_index = header_to_index.get(self._last_filter_type, 0)
 
         if not query:
             self.filtered_data = list(self.all_data)
@@ -210,18 +220,18 @@ class StickerSizePage(QWidget):
             for row in self.all_data:
                 if col_index >= len(row):
                     continue
-
                 val = "" if row[col_index] is None else str(row[col_index])
-
                 if query in val.lower():
                     out.append(row)
-
             self.filtered_data = out
 
         self._apply_sort()
         self.current_page = 0
         self.render_page()
 
+    # ------------------------------------------------------------------
+    # Pagination
+    # ------------------------------------------------------------------
 
     def on_page_changed(self, page_action: int) -> None:
         total = len(self.filtered_data) if self.filtered_data is not None else 0
@@ -241,69 +251,53 @@ class StickerSizePage(QWidget):
         self.render_page()
 
     def on_page_size_changed(self, new_size: int) -> None:
-        """Handle page size change from pagination component."""
         self.page_size = new_size
-        self.current_page = 0  # Reset to first page when changing page size
+        self.current_page = 0
         self.render_page()
 
+    # ------------------------------------------------------------------
+    # Sorting
+    # ------------------------------------------------------------------
+
     def on_sort_changed(self, fields: list[str], field_directions: dict):
-        """
-        Handle sort changes from SortByWidget.
-        
-        Parameters
-        ----------
-        fields : list[str]
-            Ordered list of field names to sort by (priority order)
-        field_directions : dict
-            Mapping of field name to direction ("asc" or "desc")
-        """
         self._sort_fields = fields or []
         self._sort_directions = field_directions or {}
         self._apply_filter_and_reset_page()
 
-
     def _apply_sort(self):
-        """Apply multi-field sorting with individual directions to filtered_data."""
         if not self._sort_fields or not self.filtered_data:
             return
 
         headers = self.table_comp.headers()
         header_to_index = {h: i for i, h in enumerate(headers)}
 
-        # Sort by each field in reverse priority order
-        # This way the first field in _sort_fields has the highest priority
         for field in reversed(self._sort_fields):
-            # Get the direction for THIS specific field
             direction = self._sort_directions.get(field, "asc")
             reverse = (direction == "desc")
-            
             idx = header_to_index.get(field)
             if idx is None:
                 continue
-            
-            # Important: capture idx in the lambda's default argument
-            # to avoid late binding issues in the loop
             self.filtered_data.sort(
                 key=lambda row, i=idx: self._get_sort_value(row, i),
                 reverse=reverse
             )
-    
+
     def _get_sort_value(self, row, idx):
-        """Extract and normalize a sort value from a row at the given index."""
         if idx >= len(row):
             return ""
-        
         val = row[idx]
         str_val = "" if val is None else str(val)
-        
-        # Try numeric conversion for better sorting
         try:
             return float(str_val.replace(',', '').replace('×', '').replace('INCH', '').strip())
         except (ValueError, AttributeError):
             return str_val.lower()
-        
+
+    # ------------------------------------------------------------------
+    # Header action wiring
+    # ------------------------------------------------------------------
+
     def _connect_header_actions(self):
-        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
                 if action == "Refresh":
@@ -316,6 +310,12 @@ class StickerSizePage(QWidget):
                     btn.clicked.connect(self.handle_edit_action)
                 elif action == "Delete":
                     btn.clicked.connect(self.handle_delete_action)
+                elif action == "View Detail":
+                    btn.clicked.connect(self.handle_view_detail_action)
+
+    # ------------------------------------------------------------------
+    # Action handlers
+    # ------------------------------------------------------------------
 
     def handle_add_action(self):
         modal = GenericFormModal(
@@ -327,20 +327,15 @@ class StickerSizePage(QWidget):
         modal.formSubmitted.connect(self._on_add_submitted)
         modal.exec()
 
-
     def _on_add_submitted(self, data: dict):
-        DPI = 96  # 1 inch = 96 pixels
-        
+        DPI = 96
+
         name = data.get("name", "").strip()
-        
-        # Get height value and unit
         height_value = data.get("height", 0)
         height_unit = data.get("height_unit", "inch")
-        
-        # Get width value and unit
         width_value = data.get("width", 0)
         width_unit = data.get("width_unit", "inch")
-        
+
         try:
             h_val = float(height_value)
             w_val = float(width_value)
@@ -350,50 +345,62 @@ class StickerSizePage(QWidget):
             print("Height and Width must be positive numbers")
             return
 
-        # Convert to inches if needed
         if height_unit == "px":
             h_in = h_val / DPI
             h_px = int(round(h_val))
-        else:  # inch
+        else:
             h_in = h_val
             h_px = int(round(h_val * DPI))
-        
+
         if width_unit == "px":
             w_in = w_val / DPI
             w_px = int(round(w_val))
-        else:  # inch
+        else:
             w_in = w_val
             w_px = int(round(w_val * DPI))
 
         import datetime
         added_by = "Admin"
         added_at = datetime.date.today().isoformat()
-        changed_by = "-"
-        changed_at = "-"
-        changed_no = "0"
 
         new_row = (
             name,
-            f"{h_in:.4f}",  # Height in inches
-            f"{w_in:.4f}",  # Width in inches
-            str(h_px),      # Height in pixels
-            str(w_px),      # Width in pixels
+            f"{h_in:.4f}",
+            f"{w_in:.4f}",
+            str(h_px),
+            str(w_px),
             added_by,
             added_at,
-            changed_by,
-            changed_at,
-            changed_no,
+            "-",
+            "-",
+            "0",
         )
 
         self.all_data.insert(0, new_row)
         self._apply_filter_and_reset_page()
 
-
-
-
-
     def handle_export_action(self):
         print("Export clicked")
+
+    def handle_view_detail_action(self):
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        fields = [
+            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
+            for label, i in VIEW_DETAIL_FIELDS
+        ]
+
+        modal = ViewDetailModal(
+            title="Sticker Size Detail",
+            subtitle="Full details for the selected sticker size.",
+            fields=fields,
+            parent=self,
+        )
+        modal.exec()
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -419,15 +426,12 @@ class StickerSizePage(QWidget):
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
-
     def _on_edit_submitted(self, idx, data):
         DPI = 96
 
         name = data.get("name", "").strip()
-
         height_value = data.get("height", 0)
         height_unit = data.get("height_unit", "inch")
-
         width_value = data.get("width", 0)
         width_unit = data.get("width_unit", "inch")
 
@@ -465,17 +469,15 @@ class StickerSizePage(QWidget):
             f"{w_in:.4f}",
             str(h_px),
             str(w_px),
-            old_row[5],   # added_by
-            old_row[6],   # added_at
-            "Admin",      # changed_by
-            today,        # changed_at
+            old_row[5],
+            old_row[6],
+            "Admin",
+            today,
             str(int(old_row[9]) + 1 if old_row[9].isdigit() else 1),
         )
 
         self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
-
-
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()

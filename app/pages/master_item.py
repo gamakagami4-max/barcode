@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem,
     QHeaderView, QFrame, QScrollArea, QAbstractItemView
 )
 from PySide6.QtCore import Qt
@@ -11,6 +11,7 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+from components.view_detail_modal import ViewDetailModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -21,6 +22,30 @@ COLORS = {
     "text_main": "#1E293B",
     "text_muted": "#64748B"
 }
+
+# Row tuple shape:
+# (ITEM CODE, NAME, BRAND, WHS, PART NO,
+#  INTERCHANGE 1, INTERCHANGE 2, INTERCHANGE 3, INTERCHANGE 4,
+#  QTY, UOM, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
+VIEW_DETAIL_FIELDS = [
+    ("Item Code",      0),
+    ("Name",           1),
+    ("Brand",          2),
+    ("Warehouse",      3),
+    ("Part No",        4),
+    ("Interchange 1",  5),
+    ("Interchange 2",  6),
+    ("Interchange 3",  7),
+    ("Interchange 4",  8),
+    ("Quantity",       9),
+    ("UOM",           10),
+    ("Added By",      11),
+    ("Added At",      12),
+    ("Changed By",    13),
+    ("Changed At",    14),
+    ("Changed No",    15),
+]
+
 
 class MasterItemPage(QWidget):
     def __init__(self):
@@ -42,9 +67,9 @@ class MasterItemPage(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
-        enabled = ["Add", "Excel", "Refresh"]
+        enabled = ["Add", "Excel", "Refresh", "View Detail"]
 
-        # 1. Page Header (standardized toolbar)
+        # 1. Page Header
         self.header = StandardPageHeader(
             title="Master Item",
             subtitle="View and manage core product inventory and part mappings.",
@@ -62,11 +87,11 @@ class MasterItemPage(QWidget):
 
         # 3. Content Area
         self.content_layout = QHBoxLayout()
-        
+
         headers = ["ITEM CODE", "NAME", "BRAND", "WHS", "PART NO", "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"]
         self.table_comp = StandardTable(headers)
         self.table = self.table_comp.table
-        
+
         h_header = self.table.horizontalHeader()
         h_header.setSectionResizeMode(QHeaderView.Interactive)
         self.table.setColumnWidth(0, 160)
@@ -80,7 +105,7 @@ class MasterItemPage(QWidget):
         self.table.setColumnWidth(9, 60)
         h_header.setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        
+
         self.content_layout.addWidget(self.table_comp, stretch=4)
 
         # 4. Detail Panel
@@ -91,7 +116,6 @@ class MasterItemPage(QWidget):
         self.main_layout.addLayout(self.content_layout)
 
         self.sort_bar = SortByWidget(self.table)
-
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
         self.main_layout.addWidget(self.sort_bar)
         self.main_layout.addSpacing(8)
@@ -99,113 +123,47 @@ class MasterItemPage(QWidget):
         self.main_layout.addWidget(self.table_comp)
         self.main_layout.addSpacing(16)
 
-        # Shared pagination from StandardTable (25 per page)
+        # Shared pagination from StandardTable
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
-        
+
         # Initialize default sort AFTER pagination is set up
         self.sort_bar.initialize_default_sort()
 
-        # Form schema for Add/Edit modal
         self.form_schema = [
-            {
-                "name": "item_code", 
-                "label": "Item Code", 
-                "type": "text", 
-                "placeholder": "e.g., EIF1-SFF1-FC-1001", 
-                "required": True
-            },
-            {
-                "name": "name", 
-                "label": "Item Name", 
-                "type": "text", 
-                "placeholder": "Enter item description", 
-                "required": True
-            },
-            {
-                "name": "brand", 
-                "label": "Brand", 
-                "type": "text", 
-                "placeholder": "Enter brand code", 
-                "required": True
-            },
-            {
-                "name": "warehouse", 
-                "label": "Warehouse", 
-                "type": "text", 
-                "placeholder": "e.g., EIF", 
-                "required": True
-            },
-            {
-                "name": "part_no", 
-                "label": "Part Number", 
-                "type": "text", 
-                "placeholder": "Enter part number", 
-                "required": True
-            },
-            {
-                "name": "interchange_1", 
-                "label": "Interchange 1", 
-                "type": "text", 
-                "placeholder": "Optional", 
-                "required": False
-            },
-            {
-                "name": "interchange_2", 
-                "label": "Interchange 2", 
-                "type": "text", 
-                "placeholder": "Optional", 
-                "required": False
-            },
-            {
-                "name": "interchange_3", 
-                "label": "Interchange 3", 
-                "type": "text", 
-                "placeholder": "Optional", 
-                "required": False
-            },
-            {
-                "name": "interchange_4", 
-                "label": "Interchange 4", 
-                "type": "text", 
-                "placeholder": "Optional", 
-                "required": False
-            },
-            {
-                "name": "qty", 
-                "label": "Quantity", 
-                "type": "text", 
-                "placeholder": "Enter quantity", 
-                "required": True
-            },
-            {
-                "name": "uom", 
-                "label": "Unit of Measure", 
-                "type": "combo", 
-                "options": ["PCS", "SET", "BOX", "KG", "LTR"], 
-                "required": True
-            },
+            {"name": "item_code",     "label": "Item Code",       "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
+            {"name": "name",          "label": "Item Name",        "type": "text",  "placeholder": "Enter item description",  "required": True},
+            {"name": "brand",         "label": "Brand",            "type": "text",  "placeholder": "Enter brand code",        "required": True},
+            {"name": "warehouse",     "label": "Warehouse",        "type": "text",  "placeholder": "e.g., EIF",              "required": True},
+            {"name": "part_no",       "label": "Part Number",      "type": "text",  "placeholder": "Enter part number",       "required": True},
+            {"name": "interchange_1", "label": "Interchange 1",    "type": "text",  "placeholder": "Optional",               "required": False},
+            {"name": "interchange_2", "label": "Interchange 2",    "type": "text",  "placeholder": "Optional",               "required": False},
+            {"name": "interchange_3", "label": "Interchange 3",    "type": "text",  "placeholder": "Optional",               "required": False},
+            {"name": "interchange_4", "label": "Interchange 4",    "type": "text",  "placeholder": "Optional",               "required": False},
+            {"name": "qty",           "label": "Quantity",         "type": "text",  "placeholder": "Enter quantity",          "required": True},
+            {"name": "uom",           "label": "Unit of Measure",  "type": "combo", "options": ["PCS", "SET", "BOX", "KG", "LTR"], "required": True},
         ]
 
-        # Track table selection to enable Edit/Delete
+        # Track table selection to enable Edit / Delete / View Detail
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
 
-        # Initially disable edit/delete
-        self._update_edit_delete_state(False)
+        # Initially disable selection-dependent buttons
+        self._update_selection_dependent_state(False)
+
+    # ------------------------------------------------------------------
+    # Selection helpers
+    # ------------------------------------------------------------------
 
     def _on_row_selection_changed(self):
         has_selection = bool(self.table.selectedItems())
-        self._update_edit_delete_state(has_selection)
+        self._update_selection_dependent_state(has_selection)
 
-    def _update_edit_delete_state(self, enabled: bool):
-        edit_btn = self.header.get_action_button("Edit")
-        delete_btn = self.header.get_action_button("Delete")
-
-        if edit_btn:
-            edit_btn.setEnabled(enabled)
-        if delete_btn:
-            delete_btn.setEnabled(enabled)
+    def _update_selection_dependent_state(self, enabled: bool):
+        for label in ("Edit", "Delete", "View Detail"):
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(enabled)
 
     def _get_selected_global_index(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -221,19 +179,23 @@ class MasterItemPage(QWidget):
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
+    # ------------------------------------------------------------------
+    # Detail panel
+    # ------------------------------------------------------------------
+
     def _create_detail_panel(self):
         panel = QFrame()
         panel.setFixedWidth(380)
         panel.setStyleSheet(f"background: {COLORS['panel_bg']}; border-left: 1px solid {COLORS['border']};")
-        
+
         layout = QVBoxLayout(panel)
         top_bar = QHBoxLayout()
         self.detail_title = QLabel("Item Details")
         self.detail_title.setStyleSheet("font-size: 16px; font-weight: 700;")
-        
+
         close_btn = StandardButton("", icon_name="fa5s.times", variant="ghost")
         close_btn.clicked.connect(lambda: panel.setVisible(False))
-        
+
         top_bar.addWidget(self.detail_title)
         top_bar.addStretch()
         top_bar.addWidget(close_btn)
@@ -249,13 +211,44 @@ class MasterItemPage(QWidget):
 
         return panel
 
+    def show_details(self, data):
+        self.detail_panel.setVisible(True)
+        self.detail_title.setText(data[0])
+
+        for i in reversed(range(self.info_layout.count())):
+            if self.info_layout.itemAt(i).widget():
+                self.info_layout.itemAt(i).widget().setParent(None)
+
+        fields = [
+            ("Description",   data[1]),
+            ("Brand",         data[2]),
+            ("Warehouse",     data[3]),
+            ("Part No Print", data[4]),
+            ("Interchange 1", data[5]),
+            ("Interchange 2", data[6]),
+            ("Interchange 3", data[7]),
+            ("Interchange 4", data[8]),
+            ("Stock",         f"{data[9]} {data[10]}")
+        ]
+
+        for label, val in fields:
+            lbl = QLabel(f"<b>{label}</b><br><span style='color:{COLORS['text_muted']}'>{val}</span>")
+            lbl.setWordWrap(True)
+            self.info_layout.addWidget(lbl)
+            self.info_layout.addSpacing(10)
+        self.info_layout.addStretch()
+
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
+
     def load_data(self):
         self.all_data = []
         for i in range(50):
-            qty_val = 25899 + i 
+            qty_val = 25899 + i
             self.all_data.append((
-                f"EIF1-SFF1-FC-{1001+i}", f"FILTER CARTRIDGE MD {1000+i}", 
-                "SFF", "EIF", f"FC-{1001+i}", "MB 220900", "5-13240032-0", 
+                f"EIF1-SFF1-FC-{1001+i}", f"FILTER CARTRIDGE MD {1000+i}",
+                "SFF", "EIF", f"FC-{1001+i}", "MB 220900", "5-13240032-0",
                 "31973-44100", "Z636", f"{qty_val:,}", "PCS",
                 "Admin", "2024-01-15", "-", "-", "0"
             ))
@@ -273,35 +266,22 @@ class MasterItemPage(QWidget):
 
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
-            # Display columns: ITEM CODE, NAME, BRAND, WHS, PART NO, QTY, UOM, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO
             display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
 
             for c_idx, data_idx in enumerate(display_indices):
-                if data_idx < len(row_data):
-                    val = str(row_data[data_idx])
-                else:
-                    val = "-"
-                    
+                val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
                 item = QTableWidgetItem(val)
                 font = item.font()
                 font.setPointSize(9)
                 item.setFont(font)
-
-                # Special styling for ITEM CODE (first column)
                 if c_idx == 0:
                     item.setForeground(QColor(COLORS["link"]))
-
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 self.table.setItem(r, c_idx, item)
 
-        # Row numbers (vertical header)
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
-        # Do NOT enable native sorting to avoid conflicts with manual sort
-        # self.table.setSortingEnabled(True)  # REMOVED
-
-        # Update pagination
         has_prev = self.current_page > 0
         has_next = end_idx < total
         start_human = 0 if total == 0 else start_idx + 1
@@ -317,29 +297,9 @@ class MasterItemPage(QWidget):
             available_page_sizes=self.available_page_sizes,
         )
 
-
-    def show_details(self, data):
-        self.detail_panel.setVisible(True)
-        self.detail_title.setText(data[0])
-        
-        # Clear layout
-        for i in reversed(range(self.info_layout.count())): 
-            if self.info_layout.itemAt(i).widget():
-                self.info_layout.itemAt(i).widget().setParent(None)
-
-        fields = [
-            ("Description", data[1]), ("Brand", data[2]), ("Warehouse", data[3]),
-            ("Part No Print", data[4]), ("Interchange 1", data[5]), 
-            ("Interchange 2", data[6]), ("Interchange 3", data[7]),
-            ("Interchange 4", data[8]), ("Stock", f"{data[9]} {data[10]}")
-        ]
-
-        for label, val in fields:
-            lbl = QLabel(f"<b>{label}</b><br><span style='color:{COLORS['text_muted']}'>{val}</span>")
-            lbl.setWordWrap(True)
-            self.info_layout.addWidget(lbl)
-            self.info_layout.addSpacing(10)
-        self.info_layout.addStretch()
+    # ------------------------------------------------------------------
+    # Filter / sort
+    # ------------------------------------------------------------------
 
     def filter_table(self, filter_type, search_text):
         self._last_filter_type = filter_type
@@ -350,9 +310,7 @@ class MasterItemPage(QWidget):
         query = (self._last_search_text or "").lower().strip()
 
         headers = self.table_comp.headers()
-        # Map headers directly to their 0-based column indices in the data tuples
         header_to_index = {h: i for i, h in enumerate(headers)}
-
         col_index = header_to_index.get(self._last_filter_type, 0)
 
         if not query:
@@ -362,65 +320,26 @@ class MasterItemPage(QWidget):
             for row in self.all_data:
                 if col_index >= len(row):
                     continue
-
                 val = "" if row[col_index] is None else str(row[col_index])
-
                 if query in val.lower():
                     out.append(row)
-
             self.filtered_data = out
 
         self._apply_sort()
         self.current_page = 0
         self.render_page()
 
-
-    def on_page_changed(self, page_action: int) -> None:
-        total = len(self.filtered_data) if self.filtered_data is not None else 0
-        total_pages = (total + self.page_size - 1) // self.page_size
-        if total_pages <= 0:
-            self.current_page = 0
-            self.render_page()
-            return
-
-        if page_action == -1:
-            self.current_page = max(0, self.current_page - 1)
-        elif page_action == 1:
-            self.current_page = min(total_pages - 1, self.current_page + 1)
-        else:
-            self.current_page = max(0, min(int(page_action), total_pages - 1))
-
-        self.render_page()
-
-    def on_page_size_changed(self, new_size: int) -> None:
-        """Handle page size change from pagination component."""
-        self.page_size = new_size
-        self.current_page = 0  # Reset to first page when changing page size
-        self.render_page()
-
     def on_sort_changed(self, fields: list[str], field_directions: dict):
-        """
-        Handle sort changes from SortByWidget.
-        
-        Parameters
-        ----------
-        fields : list[str]
-            Ordered list of field names to sort by (priority order)
-        field_directions : dict
-            Mapping of field name to direction ("asc" or "desc")
-        """
         self._sort_fields = fields or []
         self._sort_directions = field_directions or {}
         self._apply_filter_and_reset_page()
-
-
 
     def _apply_sort(self):
         if not self._sort_fields or not self.filtered_data:
             return
 
         headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}  # <-- 0-based
+        header_to_index = {h: i for i, h in enumerate(headers)}
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
@@ -444,9 +363,38 @@ class MasterItemPage(QWidget):
                 return 0
         return str_val.lower()
 
+    # ------------------------------------------------------------------
+    # Pagination
+    # ------------------------------------------------------------------
+
+    def on_page_changed(self, page_action: int) -> None:
+        total = len(self.filtered_data) if self.filtered_data is not None else 0
+        total_pages = (total + self.page_size - 1) // self.page_size
+        if total_pages <= 0:
+            self.current_page = 0
+            self.render_page()
+            return
+
+        if page_action == -1:
+            self.current_page = max(0, self.current_page - 1)
+        elif page_action == 1:
+            self.current_page = min(total_pages - 1, self.current_page + 1)
+        else:
+            self.current_page = max(0, min(int(page_action), total_pages - 1))
+
+        self.render_page()
+
+    def on_page_size_changed(self, new_size: int) -> None:
+        self.page_size = new_size
+        self.current_page = 0
+        self.render_page()
+
+    # ------------------------------------------------------------------
+    # Header action wiring
+    # ------------------------------------------------------------------
+
     def _connect_header_actions(self):
-        """Connect header action buttons to their handlers."""
-        for action in ["Refresh", "Add", "Excel", "Edit", "Delete"]:
+        for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
             btn = self.header.get_action_button(action)
             if btn:
                 if action == "Refresh":
@@ -459,9 +407,14 @@ class MasterItemPage(QWidget):
                     btn.clicked.connect(self.handle_edit_action)
                 elif action == "Delete":
                     btn.clicked.connect(self.handle_delete_action)
+                elif action == "View Detail":
+                    btn.clicked.connect(self.handle_view_detail_action)
+
+    # ------------------------------------------------------------------
+    # Action handlers
+    # ------------------------------------------------------------------
 
     def handle_add_action(self):
-        """Open the Add Master Item modal."""
         modal = GenericFormModal(
             title="Add Master Item",
             fields=self.form_schema,
@@ -472,56 +425,58 @@ class MasterItemPage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        """Handle form submission for adding a new master item."""
         import datetime
-        
-        item_code = data.get("item_code", "").strip()
-        name = data.get("name", "").strip()
-        brand = data.get("brand", "").strip()
-        warehouse = data.get("warehouse", "").strip()
-        part_no = data.get("part_no", "").strip()
+
+        item_code    = data.get("item_code",     "").strip()
+        name         = data.get("name",           "").strip()
+        brand        = data.get("brand",          "").strip()
+        warehouse    = data.get("warehouse",      "").strip()
+        part_no      = data.get("part_no",        "").strip()
         interchange_1 = data.get("interchange_1", "").strip()
         interchange_2 = data.get("interchange_2", "").strip()
         interchange_3 = data.get("interchange_3", "").strip()
         interchange_4 = data.get("interchange_4", "").strip()
-        qty = data.get("qty", "0").strip()
-        uom = data.get("uom", "PCS")
-        
+        qty          = data.get("qty",            "0").strip()
+        uom          = data.get("uom",            "PCS")
+
         if not all([item_code, name, brand, warehouse, part_no, qty]):
             print("Required fields missing")
             return
-        
+
         added_by = "Admin"
         added_at = datetime.date.today().strftime("%Y-%m-%d")
-        changed_by = "-"
-        changed_at = "-"
-        changed_no = "0"
-        
+
         new_row = (
-            item_code,
-            name,
-            brand,
-            warehouse,
-            part_no,
-            interchange_1,
-            interchange_2,
-            interchange_3,
-            interchange_4,
-            qty,
-            uom,
-            added_by,
-            added_at,
-            changed_by,
-            changed_at,
-            changed_no,
+            item_code, name, brand, warehouse, part_no,
+            interchange_1, interchange_2, interchange_3, interchange_4,
+            qty, uom, added_by, added_at, "-", "-", "0",
         )
-        
+
         self.all_data.insert(0, new_row)
         self._apply_filter_and_reset_page()
 
     def handle_export_action(self):
-        """Handle Excel export action."""
         print("Export to Excel clicked")
+
+    def handle_view_detail_action(self):
+        idx = self._get_selected_global_index()
+        if idx is None:
+            return
+
+        row = self.all_data[idx]
+
+        fields = [
+            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
+            for label, i in VIEW_DETAIL_FIELDS
+        ]
+
+        modal = ViewDetailModal(
+            title="Master Item Detail",
+            subtitle="Full details for the selected item.",
+            fields=fields,
+            parent=self,
+        )
+        modal.exec()
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -536,38 +491,37 @@ class MasterItemPage(QWidget):
             parent=self,
             mode="edit",
             initial_data={
-                "item_code": row[0],
-                "name": row[1],
-                "brand": row[2],
-                "warehouse": row[3],
-                "part_no": row[4],
+                "item_code":     row[0],
+                "name":          row[1],
+                "brand":         row[2],
+                "warehouse":     row[3],
+                "part_no":       row[4],
                 "interchange_1": row[5],
                 "interchange_2": row[6],
                 "interchange_3": row[7],
                 "interchange_4": row[8],
-                "qty": row[9],
-                "uom": row[10],
+                "qty":           row[9],
+                "uom":           row[10],
             }
         )
 
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
         modal.exec()
 
-
     def _on_edit_submitted(self, idx, data):
         import datetime
 
-        item_code = data.get("item_code", "").strip()
-        name = data.get("name", "").strip()
-        brand = data.get("brand", "").strip()
-        warehouse = data.get("warehouse", "").strip()
-        part_no = data.get("part_no", "").strip()
+        item_code    = data.get("item_code",     "").strip()
+        name         = data.get("name",           "").strip()
+        brand        = data.get("brand",          "").strip()
+        warehouse    = data.get("warehouse",      "").strip()
+        part_no      = data.get("part_no",        "").strip()
         interchange_1 = data.get("interchange_1", "").strip()
         interchange_2 = data.get("interchange_2", "").strip()
         interchange_3 = data.get("interchange_3", "").strip()
         interchange_4 = data.get("interchange_4", "").strip()
-        qty = data.get("qty", "0").strip()
-        uom = data.get("uom", "PCS")
+        qty          = data.get("qty",            "0").strip()
+        uom          = data.get("uom",            "PCS")
 
         if not all([item_code, name, brand, warehouse, part_no, qty]):
             print("Required fields missing")
@@ -577,17 +531,9 @@ class MasterItemPage(QWidget):
         today = datetime.date.today().strftime("%Y-%m-%d")
 
         updated_row = (
-            item_code,
-            name,
-            brand,
-            warehouse,
-            part_no,
-            interchange_1,
-            interchange_2,
-            interchange_3,
-            interchange_4,
-            qty,
-            uom,
+            item_code, name, brand, warehouse, part_no,
+            interchange_1, interchange_2, interchange_3, interchange_4,
+            qty, uom,
             old_row[11],  # added_by
             old_row[12],  # added_at
             "Admin",      # changed_by
@@ -597,8 +543,6 @@ class MasterItemPage(QWidget):
 
         self.all_data[idx] = updated_row
         self._apply_filter_and_reset_page()
-
-
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
