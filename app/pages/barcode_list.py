@@ -199,14 +199,13 @@ class BarcodeListPage(QWidget):
     def load_data(self):
         initial_data = [
             ("ADR/BAR/3116", "SWI_NCC_424-16-111140SW_INNER_HYDRAULIC_60X45",  "60 X 45 MM", "DISPLAY",     "ACT",          "02-Feb-2026", "ACT",          "02-Feb-2026", "4",  "ADS", "04-Feb-2026"),
-            ("ADR/BAR/3116", "SWI_C_424-16-111140SW_INNER_HYDRAULIC_60X45",    "60 X 45 MM", "DISPLAY",     "ACT",          "02-Feb-2026", "ACT",          "02-Feb-2026", "4",  "ADS", "04-Feb-2026"),
             ("ADR/BAR/3117", "[SAP] SAKURA INNER DIELECTRIC FLUIDS FILTER",     "5 X 3 INCH", "DISPLAY",     "JJH",          "03-Feb-2026", "JJH",          "03-Feb-2026", "9",  "ADB", "10-Jul-2024"),
             ("ADR/BAR/3118", "P486182_HYDRAULIC_OUTER_(SAP)_ROTED",             "7 X 2.5 INCH","NOT DISPLAY", "ACT",         "04-Feb-2026", "ACT",          "05-Feb-2026", "17", "ACT", "04-Feb-2026"),
             ("ADR/BAR/3120", "TEST BARCODE",                                    "4 X 2",      "DISPLAY",     "YOSAFAT.YACOB","05-Feb-2026", "YOSAFAT.YACOB","05-Feb-2026", "5",  "-",   "-"),
         ]
 
         if not self.all_data:
-            self.all_data = list(initial_data) * 8
+            self.all_data = list(initial_data)
 
         self._apply_filter_and_reset_page()
 
