@@ -6,7 +6,6 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-from components.view_detail_modal import ViewDetailModal
 
 # Maps human-readable labels to their index inside a row tuple.
 # Row tuple shape: (NAME, HEIGHT_IN, WIDTH_IN, HEIGHT_PX, WIDTH_PX, ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO)
@@ -414,11 +413,12 @@ class StickerSizePage(QWidget):
             for label, i in VIEW_DETAIL_FIELDS
         ]
 
-        modal = ViewDetailModal(
+        modal = GenericFormModal(
             title="Sticker Size Detail",
             subtitle="Full details for the selected sticker size.",
             fields=fields,
             parent=self,
+            mode="view"
         )
         modal.exec()
 

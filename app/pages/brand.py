@@ -10,7 +10,6 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-from components.view_detail_modal import ViewDetailModal
 
 # --- Design Tokens ---
 COLORS = {
@@ -428,11 +427,12 @@ class BrandPage(QWidget):
             for label, i in VIEW_DETAIL_FIELDS
         ]
 
-        modal = ViewDetailModal(
+        modal = GenericFormModal(
             title="Brand Detail",
             subtitle="Full details for the selected brand.",
             fields=fields,
             parent=self,
+            mode="view"
         )
         modal.exec()
 

@@ -13,9 +13,7 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.standard_button import StandardButton
 from components.sort_by_widget import SortByWidget
-from components.barcode_modal import BarcodeFormModal
-from components.view_detail_modal import ViewDetailModal
-
+from components.generic_form_modal import GenericFormModal
 # --- Design Tokens ---
 COLORS = {
     "bg_main": "#F8FAFC",
@@ -305,11 +303,12 @@ class BarcodeListPage(QWidget):
             (label, str(row_data[i]) if i < len(row_data) and row_data[i] is not None else "")
             for label, i in VIEW_DETAIL_FIELDS
         ]
-        modal = ViewDetailModal(
+        modal = GenericFormModal(
             title="Barcode Detail",
             subtitle="Full details for the selected barcode record.",
             fields=fields,
             parent=self,
+            mode="view"
         )
         modal.exec()
 
