@@ -10,6 +10,13 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 import re
+from server.repositories.mmprty_repo import (
+    fetch_all_prty,
+    create_prty,
+    update_prty,
+    delete_prty,
+)
+
 # --- Design Tokens ---
 COLORS = {
     "bg_main": "#F8FAFC",
@@ -148,31 +155,29 @@ class ProductTypePage(QWidget):
             if btn:
                 btn.setEnabled(enabled)
 
-    def _get_selected_global_index(self):
+    def _get_selected_pk(self):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return None
+
         table_row = selected_rows[0].row()
-        global_index = (self.current_page * self.page_size) + table_row
-        if global_index >= len(self.filtered_data):
+        item = self.table.item(table_row, 0)
+        if not item:
             return None
-        actual_row = self.filtered_data[global_index]
-        return self.all_data.index(actual_row)
+
+        return item.data(Qt.UserRole)
+
 
     # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
 
     def load_translations(self):
-        raw_data = [
-            ("Adapter",      "Adaptador",      "Adaptateur",  "Einbauteil",           "Admin",     "2024-01-15", "-",     "-",          "0"),
-            ("Air Breather", "Respiradero",     "Filtre air",  "Be-Entlüftungsfilter", "Admin",     "2024-01-20", "User_A","2024-02-05", "1"),
-            ("Air Cleaner",  "Filtro de aire",  "Filtre air",  "Luftfilter",           "Admin",     "2024-02-01", "-",     "-",          "0"),
-            ("Air Dryer",    "Secador de aire", "Dessiccateur","Trockenmittelbox",     "Manager_X", "2024-02-10", "-",     "-",          "0"),
-            ("Air Filter",   "Filtro de aire",  "Filtre air",  "Luftfilter",           "Admin",     "2024-02-15", "Admin", "2024-02-20", "2"),
-        ]
-        self.all_data = raw_data * 6
+        rows = fetch_all_prty()   # ← REAL DATABASE
+
+        self.all_data = rows      # store FULL dict rows
         self._apply_filter_and_reset_page()
+
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -187,12 +192,30 @@ class ProductTypePage(QWidget):
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
             self.table.setRowHeight(r, 28)
-            for c in range(len(row_data)):
-                val = row_data[c] if c < len(row_data) else "-"
-                item = QTableWidgetItem(str(val))
+
+            values = [
+                row_data["mkingr"],
+                row_data["mkspan"],
+                row_data["mkprnc"],
+                row_data["mkjerm"],
+                row_data["mkrgid"],
+                row_data["mkrgdt"].strftime("%Y-%m-%d %H:%M:%S") if row_data["mkrgdt"] else "",
+                row_data["mkchid"],
+                row_data["mkchdt"].strftime("%Y-%m-%d %H:%M:%S") if row_data["mkchdt"] else "",
+                str(row_data["mkchno"]),
+            ]
+
+            for c, val in enumerate(values):
+                item = QTableWidgetItem(str(val or ""))
                 if c == 0:
                     item.setForeground(QColor(COLORS["link"]))
+
+                # 🔐 Store primary key safely inside first column
+                if c == 0:
+                    item.setData(Qt.UserRole, row_data["mkprtyiy"])
+
                 self.table.setItem(r, c, item)
+
 
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
@@ -221,21 +244,33 @@ class ProductTypePage(QWidget):
 
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
-        headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}
-        col_index = header_to_index.get(self._last_filter_type, 0)
+
+        header_map = {
+            "INGGRIS": "mkingr",
+            "SPANYOL": "mkspan",
+            "PRANCIS": "mkprnc",
+            "JERMAN": "mkjerm",
+            "ADDED BY": "mkrgid",
+            "ADDED AT": "mkrgdt",
+            "CHANGED BY": "mkchid",
+            "CHANGED AT": "mkchdt",
+            "CHANGED NO": "mkchno",
+        }
+
+        key = header_map.get(self._last_filter_type, "mkingr")
 
         if not query:
             self.filtered_data = list(self.all_data)
         else:
             self.filtered_data = [
                 row for row in self.all_data
-                if col_index < len(row) and query in str(row[col_index] or "").lower()
+                if query in str(row.get(key, "")).lower()
             ]
 
         self._apply_sort()
         self.current_page = 0
         self.render_page()
+
 
     def on_sort_changed(self, fields: list[str], field_directions: dict):
         self._sort_fields = fields or []
@@ -246,18 +281,30 @@ class ProductTypePage(QWidget):
         if not self._sort_fields or not self.filtered_data:
             return
 
-        headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}
+        header_map = {
+            "INGGRIS": "mkingr",
+            "SPANYOL": "mkspan",
+            "PRANCIS": "mkprnc",
+            "JERMAN": "mkjerm",
+            "ADDED BY": "mkrgid",
+            "ADDED AT": "mkrgdt",
+            "CHANGED BY": "mkchid",
+            "CHANGED AT": "mkchdt",
+            "CHANGED NO": "mkchno",
+        }
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
-            idx = header_to_index.get(field)
-            if idx is None:
+            key = header_map.get(field)
+
+            if not key:
                 continue
+
             self.filtered_data.sort(
-                key=lambda row, i=idx: self._get_sort_value(row, i),
-                reverse=(direction == "desc")
+                key=lambda row: row.get(key) or "",
+                reverse=(direction == "desc"),
             )
+
 
     def _get_sort_value(self, row, idx):
         """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
@@ -373,7 +420,7 @@ class ProductTypePage(QWidget):
 
         # --- Duplicate check ---
         for row in self.all_data:
-            if row[0].strip().lower() == inggris.lower():
+            if row["mkingr"].strip().lower() == inggris.lower():
                 QMessageBox.warning(
                     self,
                     "Duplicate Entry",
@@ -383,10 +430,15 @@ class ProductTypePage(QWidget):
 
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        self.all_data.insert(0, (
-            inggris, spanyol, prancis, jerman,
-            "Admin", now, "-", "-", "0"
-        ))
+        create_prty(
+            ingredient=inggris,
+            spanish=spanyol,
+            pronunciation=prancis,
+            german=jerman,
+            user="Admin",
+        )
+
+        self.load_translations()
 
         self._apply_filter_and_reset_page()
 
@@ -412,14 +464,26 @@ class ProductTypePage(QWidget):
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        row = self.all_data[idx]
+
+        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
+        if not row:
+            return
+
         fields = [
-            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
-            for label, i in VIEW_DETAIL_FIELDS
+            ("English (Inggris)", row["mkingr"]),
+            ("Spanish (Spanyol)", row["mkspan"]),
+            ("French (Prancis)",  row["mkprnc"]),
+            ("German (Jerman)",   row["mkjerm"]),
+            ("Added By",          row["mkrgid"]),
+            ("Added At",          row["mkrgdt"]),
+            ("Changed By",        row["mkchid"]),
+            ("Changed At",        row["mkchdt"]),
+            ("Changed No",        row["mkchno"]),
         ]
+
         modal = GenericFormModal(
             title="Product Type Detail",
             subtitle="Full details for the selected product type.",
@@ -429,23 +493,26 @@ class ProductTypePage(QWidget):
         )
         modal.exec()
 
+
     def handle_edit_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        row = self.all_data[idx]
+
+        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
+        if not row:
+            return
 
         initial = {
-            "inggris": row[0],
-            "spanyol": row[1],
-            "prancis": row[2],
-            "jerman":  row[3],
-            # audit (readonly)
-            "added_by":   row[4],
-            "added_at":   row[5],
-            "changed_by": row[6],
-            "changed_at": row[7],
-            "changed_no": row[8],
+            "inggris": row["mkingr"],
+            "spanyol": row["mkspan"],
+            "prancis": row["mkprnc"],
+            "jerman":  row["mkjerm"],
+            "added_by": row["mkrgid"],
+            "added_at": row["mkrgdt"],
+            "changed_by": row["mkchid"],
+            "changed_at": row["mkchdt"],
+            "changed_no": row["mkchno"],
         }
 
         modal = GenericFormModal(
@@ -455,41 +522,20 @@ class ProductTypePage(QWidget):
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+
+        modal.formSubmitted.connect(lambda data: self._on_edit_submitted(pk, data))
         modal.exec()
 
-    def _on_edit_submitted(self, idx, data):
-        import datetime
 
+    def _on_edit_submitted(self, pk, data):
         inggris = data.get("inggris", "").strip()
         spanyol = data.get("spanyol", "").strip()
         prancis = data.get("prancis", "").strip()
         jerman  = data.get("jerman", "").strip()
 
-        # --- Required English ---
         if not self._validate_translation_input(inggris, "English (Inggris)"):
             return
 
-        # --- Optional fields ---
-        for value, label in [
-            (spanyol, "Spanish (Spanyol)"),
-            (prancis, "French (Prancis)"),
-            (jerman,  "German (Jerman)")
-        ]:
-            if value and not self._validate_translation_input(value, label):
-                return
-
-        # --- Duplicate check ---
-        for i, row in enumerate(self.all_data):
-            if i != idx and row[0].strip().lower() == inggris.lower():
-                QMessageBox.warning(
-                    self,
-                    "Duplicate Entry",
-                    f'English "{inggris}" already exists.'
-                )
-                return
-
-        # --- Confirmation ---
         confirm = QMessageBox.question(
             self,
             "Confirm Update",
@@ -501,29 +547,35 @@ class ProductTypePage(QWidget):
         if confirm != QMessageBox.Yes:
             return
 
-        old_row = self.all_data[idx]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[8]) + 1) if str(old_row[8]).isdigit() else "1"
-
-        self.all_data[idx] = (
-            inggris, spanyol, prancis, jerman,
-            old_row[4], old_row[5],  # keep added_by, added_at
-            "Admin", now, changed_no,
+        update_prty(
+            prty_id=pk,
+            ingredient=inggris,
+            spanish=spanyol,
+            pronunciation=prancis,
+            german=jerman,
+            user="Admin",
         )
 
-        self._apply_filter_and_reset_page()
+        self.load_translations()
 
     def handle_delete_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        name = self.all_data[idx][0]
+
+        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
+        if not row:
+            return
+
+        name = row["mkingr"]
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText(f'Are you sure you want to delete "{name}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
+
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            delete_prty(pk, user="Admin")
+            self.load_translations()
