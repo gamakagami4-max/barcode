@@ -91,7 +91,7 @@ class FilterTypePage(QWidget):
         # 1. Header
         self.header = StandardPageHeader(
             title="Filter Type",
-            subtitle="Manage categories and audit logs for filter types.",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)

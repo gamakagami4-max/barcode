@@ -98,7 +98,7 @@ class BrandPage(QWidget):
         # 1. Header
         self.header = StandardPageHeader(
             title="Brand",
-            subtitle="Organize and monitor brand assets across your enterprise.",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)

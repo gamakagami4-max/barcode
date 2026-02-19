@@ -92,7 +92,7 @@ class StickerSizePage(QWidget):
         enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Sticker Size",
-            subtitle="Define physical dimensions for barcode stickers.",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)

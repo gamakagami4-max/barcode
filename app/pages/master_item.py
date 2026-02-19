@@ -102,7 +102,7 @@ class MasterItemPage(QWidget):
         # 1. Page Header
         self.header = StandardPageHeader(
             title="Master Item",
-            subtitle="View and manage core product inventory and part mappings.",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)

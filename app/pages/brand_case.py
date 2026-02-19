@@ -95,7 +95,7 @@ class BrandCasePage(QWidget):
         enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Brand Case",
-            subtitle="Configure casing rules for brand codes (TITLE vs UPPER).",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)

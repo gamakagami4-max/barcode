@@ -175,7 +175,7 @@ class SourceDataPage(QWidget):
 
         self.header = StandardPageHeader(
             title="Source Data Group",
-            subtitle="Manage and query your enterprise data sources from a single pane.",
+            subtitle="Description",
             enabled_actions=["Add", "Excel", "Refresh", "View Detail"],
         )
         layout.addWidget(self.header)

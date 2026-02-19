@@ -102,7 +102,7 @@ class ProductTypePage(QWidget):
 
         self.header = StandardPageHeader(
             title="Product Type",
-            subtitle="Manage multilingual labels for your product catalog.",
+            subtitle="Description",
             enabled_actions=enabled
         )
         self.main_layout.addWidget(self.header)
