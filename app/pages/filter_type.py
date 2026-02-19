@@ -10,6 +10,12 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 from PySide6.QtWidgets import QMessageBox
+from server.repositories.mmfltr_repo import (
+    fetch_all_fltr,
+    create_fltr,
+    update_fltr,
+    soft_delete_fltr,
+)
 
 # ======================
 # Design Tokens
@@ -160,13 +166,23 @@ class FilterTypePage(QWidget):
     # ------------------------------------------------------------------
 
     def load_data(self):
-        raw_data = [
-            ("ADAPTER",      "ADAPTER",      "ADMIN", "20-Jun-2023", "",              "",            "0"),
-            ("AIR BREATHER", "",             "ADMIN", "20-Jun-2023", "YOSAFAT.YACOB", "20-Jun-2023", "1"),
-            ("AIR FILTER",   "FILTER UDARA", "ADMIN", "20-Jun-2023", "",              "",            "0"),
-        ]
-        self.all_data = raw_data * 5
+        rows = fetch_all_fltr()
+
+        formatted = []
+        for r in rows:
+            formatted.append((
+                r["name"],
+                r["description"] or "",
+                r["added_by"] or "",
+                r["added_at"].strftime("%Y-%m-%d %H:%M:%S") if r["added_at"] else "",
+                r["changed_by"] or "",
+                r["changed_at"].strftime("%Y-%m-%d %H:%M:%S") if r["changed_at"] else "",
+                str(r["changed_no"] or 0),
+            ))
+
+        self.all_data = formatted
         self._apply_filter_and_reset_page()
+
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -319,24 +335,24 @@ class FilterTypePage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        import datetime
-
-        name        = data.get("name", "").strip()
+        name = data.get("name", "").strip()
         description = data.get("description", "").strip()
 
         if not name:
             QMessageBox.warning(self, "Validation Error", "Filter Type Name is required.")
             return
 
-        for row in self.all_data:
-            if row[0].lower() == name.lower():
-                QMessageBox.warning(self, "Duplicate Name",
-                                    f'Filter Type "{name}" already exists.')
-                return
+        try:
+            create_fltr(
+                name=name,
+                description=description,
+                user="ADMIN",
+            )
+            self.load_data()
 
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_data.insert(0, (name, description, "ADMIN", now, "", "", "0"))
-        self._apply_filter_and_reset_page()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
 
     def handle_export_action(self):
         import openpyxl
@@ -405,31 +421,34 @@ class FilterTypePage(QWidget):
         modal.exec()
 
     def _on_edit_submitted(self, idx, data):
-        import datetime
-
-        name        = data.get("name", "").strip()
+        name = data.get("name", "").strip()
         description = data.get("description", "").strip()
 
         if not name:
             QMessageBox.warning(self, "Validation Error", "Filter Type Name is required.")
             return
 
-        for i, row in enumerate(self.all_data):
-            if i != idx and row[0].lower() == name.lower():
-                QMessageBox.warning(self, "Duplicate Name",
-                                    f'Filter Type "{name}" already exists.')
-                return
+        try:
+            # Get original DB row
+            rows = fetch_all_fltr()
+            db_row = rows[idx]
 
-        old_row    = self.all_data[idx]
-        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[6]) + 1) if str(old_row[6]).isdigit() else "1"
+            update_fltr(
+                pk=db_row["pk"],
+                name=name,
+                description=description,
+                display_flag="1",
+                disable_flag="0",
+                protect_flag="0",
+                old_changed_no=db_row["changed_no"],
+                user="ADMIN",
+            )
 
-        self.all_data[idx] = (
-            name, description,
-            old_row[2], old_row[3],   # added_by, added_at unchanged
-            "ADMIN", now, changed_no,
-        )
-        self._apply_filter_and_reset_page()
+            self.load_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
@@ -443,5 +462,16 @@ class FilterTypePage(QWidget):
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            try:
+                rows = fetch_all_fltr()
+                db_row = rows[idx]
+
+                soft_delete_fltr(
+                    pk=db_row["pk"],
+                    user="ADMIN",
+                )
+
+                self.load_data()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))

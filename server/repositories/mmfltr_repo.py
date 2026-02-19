@@ -1,0 +1,185 @@
+# server/repositories/mmfltr_repo.py
+
+from datetime import datetime
+from server.db import get_connection
+
+
+# ── Read ──────────────────────────────────────────────────────────────────────
+
+def fetch_all_fltr() -> list[dict]:
+    sql = """
+        SELECT
+            mcfltriy AS pk,
+            mcname   AS name,
+            mcdesc   AS description,
+            mcdpfg   AS display_flag,
+            mcdsfg   AS disable_flag,
+            mcptfg   AS protect_flag,
+            mcptct   AS protect_count,
+            mcusrm   AS user_remark,
+            mcitrm   AS internal_remark,
+            mcrgid   AS added_by,
+            mcrgdt   AS added_at,
+            mcchid   AS changed_by,
+            mcchdt   AS changed_at,
+            mcchno   AS changed_no
+        FROM barcode.mmfltr
+        WHERE mcdlfg <> '1'
+        ORDER BY mcrgdt DESC
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql)
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ── Create ────────────────────────────────────────────────────────────────────
+
+def create_fltr(
+    name: str,
+    description: str | None,
+    user: str = "Admin",
+) -> int:
+    """
+    Insert new mmfltr row and return its mcfltriy PK.
+    """
+    now = datetime.now()
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+
+        # Guard: reuse if name already exists and not deleted
+        cur.execute(
+            """
+            SELECT mcfltriy
+            FROM barcode.mmfltr
+            WHERE mcname = %s
+              AND mcdlfg <> '1'
+            LIMIT 1
+            """,
+            (name,),
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+        cur.execute(
+            """
+            INSERT INTO barcode.mmfltr (
+                mcname,
+                mcdesc,
+                mcrgid,
+                mcrgdt,
+                mcchid,
+                mcchdt,
+                mccsdt,
+                mccsid
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING mcfltriy
+            """,
+            (
+                name,
+                description,
+                user, now,
+                user, now,
+                now, user
+            ),
+        )
+
+        pk = cur.fetchone()[0]
+        conn.commit()
+        return pk
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ── Update ────────────────────────────────────────────────────────────────────
+
+def update_fltr(
+    pk: int,
+    name: str,
+    description: str | None,
+    display_flag: str,
+    disable_flag: str,
+    protect_flag: str,
+    old_changed_no: int,
+    user: str = "Admin",
+):
+    """
+    Update mmfltr row.
+    Flags should be '0' or '1'.
+    """
+    now = datetime.now()
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE barcode.mmfltr SET
+                mcname  = %s,
+                mcdesc  = %s,
+                mcdpfg  = %s,
+                mcdsfg  = %s,
+                mcptfg  = %s,
+                mcchid  = %s,
+                mcchdt  = %s,
+                mcchno  = %s
+            WHERE mcfltriy = %s
+            """,
+            (
+                name,
+                description,
+                display_flag,
+                disable_flag,
+                protect_flag,
+                user,
+                now,
+                old_changed_no + 1,
+                pk,
+            ),
+        )
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ── Delete (soft) ─────────────────────────────────────────────────────────────
+
+def soft_delete_fltr(pk: int, user: str = "Admin"):
+    now = datetime.now()
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE barcode.mmfltr SET
+                mcdlfg = '1',
+                mcchid = %s,
+                mcchdt = %s
+            WHERE mcfltriy = %s
+            """,
+            (user, now, pk),
+        )
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
