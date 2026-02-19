@@ -10,6 +10,12 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+from server.repositories.mmbrcs_repo import (
+    fetch_all_mmbrcs,
+    create_mmbrcs,
+    update_mmbrcs,
+    delete_mmbrcs,
+)
 
 # --- Design Tokens ---
 COLORS = {
@@ -83,7 +89,8 @@ class BrandCasePage(QWidget):
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
         self._update_selection_dependent_state(False)
 
-        self.load_sample_data()
+        self.load_data()
+
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
@@ -151,16 +158,18 @@ class BrandCasePage(QWidget):
             if btn:
                 btn.setEnabled(enabled)
 
-    def _get_selected_global_index(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        if not selected_rows:
+    def _get_selected_pk(self):
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
             return None
-        table_row = selected_rows[0].row()
-        global_index = (self.current_page * self.page_size) + table_row
-        if global_index >= len(self.filtered_data):
+
+        row_index = selected[0].row()
+        item = self.table.item(row_index, 0)
+        if not item:
             return None
-        actual_row = self.filtered_data[global_index]
-        return self.all_data.index(actual_row)
+
+        return item.data(Qt.UserRole)
+
 
     # ------------------------------------------------------------------
     # Header action wiring
@@ -171,7 +180,7 @@ class BrandCasePage(QWidget):
             btn = self.header.get_action_button(action)
             if btn:
                 mapping = {
-                    "Refresh":     self.load_sample_data,
+                    "Refresh":     self.load_data,
                     "Add":         self.handle_add_action,
                     "Excel":       self.handle_export_action,
                     "Edit":        self.handle_edit_action,
@@ -185,12 +194,9 @@ class BrandCasePage(QWidget):
     # Data
     # ------------------------------------------------------------------
 
-    def load_sample_data(self):
-        case_data = [
-            ("CAR", "TITLE", "Admin", "2024-01-01", "Admin", "2024-01-02", "1", "#DCFCE7", "#166534", "-"),
-            ("FVP", "UPPER", "User1", "2024-01-05", "-",     "-",          "0", "#FFEDD5", "#9A3412", "-"),
-        ]
-        self.all_data = case_data * 20
+    def load_data(self):
+        rows = fetch_all_mmbrcs()
+        self.all_data = rows  # FULL DB DICTS
         self._apply_filter_and_reset_page()
 
     def render_page(self):
@@ -203,39 +209,32 @@ class BrandCasePage(QWidget):
         end_idx = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
-        display_indices = [0, 1, 2, 3, 4, 5, 6]
+        for r, row in enumerate(page_data):
+                self.table.insertRow(r)
 
-        for r, row_data in enumerate(page_data):
-            self.table.insertRow(r)
-            for c_idx, data_idx in enumerate(display_indices):
-                val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
-                item = QTableWidgetItem(val)
-                font = item.font()
-                font.setPointSize(9)
-                item.setFont(font)
-                if c_idx == 0:
-                    item.setForeground(QColor(COLORS["link"]))
-                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-                self.table.setItem(r, c_idx, item)
+                values = [
+                    row["mmcode"],
+                    "TITLE" if row["mmtyca"] else "UPPER",
+                    row["mmrgid"],
+                    row["mmrgdt"].strftime("%Y-%m-%d %H:%M:%S") if row["mmrgdt"] else "",
+                    row["mmchid"],
+                    row["mmchdt"].strftime("%Y-%m-%d %H:%M:%S") if row["mmchdt"] else "",
+                    str(row["mmchno"]),
+                ]
 
-            for col in range(len(display_indices), self.table.columnCount()):
-                self.table.setItem(r, col, QTableWidgetItem("-"))
+                for c, val in enumerate(values):
+                    item = QTableWidgetItem(str(val or ""))
 
-        for r in range(len(page_data)):
-            self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
+                    if c == 0:
+                        item.setForeground(QColor(COLORS["link"]))
+                        item.setData(Qt.UserRole, row["mmbrcsiy"])
 
-        has_prev = self.current_page > 0
-        has_next = end_idx < total
-        self.pagination.update(
-            start=0 if total == 0 else start_idx + 1,
-            end=0 if total == 0 else end_idx,
-            total=total,
-            has_prev=has_prev,
-            has_next=has_next,
-            current_page=self.current_page,
-            page_size=self.page_size,
-            available_page_sizes=self.available_page_sizes,
-        )
+                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    self.table.setItem(r, c, item)
+
+        self.table.clearSelection()
+        self._update_selection_dependent_state(False)
+
 
     # ------------------------------------------------------------------
     # Filter / sort
@@ -248,19 +247,25 @@ class BrandCasePage(QWidget):
 
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
-        headers = self.table_comp.headers()
 
-        try:
-            col_index = headers.index(self._last_filter_type)
-        except ValueError:
-            col_index = 0
+        header_map = {
+            "CODE": "mmcode",
+            "TYPE CASE": "mmtyca",
+            "ADDED BY": "mmrgid",
+            "ADDED AT": "mmrgdt",
+            "CHANGED BY": "mmchid",
+            "CHANGED AT": "mmchdt",
+            "CHANGED NO": "mmchno",
+        }
+
+        key = header_map.get(self._last_filter_type, "mmcode")
 
         if not query:
             self.filtered_data = list(self.all_data)
         else:
             self.filtered_data = [
                 row for row in self.all_data
-                if col_index < len(row) and query in str(row[col_index]).lower()
+                if query in str(row.get(key, "")).lower()
             ]
 
         self._apply_sort()
@@ -276,27 +281,29 @@ class BrandCasePage(QWidget):
         if not self._sort_fields or not self.filtered_data:
             return
 
-        headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}
+        header_map = {
+            "CODE": "mmcode",
+            "TYPE CASE": "mmtyca",
+            "ADDED BY": "mmrgid",
+            "ADDED AT": "mmrgdt",
+            "CHANGED BY": "mmchid",
+            "CHANGED AT": "mmchdt",
+            "CHANGED NO": "mmchno",
+        }
 
         for field in reversed(self._sort_fields):
             direction = self._sort_directions.get(field, "asc")
-            idx = header_to_index.get(field)
-            if idx is None:
+            key = header_map.get(field)
+
+            if not key:
                 continue
+
             self.filtered_data.sort(
-                key=lambda row, i=idx: self._get_sort_value(row, i),
+                key=lambda row: row.get(key) if row.get(key) is not None else "",
                 reverse=(direction == "desc")
             )
 
-    def _get_sort_value(self, row, idx):
-        """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
-        val = row[idx] if idx < len(row) else ""
-        str_val = "" if val is None else str(val).strip()
-        try:
-            return (0, float(str_val))
-        except (ValueError, AttributeError):
-            return (1, str_val.lower())
+
 
     # ------------------------------------------------------------------
     # Pagination
@@ -337,26 +344,28 @@ class BrandCasePage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        import datetime
-
-        code      = data.get("code",      "").strip()
+        code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
 
         if not code:
             QMessageBox.warning(self, "Validation Error", "Code is required.")
             return
 
+        # Duplicate check (UI level)
         for row in self.all_data:
-            if row[0].strip().lower() == code.lower():
+            if row["mmcode"].strip().lower() == code.lower():
                 QMessageBox.warning(self, "Duplicate Code",
                                     f'Code "{code}" already exists.')
                 return
 
-        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        create_mmbrcs(
+            code=code,
+            type_case=(type_case == "TITLE"),
+            user="Admin",
+        )
 
-        self.all_data.insert(0, (code, type_case, "Admin", now, "-", "-", "0", bg, fg, "-"))
-        self._apply_filter_and_reset_page()
+        self.load_data()
+
 
     def handle_export_action(self):
         import openpyxl
@@ -374,20 +383,39 @@ class BrandCasePage(QWidget):
         ws.append(["CODE", "TYPE CASE", "ADDED BY", "ADDED AT",
                    "CHANGED BY", "CHANGED AT", "CHANGED NO"])
         for row in self.filtered_data:
-            ws.append([str(row[i]) if row[i] is not None else "" for i in range(7)])
+            ws.append([
+                row["mmcode"],
+                "TITLE" if row["mmtyca"] else "UPPER",
+                row["mmrgid"],
+                row["mmrgdt"],
+                row["mmchid"],
+                row["mmchdt"],
+                row["mmchno"],
+            ])
+
         wb.save(path)
         QMessageBox.information(self, "Export Complete",
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        row = self.all_data[idx]
+
+        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        if not row:
+            return
+
         fields = [
-            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
-            for label, i in VIEW_DETAIL_FIELDS
+            ("Code", row["mmcode"]),
+            ("Type Case", "TITLE" if row["mmtyca"] else "UPPER"),
+            ("Added By", row["mmrgid"]),
+            ("Added At", row["mmrgdt"]),
+            ("Changed By", row["mmchid"]),
+            ("Changed At", row["mmchdt"]),
+            ("Changed No", row["mmchno"]),
         ]
+
         modal = GenericFormModal(
             title="Brand Case Detail",
             subtitle="Full details for the selected brand case.",
@@ -397,21 +425,24 @@ class BrandCasePage(QWidget):
         )
         modal.exec()
 
+
     def handle_edit_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        row = self.all_data[idx]
+
+        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        if not row:
+            return
 
         initial = {
-            "code":      row[0],
-            "type_case": row[1],
-            # audit (readonly)
-            "added_by":   row[2],
-            "added_at":   row[3],
-            "changed_by": row[4],
-            "changed_at": row[5],
-            "changed_no": row[6],
+            "code": row["mmcode"],
+            "type_case": "TITLE" if row["mmtyca"] else "UPPER",
+            "added_by": row["mmrgid"],
+            "added_at": row["mmrgdt"],
+            "changed_by": row["mmchid"],
+            "changed_at": row["mmchdt"],
+            "changed_no": row["mmchno"],
         }
 
         modal = GenericFormModal(
@@ -421,49 +452,47 @@ class BrandCasePage(QWidget):
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+
+        modal.formSubmitted.connect(lambda data: self._on_edit_submitted(pk, data))
         modal.exec()
 
-    def _on_edit_submitted(self, idx, data):
-        import datetime
 
-        code      = data.get("code",      "").strip()
+    def _on_edit_submitted(self, pk, data):
+        code = data.get("code", "").strip()
         type_case = data.get("type_case", "TITLE")
 
         if not code:
             QMessageBox.warning(self, "Validation Error", "Code is required.")
             return
 
-        for i, row in enumerate(self.all_data):
-            if i != idx and row[0].strip().lower() == code.lower():
-                QMessageBox.warning(self, "Duplicate Code",
-                                    f'Code "{code}" already exists.')
-                return
-
-        bg, fg = ("#DCFCE7", "#166534") if type_case == "TITLE" else ("#FFEDD5", "#9A3412")
-        old_row    = self.all_data[idx]
-        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[6]) + 1) if str(old_row[6]).isdigit() else "1"
-
-        self.all_data[idx] = (
-            code, type_case,
-            old_row[2], old_row[3],   # added_by, added_at unchanged
-            "Admin", now, changed_no,
-            bg, fg, old_row[9],
+        update_mmbrcs(
+            mmbrcs_id=pk,
+            code=code,
+            type_case=(type_case == "TITLE"),
+            user="Admin",
         )
-        self._apply_filter_and_reset_page()
+
+        self.load_data()
+
 
     def handle_delete_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        pk = self._get_selected_pk()
+        if pk is None:
             return
-        code = self.all_data[idx][0]
+
+        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        if not row:
+            return
+
+        code = row["mmcode"]
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText(f'Are you sure you want to delete "{code}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
+
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            delete_mmbrcs(pk, user="Admin")
+            self.load_data()
