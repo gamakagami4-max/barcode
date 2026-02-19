@@ -10,6 +10,12 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+from server.repositories.mmbrnd_repo import (
+    fetch_all_brnd,
+    create_brnd,
+    update_brnd,
+    soft_delete_brnd,
+)
 
 # --- Design Tokens ---
 COLORS = {
@@ -86,7 +92,7 @@ class BrandPage(QWidget):
         self._sort_fields = []
         self._sort_directions = {}
         self.init_ui()
-        self.load_sample_data()
+        self.load_data()
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
@@ -176,15 +182,25 @@ class BrandPage(QWidget):
     # Data
     # ------------------------------------------------------------------
 
-    def load_sample_data(self):
-        raw_brands = [
-            ("BR-001", "Lumina Tech International Solutions", "AVAILABLE",     "Admin_User", "2026-02-01", "Systems",    "2026-02-02", "102"),
-            ("BR-042", "Apex Global",                         "NOT AVAILABLE", "Super_Admin","2026-02-04", "User_A",     "2026-02-05", "45"),
-            ("BR-056", "Vanguard Systems Enterprise Edition", "AVAILABLE",     "Admin_User", "2026-02-05", "-",          "-",          "0"),
-            ("BR-098", "Nexus Brands",                        "PENDING",       "Manager_X",  "2026-02-06", "Admin_User", "2026-02-07", "12"),
-        ]
-        self.all_data = raw_brands * 4
+    def load_data(self):
+        rows = fetch_all_brnd()
+
+        formatted = []
+        for r in rows:
+            formatted.append((
+                r["code"],
+                r["name"],
+                r["case_name"] or "",
+                r["added_by"] or "",
+                r["added_at"].strftime("%Y-%m-%d %H:%M:%S") if r["added_at"] else "",
+                r["changed_by"] or "",
+                r["changed_at"].strftime("%Y-%m-%d %H:%M:%S") if r["changed_at"] else "",
+                str(r["changed_no"] or 0),
+            ))
+
+        self.all_data = formatted
         self._apply_filter_and_reset_page()
+
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -345,7 +361,7 @@ class BrandPage(QWidget):
             btn = self.header.get_action_button(action)
             if btn:
                 mapping = {
-                    "Refresh":     self.load_sample_data,
+                    "Refresh":     self.load_data,
                     "Add":         self.handle_add_action,
                     "Excel":       self.handle_export_action,
                     "Edit":        self.handle_edit_action,
@@ -370,25 +386,27 @@ class BrandPage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        import datetime
-
-        code        = data.get("code", "").strip()
-        name        = data.get("name", "").strip()
+        code = data.get("code", "").strip()
+        name = data.get("name", "").strip()
         case_status = data.get("case", "AVAILABLE")
 
         if not code or not name:
             QMessageBox.warning(self, "Validation Error", "Brand Code and Name are required.")
             return
 
-        for row in self.all_data:
-            if row[0].lower() == code.lower():
-                QMessageBox.warning(self, "Duplicate Code",
-                                    f'Brand Code "{code}" already exists.')
-                return
+        try:
+            create_brnd(
+                code=code,
+                name=name,
+                case_name=case_status,
+                user="ADMIN",
+            )
 
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_data.insert(0, (code, name, case_status, "Admin_User", now, "-", "-", "0"))
-        self._apply_filter_and_reset_page()
+            self.load_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
 
     def handle_export_action(self):
         import openpyxl
@@ -458,32 +476,35 @@ class BrandPage(QWidget):
         modal.exec()
 
     def _on_edit_submitted(self, idx, data):
-        import datetime
-
-        code        = data.get("code", "").strip()
-        name        = data.get("name", "").strip()
+        code = data.get("code", "").strip()
+        name = data.get("name", "").strip()
         case_status = data.get("case", "AVAILABLE")
 
         if not code or not name:
             QMessageBox.warning(self, "Validation Error", "Brand Code and Name are required.")
             return
 
-        for i, row in enumerate(self.all_data):
-            if i != idx and row[0].lower() == code.lower():
-                QMessageBox.warning(self, "Duplicate Code",
-                                    f'Brand Code "{code}" already exists.')
-                return
+        try:
+            rows = fetch_all_brnd()
+            db_row = rows[idx]
 
-        old_row    = self.all_data[idx]
-        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[7]) + 1) if str(old_row[7]).isdigit() else "1"
+            update_brnd(
+                pk=db_row["pk"],
+                code=code,
+                name=name,
+                case_name=case_status,
+                display_flag="1",
+                disable_flag="0",
+                protect_flag="0",
+                old_changed_no=db_row["changed_no"],
+                user="ADMIN",
+            )
 
-        self.all_data[idx] = (
-            code, name, case_status,
-            old_row[3], old_row[4],   # added_by, added_at unchanged
-            "Admin_User", now, changed_no,
-        )
-        self._apply_filter_and_reset_page()
+            self.load_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
@@ -497,5 +518,16 @@ class BrandPage(QWidget):
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            try:
+                rows = fetch_all_brnd()
+                db_row = rows[idx]
+
+                soft_delete_brnd(
+                    pk=db_row["pk"],
+                    user="ADMIN",
+                )
+
+                self.load_data()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
