@@ -73,17 +73,16 @@ def fetch_all_source_data() -> list[dict]:
         conn.close()
 
 
+# server/repositories/mmtbnm_repo.py
+
 def fetch_connection_table_map() -> dict[str, list[str]]:
-    """
-    Return {conn_name: [table_name, ...]} for populating the cascade combo.
-    Only includes active rows from both tables.
-    """
     sql = """
         SELECT DISTINCT c.mnname, t.moname
-        FROM barcode.mmtbnm  t
-        JOIN barcode.mmconc  c ON c.mnconciy = t.moconciy
-        WHERE t.modlfg <> '1'
-          AND c.mndlfg <> '1'
+        FROM barcode.mmconc  c
+        LEFT JOIN barcode.mmtbnm  t 
+            ON t.moconciy = c.mnconciy
+            -- Removed modlfg filter here so table names persist after record deletion
+        WHERE c.mndlfg <> '1'
         ORDER BY c.mnname, t.moname
     """
     conn = get_connection()
@@ -92,7 +91,10 @@ def fetch_connection_table_map() -> dict[str, list[str]]:
         cur.execute(sql)
         mapping: dict[str, list[str]] = {}
         for conn_name, table_name in cur.fetchall():
-            mapping.setdefault(conn_name, []).append(table_name)
+            if conn_name not in mapping:
+                mapping[conn_name] = []
+            if table_name is not None:
+                mapping[conn_name].append(table_name)
         return mapping
     finally:
         conn.close()
