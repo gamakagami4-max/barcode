@@ -1,4 +1,4 @@
-import datetime
+# app/pages/source_data_group.py
 
 import openpyxl
 from PySide6.QtCore import Qt
@@ -11,37 +11,44 @@ from components.search_bar import StandardSearchBar
 from components.sort_by_widget import SortByWidget
 from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
+from repositories.mmtbnm_repo import (
+    create_source_data,
+    fetch_all_source_data,
+    fetch_connection_table_map,
+    soft_delete_source_data,
+    update_source_data,
+)
 
 ROW_STANDARD = "standard"
 QUERY_WRAP_LIMIT = 80
 
-# (label, tuple index) for the View Detail modal
 VIEW_DETAIL_FIELDS = [
-    ("Connection",          1),
-    ("Table Name",          2),
-    ("Query / Link Server", 3),
-    ("Added By",            4),
-    ("Added At",            5),
-    ("Changed By",          6),
-    ("Changed At",          7),
-    ("Changed No",          8),
+    ("Connection",          "conn_name"),
+    ("Table Name",          "table_name"),
+    ("Query / Link Server", "query"),
+    ("Added By",            "added_by"),
+    ("Added At",            "added_at"),
+    ("Changed By",          "changed_by"),
+    ("Changed At",          "changed_at"),
+    ("Changed No",          "changed_no"),
 ]
 
-# Row shape: (key, connection, table_name, query, added_by, added_at, changed_by, changed_at, changed_no)
-
-CONNECTION_TABLES: dict[str, list[str]] = {
-    "SQL Server A":  ["MITMAS", "ORDERS", "INVENTORY", "CUSTOMERS"],
-    "SQL Server B":  ["PROD_DATA", "STAGING", "LOGS"],
-    "MySQL Prod":    ["users", "transactions", "audit_log"],
-    "MySQL Dev":     ["users_dev", "transactions_dev"],
-    "PostgreSQL DW": ["fact_sales", "dim_product", "dim_date"],
+# Tuple index map (mirrors _row_to_tuple layout)
+_COL_HEADER_TO_TUPLE_IDX = {
+    "CONNECTION":          1,
+    "TABLE NAME":          2,
+    "QUERY LINK SERVER":   3,
+    "ADDED BY":            4,
+    "ADDED AT":            5,
+    "CHANGED BY":          6,
+    "CHANGED AT":          7,
+    "CHANGED NO":          8,
 }
 
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
 def _wrap_line(line: str, limit: int) -> list[str]:
-    """Break one line into ≤limit-char chunks, splitting at spaces when possible."""
     if not line or len(line) <= limit:
         return [line] if line else []
     chunks, rest = [], line
@@ -58,7 +65,6 @@ def _wrap_line(line: str, limit: int) -> list[str]:
 
 
 def wrap_query_text(text: str, limit: int = QUERY_WRAP_LIMIT) -> str:
-    """Wrap query text so every line is ≤limit chars; preserves existing newlines."""
     if not text:
         return text
     result = []
@@ -67,37 +73,69 @@ def wrap_query_text(text: str, limit: int = QUERY_WRAP_LIMIT) -> str:
     return "\n".join(result)
 
 
+# ── Data conversion ───────────────────────────────────────────────────────────
+
+def _row_to_tuple(r: dict) -> tuple:
+    """
+    Convert a repo dict to a fixed-position tuple used throughout the page.
+
+    Index layout:
+        0  key  (conn_name::table_name::pk)
+        1  conn_name
+        2  table_name
+        3  query
+        4  added_by
+        5  added_at   (str)
+        6  changed_by
+        7  changed_at (str)
+        8  changed_no (str)
+        9  pk         (int, used for DML)
+    """
+    pk   = r["pk"]
+    conn = (r.get("conn_name") or "").strip()
+    tbl  = (r.get("table_name") or "").strip()
+    return (
+        f"{conn}::{tbl}::{pk}",
+        conn,
+        tbl,
+        (r.get("query") or "").strip(),
+        (r.get("added_by") or "").strip(),
+        str(r["added_at"])[:19] if r.get("added_at") else "",
+        (r.get("changed_by") or "").strip(),
+        str(r["changed_at"])[:19] if r.get("changed_at") else "",
+        str(r.get("changed_no", 0)),
+        pk,
+    )
+
+
 # ── Form schema ───────────────────────────────────────────────────────────────
 
-def _build_form_schema(initial_data: dict | None = None, mode: str = "add") -> list[dict]:
-    """Return field definitions for the add/edit modal."""
+def _build_form_schema(connection_tables: dict, mode: str = "add") -> list[dict]:
     schema = [
         {
-            "name": "conn",
-            "label": "Connection",
-            "type": "cascade_combo",
-            "options": CONNECTION_TABLES,
-            "child": "table_name",
+            "name":     "conn",
+            "label":    "Connection",
+            "type":     "cascade_combo",
+            "options":  connection_tables,
+            "child":    "table_name",
             "required": True,
         },
         {
-            "name": "table_name",
-            "label": "Table Name",
-            "type": "combo",
-            "options": [],
+            "name":     "table_name",
+            "label":    "Table Name",
+            "type":     "combo",
+            "options":  [],
             "required": True,
         },
         {
-            "name": "query",
-            "label": "Query / Link Server",
-            "type": "text",
+            "name":        "query",
+            "label":       "Query / Link Server",
+            "type":        "text",
             "placeholder": "Enter SQL query or link server path",
-            "required": True,
+            "required":    True,
         },
     ]
-
     if mode == "edit":
-        # Audit fields shown read-only in edit mode
         schema += [
             {"name": "added_by",   "label": "Added By",   "type": "readonly"},
             {"name": "added_at",   "label": "Added At",   "type": "readonly"},
@@ -105,7 +143,6 @@ def _build_form_schema(initial_data: dict | None = None, mode: str = "add") -> l
             {"name": "changed_at", "label": "Changed At", "type": "readonly"},
             {"name": "changed_no", "label": "Changed No", "type": "readonly"},
         ]
-
     return schema
 
 
@@ -123,8 +160,9 @@ class SourceDataPage(QWidget):
         self._last_search_text = ""
         self._sort_fields: list[str] = []
         self._sort_directions: dict[str, str] = {}
+        self._connection_tables: dict[str, list[str]] = {}
         self._init_ui()
-        self.load_sample_data()
+        self.load_data()
 
     # ── UI setup ──────────────────────────────────────────────────────────────
 
@@ -135,25 +173,20 @@ class SourceDataPage(QWidget):
         layout.setSpacing(0)
         self.main_layout = layout
 
-        enabled_actions = ["Add", "Excel", "Refresh", "View Detail"]
-
-        # Header
         self.header = StandardPageHeader(
             title="Source Data Group",
             subtitle="Manage and query your enterprise data sources from a single pane.",
-            enabled_actions=enabled_actions,
+            enabled_actions=["Add", "Excel", "Refresh", "View Detail"],
         )
         layout.addWidget(self.header)
         self._connect_header_actions()
         layout.addSpacing(12)
 
-        # Search bar
         self.search_bar = StandardSearchBar()
         self.search_bar.searchChanged.connect(self.filter_table)
         layout.addWidget(self.search_bar)
         layout.addSpacing(5)
 
-        # Table
         self.table_comp = StandardTable([
             "CONNECTION", "TABLE NAME", "QUERY LINK SERVER",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
@@ -162,7 +195,6 @@ class SourceDataPage(QWidget):
         self.table.setWordWrap(True)
         self._configure_table_columns()
 
-        # Sort bar
         self.sort_bar = SortByWidget(self.table)
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
         layout.addWidget(self.sort_bar)
@@ -171,7 +203,6 @@ class SourceDataPage(QWidget):
         layout.addWidget(self.table_comp)
         layout.addSpacing(16)
 
-        # Pagination
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
@@ -190,7 +221,6 @@ class SourceDataPage(QWidget):
         hdr.setSectionResizeMode(5, QHeaderView.Fixed)
         hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(7, QHeaderView.Fixed)
-
         self.table.setColumnWidth(0, 150)
         self.table.setColumnWidth(1, 120)
         self.table.setColumnWidth(3, 100)
@@ -208,15 +238,15 @@ class SourceDataPage(QWidget):
             if btn:
                 btn.setEnabled(enabled)
 
-    def _get_selected_global_index(self) -> int | None:
-        """Return the all_data index for the currently selected row, or None."""
+    def _get_selected_row(self) -> tuple | None:
+        """Return the filtered_data tuple for the currently selected row, or None."""
         rows = self.table.selectionModel().selectedRows()
         if not rows:
             return None
         global_idx = self.current_page * self.page_size + rows[0].row()
         if global_idx >= len(self.filtered_data):
             return None
-        return self.all_data.index(self.filtered_data[global_idx])
+        return self.filtered_data[global_idx]
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -225,20 +255,19 @@ class SourceDataPage(QWidget):
         it.setTextAlignment(Qt.AlignTop | Qt.AlignLeft)
         return it
 
-    def _add_table_row(self, conn, table_name, query, added_by, added_at,
-                       changed_by, changed_at, changed_no):
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        item_conn = self._make_item(conn)
+    def _add_table_row(self, row: tuple):
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        item_conn = self._make_item(row[1])
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
-        self.table.setItem(row, 0, item_conn)
-        self.table.setItem(row, 1, self._make_item(table_name))
-        self.table.setItem(row, 2, self._make_item(wrap_query_text(query)))
-        self.table.setItem(row, 3, self._make_item(added_by))
-        self.table.setItem(row, 4, self._make_item(added_at))
-        self.table.setItem(row, 5, self._make_item(changed_by))
-        self.table.setItem(row, 6, self._make_item(changed_at))
-        self.table.setItem(row, 7, self._make_item(changed_no))
+        self.table.setItem(r, 0, item_conn)
+        self.table.setItem(r, 1, self._make_item(row[2]))
+        self.table.setItem(r, 2, self._make_item(wrap_query_text(row[3])))
+        self.table.setItem(r, 3, self._make_item(row[4]))
+        self.table.setItem(r, 4, self._make_item(row[5]))
+        self.table.setItem(r, 5, self._make_item(row[6]))
+        self.table.setItem(r, 6, self._make_item(row[7]))
+        self.table.setItem(r, 7, self._make_item(row[8]))
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -250,8 +279,7 @@ class SourceDataPage(QWidget):
         end = min(start + self.page_size, total)
 
         for item in data[start:end]:
-            self._add_table_row(item[1], item[2], item[3], item[4], item[5],
-                                 item[6], item[7], item[8])
+            self._add_table_row(item)
 
         for r in range(end - start):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start + r + 1)))
@@ -270,24 +298,15 @@ class SourceDataPage(QWidget):
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
-    def load_sample_data(self):
-        self.all_data = []
-        conn_names = list(CONNECTION_TABLES.keys())
-        for i in range(50):
-            conn = conn_names[i % len(conn_names)]
-            table_name = CONNECTION_TABLES[conn][i % len(CONNECTION_TABLES[conn])]
-            if i % 3 == 0:
-                row = (
-                    "expandable", conn, table_name,
-                    f"SELECT * FROM [{table_name}] WHERE ID = {i}\nORDER BY CreatedAt DESC",
-                    "Admin", "2024-01-15", "User_A", "2024-02-10", "2",
-                )
-            else:
-                row = (
-                    "standard", conn, table_name, "Direct Link",
-                    "Admin", "2024-01-20", "-", "-", "0",
-                )
-            self.all_data.append(row)
+    def load_data(self):
+        try:
+            self.all_data = [_row_to_tuple(r) for r in fetch_all_source_data()]
+            self._connection_tables = fetch_connection_table_map()
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error",
+                                 f"Failed to load data:\n\n{exc}")
+            self.all_data = []
+            self._connection_tables = {}
         self._apply_filter_and_reset_page()
 
     # ── Filtering & sorting ───────────────────────────────────────────────────
@@ -299,17 +318,16 @@ class SourceDataPage(QWidget):
 
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
-        headers = self.table_comp.headers()
-        col_index = {h: i + 1 for i, h in enumerate(headers)}.get(self._last_filter_type, 1)
+        col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 1)
 
-        if not query:
-            self.filtered_data = list(self.all_data)
-        else:
-            self.filtered_data = [
+        self.filtered_data = (
+            list(self.all_data)
+            if not query
+            else [
                 row for row in self.all_data
-                if col_index < len(row) and query in str(row[col_index] or "").lower()
+                if query in str(row[col_idx] or "").lower()
             ]
-
+        )
         self._apply_sort()
         self.current_page = 0
         self.render_page()
@@ -322,9 +340,8 @@ class SourceDataPage(QWidget):
     def _apply_sort(self):
         if not self._sort_fields or not self.filtered_data:
             return
-        header_to_index = {h: i + 1 for i, h in enumerate(self.table_comp.headers())}
         for field in reversed(self._sort_fields):
-            idx = header_to_index.get(field)
+            idx = _COL_HEADER_TO_TUPLE_IDX.get(field)
             if idx is None:
                 continue
             self.filtered_data.sort(
@@ -333,7 +350,7 @@ class SourceDataPage(QWidget):
             )
 
     def _sort_key(self, row: tuple, idx: int):
-        val = str(row[idx]) if idx < len(row) and row[idx] is not None else ""
+        val = str(row[idx]) if row[idx] is not None else ""
         try:
             return float(val.replace(",", ""))
         except ValueError:
@@ -360,15 +377,14 @@ class SourceDataPage(QWidget):
     # ── Header button wiring ──────────────────────────────────────────────────
 
     def _connect_header_actions(self):
-        mapping = {
-            "Refresh":     self.load_sample_data,
+        for label, slot in {
+            "Refresh":     self.load_data,
             "Add":         self.handle_add_action,
             "Excel":       self.handle_export_action,
             "Edit":        self.handle_edit_action,
             "Delete":      self.handle_delete_action,
             "View Detail": self.handle_view_detail_action,
-        }
-        for label, slot in mapping.items():
+        }.items():
             btn = self.header.get_action_button(label)
             if btn:
                 btn.clicked.connect(slot)
@@ -378,7 +394,7 @@ class SourceDataPage(QWidget):
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Source Data",
-            fields=_build_form_schema(mode="add"),
+            fields=_build_form_schema(self._connection_tables, mode="add"),
             parent=self,
             mode="add",
         )
@@ -386,23 +402,18 @@ class SourceDataPage(QWidget):
         modal.exec()
 
     def _on_add_submitted(self, data: dict):
-        conn       = data.get("conn", "").strip()
+        conn_name  = data.get("conn", "").strip()
         table_name = data.get("table_name", "").strip()
         query      = data.get("query", "").strip()
-
-        if not all([conn, table_name, query]):
-            print("All fields are required")
+        if not all([conn_name, table_name, query]):
+            QMessageBox.warning(self, "Validation", "All fields are required.")
             return
-
-        key = f"{conn}::{table_name}"
-        if any(r[0] == key for r in self.all_data):
-            QMessageBox.warning(self, "Duplicate Key",
-                                f"A record for '{conn} / {table_name}' already exists.")
+        try:
+            create_source_data(conn_name, table_name, query)
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
-
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_data.insert(0, (key, conn, table_name, query, "Admin", now, "-", "-", "0"))
-        self._apply_filter_and_reset_page()
+        self.load_data()
 
     def handle_export_action(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -410,7 +421,6 @@ class SourceDataPage(QWidget):
         )
         if not path:
             return
-
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Source Data"
@@ -423,14 +433,19 @@ class SourceDataPage(QWidget):
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
 
     def handle_view_detail_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        row = self._get_selected_row()
+        if row is None:
             return
-        row = self.all_data[idx]
-        fields = [
-            (label, str(row[i]) if i < len(row) and row[i] is not None else "")
-            for label, i in VIEW_DETAIL_FIELDS
-        ]
+        # Re-fetch the single record's detail dict for the view modal
+        try:
+            all_raw = fetch_all_source_data()
+            detail = next((r for r in all_raw if r["pk"] == row[9]), None)
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Could not load detail:\n\n{exc}")
+            return
+        if detail is None:
+            return
+        fields = [(label, str(detail.get(key, "") or "")) for label, key in VIEW_DETAIL_FIELDS]
         GenericFormModal(
             title="Row Detail",
             subtitle="Full details for the selected record.",
@@ -440,10 +455,9 @@ class SourceDataPage(QWidget):
         ).exec()
 
     def handle_edit_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        row = self._get_selected_row()
+        if row is None:
             return
-        row = self.all_data[idx]
         initial = {
             "conn":       row[1],
             "table_name": row[2],
@@ -456,45 +470,34 @@ class SourceDataPage(QWidget):
         }
         modal = GenericFormModal(
             title="Edit Source Data",
-            fields=_build_form_schema(initial_data=initial, mode="edit"),
+            fields=_build_form_schema(self._connection_tables, mode="edit"),
             parent=self,
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
         modal.exec()
 
-    def _on_edit_submitted(self, idx: int, data: dict):
-        conn       = data.get("conn", "").strip()
+    def _on_edit_submitted(self, row: tuple, data: dict):
+        conn_name  = data.get("conn", "").strip()
         table_name = data.get("table_name", "").strip()
         query      = data.get("query", "").strip()
-
-        if not all([conn, table_name, query]):
-            print("All fields required")
+        if not all([conn_name, table_name, query]):
+            QMessageBox.warning(self, "Validation", "All fields are required.")
             return
-
-        old_row = self.all_data[idx]
-        new_key = f"{conn}::{table_name}"
-
-        if any(r[0] == new_key and r != old_row for r in self.all_data):
-            QMessageBox.warning(self, "Duplicate Key",
-                                f"A record for '{conn} / {table_name}' already exists.")
+        pk = row[9]
+        old_changed_no = int(row[8]) if str(row[8]).isdigit() else 0
+        try:
+            update_source_data(pk, conn_name, table_name, query, old_changed_no)
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
-
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[8]) + 1) if old_row[8].isdigit() else "1"
-        self.all_data[idx] = (
-            new_key, conn, table_name, query,
-            old_row[4], old_row[5],   # added_by / added_at unchanged
-            "Admin", now, changed_no,
-        )
-        self._apply_filter_and_reset_page()
+        self.load_data()
 
     def handle_delete_action(self):
-        idx = self._get_selected_global_index()
-        if idx is None:
+        row = self._get_selected_row()
+        if row is None:
             return
-        row = self.all_data[idx]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText("Are you sure you want to delete this record?")
@@ -503,5 +506,9 @@ class SourceDataPage(QWidget):
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            try:
+                soft_delete_source_data(row[9])
+            except Exception as exc:
+                QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
+                return
+            self.load_data()

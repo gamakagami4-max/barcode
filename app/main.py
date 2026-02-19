@@ -1,4 +1,7 @@
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))            # barcode/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server")) # barcode/server/
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout,
     QTabWidget, QTabBar, QWidget, QLabel, QPushButton,
