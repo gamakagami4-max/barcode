@@ -21,7 +21,7 @@ from repositories.mmsdgr_repo import (
 from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
 
 ROW_STANDARD     = "standard"
-QUERY_WRAP_LIMIT      = 55   # characters per line before \n is inserted
+QUERY_WRAP_LIMIT      = 49   # characters per line before \n is inserted
 QUERY_COL_FIXED_WIDTH = 370  # pixels — keep in sync with wrap limit
 
 VIEW_DETAIL_FIELDS = [
