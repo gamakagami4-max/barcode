@@ -853,6 +853,23 @@ class GenericFormModal(QDialog):
     # Widget factory
     # ------------------------------------------------------------------
 
+    def _wrap_in_box(self, widget: QWidget) -> QWidget:
+        box = QFrame()
+        box.setStyleSheet(f"""
+            QFrame {{
+                background: {COLORS['white']};
+                border: 1px solid {COLORS['border_light']};
+                border-radius: 8px;
+            }}
+        """)
+        box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(0)
+        lay.addWidget(widget)
+
+        return box
     def _create_form_widget(self, field: dict) -> QWidget:
         field_type = field.get("type", "text")
         editable   = (self.mode != "view") and (field_type != "readonly")
@@ -987,7 +1004,7 @@ class GenericFormModal(QDialog):
                 container.set_options      = w.set_options
                 return container
 
-            return w
+            return self._wrap_in_box(w)
 
         # ── text_with_unit ────────────────────────────────────────────
         elif field_type == "text_with_unit":
