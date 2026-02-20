@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QEasingCurve, QPoint,
-    QParallelAnimationGroup, QEvent,
+    QParallelAnimationGroup, QEvent, QObject,
 )
 from PySide6.QtGui import QFont, QCursor
 
@@ -219,6 +219,7 @@ class _DropdownPanel(QFrame):
 
     def hide_animated(self):
         cur = self.height()
+
         self._h_anim = QPropertyAnimation(self, b"minimumHeight")
         self._h_anim.setDuration(_DROPDOWN_ANIM_MS)
         self._h_anim.setStartValue(cur)
@@ -244,6 +245,46 @@ class _DropdownPanel(QFrame):
         self.hide()
 
 
+# ==================================================================
+# Outside-click filter for AnimatedCombo
+# ==================================================================
+
+class _OutsideClickFilter(QObject):
+    """
+    Application-level event filter that closes the dropdown when the
+    user clicks anywhere outside the panel or the trigger widget.
+    Installed only while the panel is visible; removed on close.
+    """
+    def __init__(self, combo: "AnimatedCombo"):
+        super().__init__(combo)
+        self._combo = combo
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            panel   = self._combo._panel
+            trigger = self._combo._trigger
+
+            if panel is None or not panel.isVisible():
+                return False
+
+            try:
+                gpos = event.globalPosition().toPoint()   # Qt 6
+            except AttributeError:
+                gpos = event.globalPos()                  # Qt 5 compat
+
+            in_panel   = panel.geometry().contains(gpos)
+            in_trigger = trigger.rect().contains(trigger.mapFromGlobal(gpos))
+
+            if not in_panel and not in_trigger:
+                self._combo._close()
+
+        return False  # never consume the event
+
+
+# ==================================================================
+# Animated combo widget
+# ==================================================================
+
 class AnimatedCombo(QWidget):
     currentTextChanged = Signal(str)
 
@@ -252,7 +293,7 @@ class AnimatedCombo(QWidget):
         self._options     = list(options)
         self._current     = options[0] if options else ""
         self._panel       = None
-        self._just_opened = False
+        self._global_filter_installed = False
 
         self.setMinimumHeight(36)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -265,6 +306,8 @@ class AnimatedCombo(QWidget):
         self._trigger.set_text(self._current)
         self._trigger.clicked.connect(self._toggle)
         lay.addWidget(self._trigger)
+
+        self._global_filter = _OutsideClickFilter(self)
 
     def currentText(self) -> str:
         return self._current
@@ -310,7 +353,11 @@ class AnimatedCombo(QWidget):
     def _ensure_panel(self):
         if self._panel is None:
             self._panel = _DropdownPanel(self._options, self._current, parent=None)
-            self._panel.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+            # Qt.Tool instead of Qt.Popup — prevents Qt from auto-calling hide()
+            # on outside clicks, which would skip our close animation entirely.
+            self._panel.setWindowFlags(
+                Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
+            )
             self._panel.setAttribute(Qt.WA_TranslucentBackground, False)
             self._panel.optionSelected.connect(self._on_picked)
             self._panel.hide()
@@ -318,31 +365,44 @@ class AnimatedCombo(QWidget):
     def _toggle(self):
         self._ensure_panel()
         if not self._panel.isVisible():
-            pt_global = self._trigger.mapToGlobal(QPoint(0, self._trigger.height()))
-            w         = self._trigger.width()
-            th        = self._panel._target_height()
-
-            from PySide6.QtWidgets import QApplication
-            screen = QApplication.screenAt(pt_global)
-            if screen:
-                screen_bottom = screen.availableGeometry().bottom()
-                if pt_global.y() + th > screen_bottom:
-                    pt_global = self._trigger.mapToGlobal(QPoint(0, -th))
-
-            self._panel.setGeometry(pt_global.x(), pt_global.y(), w, th)
-            self._panel.show()
-            self._panel.raise_()
-            self._trigger.set_open(True)
-            self._just_opened = True
-            self._panel.installEventFilter(self)
-            self._panel.show_animated()
+            self._open()
         else:
             self._close()
+
+    def _open(self):
+        pt_global = self._trigger.mapToGlobal(QPoint(0, self._trigger.height()))
+        w  = self._trigger.width()
+        th = self._panel._target_height()
+
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.screenAt(pt_global)
+        if screen:
+            screen_bottom = screen.availableGeometry().bottom()
+            if pt_global.y() + th > screen_bottom:
+                pt_global = self._trigger.mapToGlobal(QPoint(0, -th))
+
+        self._panel.setGeometry(pt_global.x(), pt_global.y(), w, th)
+        self._panel.show()
+        self._panel.raise_()
+        self._trigger.set_open(True)
+        self._panel.show_animated()
+
+        # Start watching for outside clicks
+        if not self._global_filter_installed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().installEventFilter(self._global_filter)
+            self._global_filter_installed = True
 
     def _close(self):
         if self._panel and self._panel.isVisible():
             self._trigger.set_open(False)
             self._panel.hide_animated()
+
+        # Stop watching for outside clicks
+        if self._global_filter_installed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().removeEventFilter(self._global_filter)
+            self._global_filter_installed = False
 
     def _on_picked(self, option: str):
         prev = self._current
@@ -352,11 +412,10 @@ class AnimatedCombo(QWidget):
         if option != prev:
             self.currentTextChanged.emit(option)
 
-    def eventFilter(self, obj, event):
-        if self._just_opened:
-            self._just_opened = False
-            return False
-        return super().eventFilter(obj, event)
+    def hideEvent(self, event):
+        """Ensure the panel closes if the combo itself is hidden/destroyed."""
+        super().hideEvent(event)
+        self._close()
 
 
 # ==================================================================
