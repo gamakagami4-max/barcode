@@ -2,8 +2,9 @@
 
 import openpyxl
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import (
-    QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from components.generic_form_modal import GenericFormModal
@@ -20,9 +21,10 @@ from repositories.mmsdgr_repo import (
 )
 from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
 
-ROW_STANDARD     = "standard"
-QUERY_WRAP_LIMIT      = 49   # characters per line before \n is inserted
-QUERY_COL_FIXED_WIDTH = 370  # pixels — keep in sync with wrap limit
+ROW_STANDARD          = "standard"
+QUERY_COL_FIXED_WIDTH = 370   # pixels — column width
+_QUERY_PADDING_PX     = 24    # 12px left + 12px right (matches stylesheet padding)
+_WRAP_PIXEL_LIMIT     = QUERY_COL_FIXED_WIDTH - _QUERY_PADDING_PX
 
 VIEW_DETAIL_FIELDS = [
     ("Engine",              "engine_name"),
@@ -56,7 +58,7 @@ VIEW_DETAIL_FIELDS = [
 #   0  CONNECTION          → tuple[2]
 #   1  TABLE NAME          → tuple[3]
 #   2  QUERY LINK SERVER   → tuple[4]
-#   3  ENGINE              → tuple[1]   ← moved here from col 0
+#   3  ENGINE              → tuple[1]
 #   4  ADDED BY            → tuple[5]
 #   5  ADDED AT            → tuple[6]
 #   6  CHANGED BY          → tuple[7]
@@ -78,28 +80,48 @@ _COL_HEADER_TO_TUPLE_IDX = {
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
-def _wrap_line(line: str, limit: int) -> list[str]:
-    if not line or len(line) <= limit:
-        return [line] if line else []
-    chunks, rest = [], line
+def _get_fm() -> QFontMetrics:
+    """Return font metrics for the current application font."""
+    return QFontMetrics(QApplication.font())
+
+
+def _wrap_line_px(line: str, fm: QFontMetrics, limit_px: int) -> list[str]:
+    """Wrap a single line so each chunk fits within limit_px pixels."""
+    if not line:
+        return []
+    if fm.horizontalAdvance(line) <= limit_px:
+        return [line]
+    chunks = []
+    rest = line
     while rest:
-        if len(rest) <= limit:
+        if fm.horizontalAdvance(rest) <= limit_px:
             chunks.append(rest)
             break
-        seg = rest[: limit + 1]
-        bp  = seg.rfind(" ")
-        bp  = bp if bp > limit // 2 else limit
+        # Binary-search for the longest prefix that fits
+        lo, hi = 1, len(rest)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if fm.horizontalAdvance(rest[:mid]) <= limit_px:
+                lo = mid
+            else:
+                hi = mid - 1
+        # Try to break at a space for readability
+        seg = rest[:lo]
+        sp  = seg.rfind(" ")
+        bp  = sp if sp > lo // 2 else lo
         chunks.append(rest[:bp].rstrip())
         rest = rest[bp:].lstrip()
     return chunks
 
 
-def wrap_query_text(text: str, limit: int = QUERY_WRAP_LIMIT) -> str:
+def wrap_query_text(text: str, limit_px: int = _WRAP_PIXEL_LIMIT) -> str:
+    """Wrap query text so each line fits within the fixed column width."""
     if not text:
         return text
+    fm = _get_fm()
     result = []
     for line in text.split("\n"):
-        result.extend(_wrap_line(line, limit))
+        result.extend(_wrap_line_px(line, fm, limit_px))
     return "\n".join(result)
 
 
@@ -161,7 +183,7 @@ def _row_to_tuple(r: dict) -> tuple:
 # ── Form schema ───────────────────────────────────────────────────────────────
 
 def _build_form_schema(
-    connection_tables: dict,              # engine_code → conn_name → [mixed_names]
+    connection_tables: dict,
     initial_engine: str = "",
     initial_conn: str = "",
     initial_table: str = "",
@@ -285,7 +307,9 @@ class SourceDataPage(QWidget):
         ])
         self.table = self.table_comp.table
         self.table.setWordWrap(True)
-        self._configure_table_columns()
+        self.table.setStyleSheet(
+        self.table.styleSheet() + "\nQTableWidget::item { padding: 4px 12px; }"
+        )
 
         self.sort_bar = SortByWidget(self.table)
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
@@ -293,6 +317,7 @@ class SourceDataPage(QWidget):
         layout.addSpacing(8)
 
         layout.addWidget(self.table_comp)
+        self._configure_table_columns()   # ← after addWidget so nothing overrides it
         layout.addSpacing(16)
 
         self.pagination = self.table_comp.pagination
@@ -393,7 +418,7 @@ class SourceDataPage(QWidget):
             0 CONNECTION        → row[2]
             1 TABLE NAME        → row[3]
             2 QUERY LINK SERVER → row[4]
-            3 ENGINE            → row[1]   ← after query
+            3 ENGINE            → row[1]
             4 ADDED BY          → row[5]
             5 ADDED AT          → row[6]
             6 CHANGED BY        → row[7]
@@ -403,19 +428,17 @@ class SourceDataPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
 
-        item_conn = self._make_item(row[2])                          # conn_name (first col now)
+        item_conn = self._make_item(row[2])
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
         self.table.setItem(r, 0, item_conn)
-        self.table.setItem(r, 1, self._make_item(row[3]))                   # table_name
-        query_item = self._make_item(wrap_query_text(row[4]))
-        query_item.setData(Qt.UserRole + 1, "padded")          # optional tag
-        self.table.setItem(r, 2, query_item)
-        self.table.setItem(r, 3, self._make_item(row[1]))                   # engine_code
-        self.table.setItem(r, 4, self._make_item(row[5]))                   # added_by
-        self.table.setItem(r, 5, self._make_item(row[6]))                   # added_at
-        self.table.setItem(r, 6, self._make_item(row[7]))                   # changed_by
-        self.table.setItem(r, 7, self._make_item(row[8]))                   # changed_at
-        self.table.setItem(r, 8, self._make_item(row[9]))                   # changed_no
+        self.table.setItem(r, 1, self._make_item(row[3]))
+        self.table.setItem(r, 2, self._make_item(wrap_query_text(row[4])))
+        self.table.setItem(r, 3, self._make_item(row[1]))
+        self.table.setItem(r, 4, self._make_item(row[5]))
+        self.table.setItem(r, 5, self._make_item(row[6]))
+        self.table.setItem(r, 6, self._make_item(row[7]))
+        self.table.setItem(r, 7, self._make_item(row[8]))
+        self.table.setItem(r, 8, self._make_item(row[9]))
 
     def render_page(self):
         self.table.setSortingEnabled(False)
