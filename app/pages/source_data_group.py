@@ -241,21 +241,19 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
+
+        # Fixed small columns
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # ENGINE
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED BY
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED AT
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # CHANGED BY
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED AT
+        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # CHANGED NO
+
+        # Make QUERY column dominate
         hdr.setSectionResizeMode(2, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.Fixed)
-        hdr.setSectionResizeMode(4, QHeaderView.Fixed)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(6, QHeaderView.Fixed)
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(8, QHeaderView.Fixed)
-        self.table.setColumnWidth(0, 150)
-        self.table.setColumnWidth(1, 120)
-        self.table.setColumnWidth(3, 120)
-        self.table.setColumnWidth(4, 100)
-        self.table.setColumnWidth(6, 110)
-        self.table.setColumnWidth(8, 100)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 

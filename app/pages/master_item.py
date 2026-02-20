@@ -12,16 +12,29 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 
+from server.repositories.mmitem_repo import (
+    fetch_all_item,
+    create_item,
+    update_item,
+    delete_item,
+)
+
+# ─────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────
+CURRENT_USER = "Admin"   # ← swap with session.user when auth is ready
+
 # --- Design Tokens ---
 COLORS = {
-    "bg_main":   "#F8FAFC",
-    "link":      "#6366F1",
-    "border":    "#E2E8F0",
-    "panel_bg":  "#FFFFFF",
-    "text_main": "#1E293B",
-    "text_muted":"#64748B"
+    "bg_main":    "#F8FAFC",
+    "link":       "#6366F1",
+    "border":     "#E2E8F0",
+    "panel_bg":   "#FFFFFF",
+    "text_main":  "#1E293B",
+    "text_muted": "#64748B",
 }
 
+# Mapping: (display label, index into the row tuple used in the table)
 VIEW_DETAIL_FIELDS = [
     ("Item Code",     0),
     ("Name",          1),
@@ -46,9 +59,8 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
     schema = [
         {"name": "item_code",     "label": "Item Code",      "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
         {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True},
-        {"name": "brand",         "label": "Brand",           "type": "text",  "placeholder": "Enter brand code",        "required": True},
-        {"name": "warehouse",     "label": "Warehouse",       "type": "text",  "placeholder": "e.g., EIF",              "required": True},
-        {"name": "part_no",       "label": "Part Number",     "type": "text",  "placeholder": "Enter part number",       "required": True},
+        {"name": "warehouse",     "label": "Warehouse",       "type": "text",  "placeholder": "e.g., EIF",              "required": False},
+        {"name": "part_no",       "label": "Part Number",     "type": "text",  "placeholder": "Enter part number",       "required": False},
         {"name": "interchange_1", "label": "Interchange 1",   "type": "text",  "placeholder": "Optional",               "required": False},
         {"name": "interchange_2", "label": "Interchange 2",   "type": "text",  "placeholder": "Optional",               "required": False},
         {"name": "interchange_3", "label": "Interchange 3",   "type": "text",  "placeholder": "Optional",               "required": False},
@@ -69,33 +81,69 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
     return schema
 
 
+# ─────────────────────────────────────────────
+# Helper: DB row dict → display tuple
+# ─────────────────────────────────────────────
+def _row_to_tuple(r: dict) -> tuple:
+    """Convert a DB dict from fetch_all_item() into the display tuple."""
+    def _fmt_dt(val):
+        if val is None:
+            return "-"
+        # val may already be a string or a datetime object
+        return str(val)[:19] if str(val) else "-"
+
+    return (
+        r.get("mlcode",  "") or "",           # 0  item code
+        r.get("mlname",  "") or "",           # 1  name
+        r.get("mlbrndiy", "") or "",          # 2  brand (FK id for now)
+        r.get("mlwhse",  "") or "",           # 3  warehouse
+        r.get("mlpnpr",  "") or "",           # 4  part no
+        r.get("mlinc1",  "") or "",           # 5  interchange 1
+        r.get("mlinc2",  "") or "",           # 6  interchange 2
+        r.get("mlinc3",  "") or "",           # 7  interchange 3
+        r.get("mlinc4",  "") or "",           # 8  interchange 4
+        str(r.get("mlqtyn", 0) or 0),        # 9  quantity
+        r.get("mlumit",  "") or "",           # 10 UOM
+        r.get("mlrgid",  "-") or "-",        # 11 added by
+        _fmt_dt(r.get("mlrgdt")),            # 12 added at
+        r.get("mlchid",  "-") or "-",        # 13 changed by
+        _fmt_dt(r.get("mlchdt")),            # 14 changed at
+        str(r.get("mlchno", 0) or 0),       # 15 changed no
+        r.get("mlitemiy"),                   # 16 PK (hidden, for updates/deletes)
+    )
+
+
 class MasterItemPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.all_data            = []
-        self.filtered_data       = []
-        self.current_page        = 0
-        self.page_size           = 25
+        self.all_data:      list[tuple] = []
+        self.filtered_data: list[tuple] = []
+        self.current_page   = 0
+        self.page_size      = 25
         self.available_page_sizes = [25, 50, 100]
-        self._last_filter_type   = "ITEM CODE"
-        self._last_search_text   = ""
-        self._sort_fields        = []
-        self._sort_directions    = {}
-        self._active_modal: GenericFormModal | None = None   # ← modal lock tracker
+        self._last_filter_type = "ITEM CODE"
+        self._last_search_text = ""
+        self._sort_fields:      list[str] = []
+        self._sort_directions:  dict      = {}
+        self._active_modal: GenericFormModal | None = None
         self.init_ui()
         self.load_data()
+
+    # ──────────────────────────────────────────
+    # UI setup
+    # ──────────────────────────────────────────
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
-        enabled = ["Add", "Excel", "Refresh", "View Detail"]
 
+        enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Master Item",
             subtitle="Description",
-            enabled_actions=enabled
+            enabled_actions=enabled,
         )
         self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
@@ -110,7 +158,7 @@ class MasterItemPage(QWidget):
 
         headers = [
             "ITEM CODE", "NAME", "BRAND", "WHS", "PART NO", "QTY", "UOM",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ]
         self.table_comp = StandardTable(headers)
         self.table = self.table_comp.table
@@ -155,15 +203,14 @@ class MasterItemPage(QWidget):
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
         self._update_selection_dependent_state(False)
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
     # Selection helpers
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
 
     def _on_row_selection_changed(self):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
-        # Don't re-enable selection buttons while a modal is open
         if self._active_modal is not None:
             return
         for label in ("Edit", "Delete", "View Detail"):
@@ -182,24 +229,19 @@ class MasterItemPage(QWidget):
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
 
-    # ------------------------------------------------------------------
-    # Modal lock helpers  (same pattern as SourceDataPage)
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
+    # Modal lock helpers
+    # ──────────────────────────────────────────
 
     _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
 
     def _lock_header(self):
-        """Disable every header button while a modal is open."""
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
             if btn:
                 btn.setEnabled(False)
 
     def _unlock_header(self):
-        """Re-enable header buttons when the modal closes.
-
-        Selection-dependent buttons only come back when a row is still selected.
-        """
         has_selection = bool(self.table.selectedItems())
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
@@ -210,7 +252,6 @@ class MasterItemPage(QWidget):
                     btn.setEnabled(True)
 
     def _open_modal(self, modal: GenericFormModal):
-        """Wire lock/unlock signals, track the active modal, and open it."""
         modal.opened.connect(self._lock_header)
         modal.closed.connect(self._unlock_header)
         modal.closed.connect(self._clear_active_modal)
@@ -220,9 +261,9 @@ class MasterItemPage(QWidget):
     def _clear_active_modal(self):
         self._active_modal = None
 
-    # ------------------------------------------------------------------
-    # Page visibility — hide/restore modal on page switch
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
+    # Page visibility
+    # ──────────────────────────────────────────
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -234,9 +275,9 @@ class MasterItemPage(QWidget):
         if getattr(self, "_active_modal", None) and self._active_modal.isVisible():
             self._active_modal.hide()
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
     # Detail panel
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
 
     def _create_detail_panel(self):
         panel = QFrame()
@@ -268,51 +309,51 @@ class MasterItemPage(QWidget):
 
         return panel
 
-    def show_details(self, data):
+    def show_details(self, data: tuple):
         self.detail_panel.setVisible(True)
         self.detail_title.setText(data[0])
 
         for i in reversed(range(self.info_layout.count())):
-            if self.info_layout.itemAt(i).widget():
-                self.info_layout.itemAt(i).widget().setParent(None)
+            w = self.info_layout.itemAt(i).widget()
+            if w:
+                w.setParent(None)
 
         fields = [
             ("Description",   data[1]),
-            ("Brand",         data[2]),
             ("Warehouse",     data[3]),
             ("Part No Print", data[4]),
             ("Interchange 1", data[5]),
             ("Interchange 2", data[6]),
             ("Interchange 3", data[7]),
             ("Interchange 4", data[8]),
-            ("Stock",         f"{data[9]} {data[10]}")
+            ("Stock",         f"{data[9]} {data[10]}"),
         ]
         for label, val in fields:
             lbl = QLabel(
                 f"<b>{label}</b><br>"
-                f"<span style='color:{COLORS['text_muted']}'>{val}</span>"
+                f"<span style='color:{COLORS['text_muted']}'>{val or '—'}</span>"
             )
             lbl.setWordWrap(True)
             self.info_layout.addWidget(lbl)
             self.info_layout.addSpacing(10)
         self.info_layout.addStretch()
 
-    # ------------------------------------------------------------------
-    # Data
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
+    # Data loading  ← hits the real DB
+    # ──────────────────────────────────────────
 
     def load_data(self):
-        self.all_data = []
-        for i in range(50):
-            qty_val = 25899 + i
-            self.all_data.append((
-                f"EIF1-SFF1-FC-{1001+i}", f"FILTER CARTRIDGE MD {1000+i}",
-                "SFF", "EIF", f"FC-{1001+i}",
-                "MB 220900", "5-13240032-0", "31973-44100", "Z636",
-                f"{qty_val:,}", "PCS",
-                "Admin", "2024-01-15", "-", "-", "0"
-            ))
+        try:
+            rows = fetch_all_item()
+            self.all_data = [_row_to_tuple(r) for r in rows]
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Failed to load items:\n{exc}")
+            self.all_data = []
         self._apply_filter_and_reset_page()
+
+    # ──────────────────────────────────────────
+    # Render
+    # ──────────────────────────────────────────
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -324,6 +365,8 @@ class MasterItemPage(QWidget):
         end_idx   = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
+        # Indices into the display tuple that map to visible columns
+        # (index 16 is the hidden PK — never shown)
         display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
 
         for r, row_data in enumerate(page_data):
@@ -353,9 +396,9 @@ class MasterItemPage(QWidget):
             available_page_sizes=self.available_page_sizes,
         )
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
     # Filter / sort
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
 
     def filter_table(self, filter_type, search_text):
         self._last_filter_type = filter_type
@@ -407,9 +450,9 @@ class MasterItemPage(QWidget):
         except (ValueError, AttributeError):
             return (1, str_val.lower())
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
     # Pagination
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
 
     def on_page_changed(self, page_action: int) -> None:
         total       = len(self.filtered_data) if self.filtered_data else 0
@@ -431,9 +474,9 @@ class MasterItemPage(QWidget):
         self.current_page = 0
         self.render_page()
 
-    # ------------------------------------------------------------------
-    # Header action wiring
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
+    # Header wiring
+    # ──────────────────────────────────────────
 
     def _connect_header_actions(self):
         mapping = {
@@ -449,9 +492,9 @@ class MasterItemPage(QWidget):
             if btn:
                 btn.clicked.connect(slot)
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
     # Action handlers
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────
 
     def handle_add_action(self):
         modal = GenericFormModal(
@@ -461,40 +504,64 @@ class MasterItemPage(QWidget):
             mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-        self._open_modal(modal)   # ← replaces modal.exec()
+        self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        import datetime
-
         item_code     = data.get("item_code",     "").strip()
         name          = data.get("name",          "").strip()
-        brand         = data.get("brand",         "").strip()
         warehouse     = data.get("warehouse",     "").strip()
         part_no       = data.get("part_no",       "").strip()
-        interchange_1 = data.get("interchange_1", "").strip()
-        interchange_2 = data.get("interchange_2", "").strip()
-        interchange_3 = data.get("interchange_3", "").strip()
-        interchange_4 = data.get("interchange_4", "").strip()
-        qty           = data.get("qty",           "0").strip()
+        interchange_1 = data.get("interchange_1", "").strip() or None
+        interchange_2 = data.get("interchange_2", "").strip() or None
+        interchange_3 = data.get("interchange_3", "").strip() or None
+        interchange_4 = data.get("interchange_4", "").strip() or None
+        qty_str       = data.get("qty",           "0").strip()
         uom           = data.get("uom",           "PCS")
 
-        if not all([item_code, name, brand, warehouse, part_no, qty]):
-            QMessageBox.warning(self, "Validation Error", "All required fields must be filled in.")
+        if not all([item_code, name, qty_str]):
+            QMessageBox.warning(self, "Validation Error", "Item Code, Name, and Quantity are required.")
             return
 
+        try:
+            qty = int(qty_str)
+        except ValueError:
+            QMessageBox.warning(self, "Validation Error", "Quantity must be a whole number.")
+            return
+
+        # Duplicate code check (local cache)
         for row in self.all_data:
             if row[0].strip().lower() == item_code.lower():
                 QMessageBox.warning(self, "Duplicate Item Code",
                                     f'Item Code "{item_code}" already exists.')
                 return
 
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_data.insert(0, (
-            item_code, name, brand, warehouse, part_no,
-            interchange_1, interchange_2, interchange_3, interchange_4,
-            qty, uom, "Admin", now, "-", "-", "0",
-        ))
-        self._apply_filter_and_reset_page()
+        try:
+            create_item(
+                code=item_code,
+                name=name,
+                brand_id=None,       # ← wire to dropdown later
+                filter_id=None,
+                prty_id=None,
+                stkr_id=None,
+                sgdr_id=None,
+                warehouse=warehouse or None,
+                pnpr=part_no or None,
+                inc1=interchange_1,
+                inc2=interchange_2,
+                inc3=interchange_3,
+                inc4=interchange_4,
+                inc5=None, inc6=None, inc7=None, inc8=None,
+                quantity=qty,
+                unit=uom,
+                user=CURRENT_USER,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Failed to create item:\n{exc}")
+            return
+
+        self.load_data()
+
+    # ──────────────────────────────────────────
 
     def handle_export_action(self):
         import openpyxl
@@ -512,13 +579,15 @@ class MasterItemPage(QWidget):
         ws.append([
             "ITEM CODE", "NAME", "BRAND", "WAREHOUSE", "PART NO",
             "INTERCHANGE 1", "INTERCHANGE 2", "INTERCHANGE 3", "INTERCHANGE 4",
-            "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+            "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         for row in self.filtered_data:
-            ws.append([str(v) if v is not None else "" for v in row])
+            ws.append([str(v) if v is not None else "" for v in row[:16]])
         wb.save(path)
         QMessageBox.information(self, "Export Complete",
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
+
+    # ──────────────────────────────────────────
 
     def handle_view_detail_action(self):
         idx = self._get_selected_global_index()
@@ -536,7 +605,9 @@ class MasterItemPage(QWidget):
             parent=self,
             mode="view",
         )
-        self._open_modal(modal)   # ← replaces modal.exec()
+        self._open_modal(modal)
+
+    # ──────────────────────────────────────────
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -547,7 +618,6 @@ class MasterItemPage(QWidget):
         initial = {
             "item_code":     row[0],
             "name":          row[1],
-            "brand":         row[2],
             "warehouse":     row[3],
             "part_no":       row[4],
             "interchange_1": row[5],
@@ -570,45 +640,67 @@ class MasterItemPage(QWidget):
             initial_data=initial,
         )
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
-        self._open_modal(modal)   # ← replaces modal.exec()
+        self._open_modal(modal)
 
-    def _on_edit_submitted(self, idx, data):
-        import datetime
-
+    def _on_edit_submitted(self, idx: int, data: dict):
         item_code     = data.get("item_code",     "").strip()
         name          = data.get("name",          "").strip()
-        brand         = data.get("brand",         "").strip()
         warehouse     = data.get("warehouse",     "").strip()
         part_no       = data.get("part_no",       "").strip()
-        interchange_1 = data.get("interchange_1", "").strip()
-        interchange_2 = data.get("interchange_2", "").strip()
-        interchange_3 = data.get("interchange_3", "").strip()
-        interchange_4 = data.get("interchange_4", "").strip()
-        qty           = data.get("qty",           "0").strip()
+        interchange_1 = data.get("interchange_1", "").strip() or None
+        interchange_2 = data.get("interchange_2", "").strip() or None
+        interchange_3 = data.get("interchange_3", "").strip() or None
+        interchange_4 = data.get("interchange_4", "").strip() or None
+        qty_str       = data.get("qty",           "0").strip()
         uom           = data.get("uom",           "PCS")
 
-        if not all([item_code, name, brand, warehouse, part_no, qty]):
-            QMessageBox.warning(self, "Validation Error", "All required fields must be filled in.")
+        if not all([item_code, name, qty_str]):
+            QMessageBox.warning(self, "Validation Error", "Item Code, Name, and Quantity are required.")
             return
 
+        try:
+            qty = int(qty_str)
+        except ValueError:
+            QMessageBox.warning(self, "Validation Error", "Quantity must be a whole number.")
+            return
+
+        # Duplicate check (exclude the row being edited)
         for i, row in enumerate(self.all_data):
             if i != idx and row[0].strip().lower() == item_code.lower():
                 QMessageBox.warning(self, "Duplicate Item Code",
                                     f'Item Code "{item_code}" already exists.')
                 return
 
-        old_row    = self.all_data[idx]
-        now        = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed_no = str(int(old_row[15]) + 1) if str(old_row[15]).isdigit() else "1"
+        pk = self.all_data[idx][16]   # hidden PK stored at index 16
 
-        self.all_data[idx] = (
-            item_code, name, brand, warehouse, part_no,
-            interchange_1, interchange_2, interchange_3, interchange_4,
-            qty, uom,
-            old_row[11], old_row[12],
-            "Admin", now, changed_no,
-        )
-        self._apply_filter_and_reset_page()
+        try:
+            update_item(
+                item_id=pk,
+                code=item_code,
+                name=name,
+                brand_id=None,       # ← wire to dropdown later
+                filter_id=None,
+                prty_id=None,
+                stkr_id=None,
+                sgdr_id=None,
+                warehouse=warehouse or None,
+                pnpr=part_no or None,
+                inc1=interchange_1,
+                inc2=interchange_2,
+                inc3=interchange_3,
+                inc4=interchange_4,
+                inc5=None, inc6=None, inc7=None, inc8=None,
+                quantity=qty,
+                unit=uom,
+                user=CURRENT_USER,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Failed to update item:\n{exc}")
+            return
+
+        self.load_data()
+
+    # ──────────────────────────────────────────
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()
@@ -616,12 +708,19 @@ class MasterItemPage(QWidget):
             return
         item_code = self.all_data[idx][0]
         name      = self.all_data[idx][1]
+        pk        = self.all_data[idx][16]
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
-        msg.setText(f'Are you sure you want to delete "{item_code} – {name}"?')
+        msg.setText(f'Are you sure you want to delete\n"{item_code} – {name}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
+
         if msg.exec() == QMessageBox.Yes:
-            del self.all_data[idx]
-            self._apply_filter_and_reset_page()
+            try:
+                delete_item(pk, user=CURRENT_USER)
+            except Exception as exc:
+                QMessageBox.critical(self, "Database Error", f"Failed to delete item:\n{exc}")
+                return
+            self.load_data()
