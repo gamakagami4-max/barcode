@@ -2,7 +2,7 @@
 
 import openpyxl
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QFontMetrics
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -27,7 +27,7 @@ _QUERY_PADDING_PX     = 24    # 12px left + 12px right (matches stylesheet paddi
 _WRAP_PIXEL_LIMIT     = QUERY_COL_FIXED_WIDTH - _QUERY_PADDING_PX
 
 VIEW_DETAIL_FIELDS = [
-    ("Engine",              "engine_name"),
+    ("Engine",              "engine"),
     ("Connection",          "conn_name"),
     ("Table Name",          "table_name"),
     ("Query / Link Server", "query"),
@@ -42,7 +42,7 @@ VIEW_DETAIL_FIELDS = [
 #
 # Tuple layout (see _row_to_tuple):
 #   0  composite key
-#   1  engine_code
+#   1  engine
 #   2  conn_name
 #   3  table_name
 #   4  query
@@ -52,7 +52,7 @@ VIEW_DETAIL_FIELDS = [
 #   8  changed_at
 #   9  changed_no
 #   10 pk
-#   11 engine_name
+#   11 engine  (same as 1)
 #
 # Table column order (0-based):
 #   0  CONNECTION          → tuple[2]
@@ -147,8 +147,8 @@ def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
 def _row_to_tuple(r: dict) -> tuple:
     """
     Index layout:
-        0  composite key  (engine_code::conn_name::table_name::pk)
-        1  engine_code
+        0  composite key  (engine::conn_name::table_name::pk)
+        1  engine
         2  conn_name
         3  table_name
         4  query
@@ -158,15 +158,15 @@ def _row_to_tuple(r: dict) -> tuple:
         8  changed_at (str)
         9  changed_no (str)
         10 pk         (int)
-        11 engine_name (str)
+        11 engine     (same as 1)
     """
     pk   = r["pk"]
-    eng  = (r.get("engine_code") or "").strip()
-    conn = (r.get("conn_name")   or "").strip()
-    tbl  = (r.get("table_name")  or "").strip()
+    eng  = (r.get("engine")     or "").strip()   # ← SQL alias is "engine"
+    conn = (r.get("conn_name")  or "").strip()
+    tbl  = (r.get("table_name") or "").strip()
     return (
         f"{eng}::{conn}::{tbl}::{pk}",      # 0
-        eng,                                  # 1  engine_code
+        eng,                                  # 1  engine
         conn,                                 # 2  conn_name
         tbl,                                  # 3  table_name
         (r.get("query") or "").strip(),       # 4  query
@@ -176,7 +176,7 @@ def _row_to_tuple(r: dict) -> tuple:
         str(r["changed_at"])[:19] if r.get("changed_at") else "",  # 8  changed_at
         str(r.get("changed_no", 0)),          # 9  changed_no
         pk,                                   # 10 pk
-        (r.get("engine_name") or "").strip(), # 11 engine_name
+        eng,                                  # 11 engine (display copy)
     )
 
 
@@ -308,7 +308,7 @@ class SourceDataPage(QWidget):
         self.table = self.table_comp.table
         self.table.setWordWrap(True)
         self.table.setStyleSheet(
-        self.table.styleSheet() + "\nQTableWidget::item { padding: 4px 12px; }"
+            self.table.styleSheet() + "\nQTableWidget::item { padding: 4px 12px; }"
         )
 
         self.sort_bar = SortByWidget(self.table)
@@ -560,17 +560,17 @@ class SourceDataPage(QWidget):
 
     # ── FK resolution ─────────────────────────────────────────────────────────
 
-    def _resolve_fk_ids(self, engine_code: str, conn_name: str,
+    def _resolve_fk_ids(self, engine: str, conn_name: str,
                          table_name: str) -> tuple[int, int] | None:
-        conc_key = f"{engine_code}::{conn_name}"
-        tbnm_key = f"{engine_code}::{conn_name}::{table_name}"
+        conc_key = f"{engine}::{conn_name}"
+        tbnm_key = f"{engine}::{conn_name}::{table_name}"
         conciy   = self._conc_id_map.get(conc_key)
         tbnmiy   = self._tbnm_id_map.get(tbnm_key)
         if conciy is None or tbnmiy is None:
             QMessageBox.warning(
                 self, "Lookup Error",
                 f"Could not resolve IDs for:\n"
-                f"  Engine:     {engine_code}\n"
+                f"  Engine:     {engine}\n"
                 f"  Connection: {conn_name}\n"
                 f"  Table:      {table_name}\n\n"
                 "Please refresh and try again.",
@@ -621,22 +621,21 @@ class SourceDataPage(QWidget):
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        engine_code     = data.get("engine",     "").strip()
-        conn_name       = data.get("conn",       "").strip()
-        table_name      = data.get("table_name", "").strip()
-        query           = data.get("query",      "").strip()
-        selected_fields = data.get("fields", [])
+        engine     = data.get("engine",     "").strip()
+        conn_name  = data.get("conn",       "").strip()
+        table_name = data.get("table_name", "").strip()
+        query      = data.get("query",      "").strip()
 
-        if not all([engine_code, conn_name, table_name, query]):
+        if not all([engine, conn_name, table_name, query]):
             QMessageBox.warning(self, "Validation", "All fields are required.")
             return
 
-        ids = self._resolve_fk_ids(engine_code, conn_name, table_name)
+        ids = self._resolve_fk_ids(engine, conn_name, table_name)
         if ids is None:
             return
         conciy, tbnmiy = ids
         try:
-            create_sdgr(conciy, tbnmiy, query, engine_code, selected_fields)
+            create_sdgr(conciy, tbnmiy, query, engine)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
@@ -662,7 +661,7 @@ class SourceDataPage(QWidget):
                 str(row[2]) if row[2] is not None else "",   # conn_name
                 str(row[3]) if row[3] is not None else "",   # table_name
                 str(row[4]) if row[4] is not None else "",   # query
-                str(row[1]) if row[1] is not None else "",   # engine_code
+                str(row[1]) if row[1] is not None else "",   # engine
                 str(row[5]) if row[5] is not None else "",   # added_by
                 str(row[6]) if row[6] is not None else "",   # added_at
                 str(row[7]) if row[7] is not None else "",   # changed_by
@@ -705,9 +704,9 @@ class SourceDataPage(QWidget):
         if row is None:
             return
 
-        engine_code = row[1]
-        conn_name   = row[2]
-        table_name  = row[3]
+        engine     = row[1]
+        conn_name  = row[2]
+        table_name = row[3]
 
         try:
             detail = fetch_sdgr_by_id(row[10])
@@ -718,7 +717,7 @@ class SourceDataPage(QWidget):
         saved_fields: list[str] = detail.get("fields", []) if detail else []
 
         initial = {
-            "engine":     engine_code,
+            "engine":     engine,
             "conn":       conn_name,
             "table_name": table_name,
             "query":      row[4],
@@ -732,7 +731,7 @@ class SourceDataPage(QWidget):
             title="Edit Source Group",
             fields=_build_form_schema(
                 self._connection_tables,
-                initial_engine=engine_code,
+                initial_engine=engine,
                 initial_conn=conn_name,
                 initial_table=table_name,
                 initial_fields=saved_fields,
@@ -748,24 +747,23 @@ class SourceDataPage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
-        engine_code     = data.get("engine",     "").strip()
-        conn_name       = data.get("conn",       "").strip()
-        table_name      = data.get("table_name", "").strip()
-        query           = data.get("query",      "").strip()
-        selected_fields = data.get("fields", [])
+        engine     = data.get("engine",     "").strip()
+        conn_name  = data.get("conn",       "").strip()
+        table_name = data.get("table_name", "").strip()
+        query      = data.get("query",      "").strip()
 
-        if not all([engine_code, conn_name, table_name, query]):
+        if not all([engine, conn_name, table_name, query]):
             QMessageBox.warning(self, "Validation", "All fields are required.")
             return
 
-        ids = self._resolve_fk_ids(engine_code, conn_name, table_name)
+        ids = self._resolve_fk_ids(engine, conn_name, table_name)
         if ids is None:
             return
         conciy, tbnmiy = ids
         pk             = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0
         try:
-            update_sdgr(pk, conciy, tbnmiy, query, engine_code, old_changed_no, selected_fields)
+            update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
