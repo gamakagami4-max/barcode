@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QDialogButtonBox,
     QScrollArea, QFrame, QPushButton, QSizePolicy, QMessageBox,
-    QGraphicsOpacityEffect, QCheckBox,
+    QGraphicsOpacityEffect, QCheckBox, QTextEdit,
 )
 from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QEasingCurve, QPoint,
@@ -482,7 +482,7 @@ class _CheckboxListWidget(QWidget):
 
 class GenericFormModal(QDialog):
     formSubmitted = Signal(dict)
-    fieldChanged  = Signal(str, str)   # (field_name, new_value) — emitted on any combo/cascade change
+    fieldChanged  = Signal(str, str)   # (field_name, new_value)
     opened        = Signal()
     closed        = Signal()
 
@@ -538,13 +538,15 @@ class GenericFormModal(QDialog):
         self._entrance_done = False
 
     # ------------------------------------------------------------------
-    # Public API — used by pages to react to field changes
+    # Public API
     # ------------------------------------------------------------------
 
     def get_field_value(self, name: str) -> str:
         widget = self.inputs.get(name)
         if widget is None:
             return ""
+        if isinstance(widget, QTextEdit):
+            return widget.toPlainText().strip()
         if isinstance(widget, QLineEdit):
             return widget.text().strip()
         if isinstance(widget, (AnimatedCombo, QComboBox)):
@@ -557,14 +559,16 @@ class GenericFormModal(QDialog):
         widget = self.inputs.get(name)
         if widget is None:
             return
-        if isinstance(widget, QLineEdit):
+        if isinstance(widget, QTextEdit):
+            widget.setPlainText(value)
+        elif isinstance(widget, QLineEdit):
             widget.setText(value)
         elif isinstance(widget, (AnimatedCombo, QComboBox)):
             widget.setCurrentText(value)
 
     def update_field_options(self, name: str, options: list[str],
                              checked: list[str] | None = None):
-        """Refresh the options of a checkbox_list, combo, or cascade_combo field."""
+        """Refresh the options of a combo or checkbox_list field."""
         widget = self.inputs.get(name)
         if widget is None:
             return
@@ -572,7 +576,13 @@ class GenericFormModal(QDialog):
             widget.set_options(options, checked)
         elif isinstance(widget, AnimatedCombo):
             widget.clear()
-            widget.addItems(options)
+            if options:
+                widget.addItems(options)
+                # Force-display the first item so the trigger is never blank
+                widget._current = options[0]
+                widget._trigger.set_text(options[0])
+                if widget._panel:
+                    widget._panel.set_options(options, options[0])
         elif isinstance(widget, QComboBox):
             widget.blockSignals(True)
             widget.clear()
@@ -693,7 +703,7 @@ class GenericFormModal(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setMaximumHeight(520)
+        scroll.setMaximumHeight(560)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.verticalScrollBar().setSingleStep(12)
         scroll.setStyleSheet("""
@@ -735,32 +745,50 @@ class GenericFormModal(QDialog):
         root.addStretch()
 
         if self.mode != "view":
-            submit_text = "Create" if self.mode == "add" else "Save Changes"
-            buttons = QDialogButtonBox()
-            buttons.addButton(submit_text, QDialogButtonBox.AcceptRole)
-            buttons.addButton("Cancel", QDialogButtonBox.RejectRole)
-            buttons.accepted.connect(self._on_submit)
-            buttons.rejected.connect(self.reject)
-            buttons.setStyleSheet(f"""
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(8)
+            btn_row.addStretch()
+
+            cancel_btn = QPushButton("Cancel")
+            cancel_btn.setFixedHeight(36)
+            cancel_btn.setCursor(Qt.PointingHandCursor)
+            cancel_btn.setStyleSheet(f"""
                 QPushButton {{
                     padding: 8px 16px;
                     border-radius: 6px;
                     font-weight: 600;
                     font-size: 13px;
                     min-width: 100px;
-                }}
-                QPushButton[text="{submit_text}"] {{
-                    background-color: {COLORS['link']};
-                    color: white;
-                    border: none;
-                }}
-                QPushButton[text="Cancel"] {{
                     background-color: {COLORS['white']};
                     color: {COLORS['text_secondary']};
                     border: 1px solid {COLORS['border']};
                 }}
+                QPushButton:hover {{ background-color: {COLORS['bg_main']}; }}
             """)
-            root.addWidget(buttons)
+            cancel_btn.clicked.connect(self.reject)
+
+            submit_text = "Create" if self.mode == "add" else "Save Changes"
+            submit_btn = QPushButton(submit_text)
+            submit_btn.setFixedHeight(36)
+            submit_btn.setCursor(Qt.PointingHandCursor)
+            submit_btn.setStyleSheet(f"""
+                QPushButton {{
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    font-size: 13px;
+                    min-width: 100px;
+                    background-color: {COLORS['link']};
+                    color: white;
+                    border: none;
+                }}
+                QPushButton:hover {{ background-color: #4F46E5; }}
+            """)
+            submit_btn.clicked.connect(self._on_submit)
+
+            btn_row.addWidget(cancel_btn)
+            btn_row.addWidget(submit_btn)
+            root.addLayout(btn_row)
 
     # ------------------------------------------------------------------
     # Widget factory
@@ -787,9 +815,42 @@ class GenericFormModal(QDialog):
                     w.setStyleSheet(self._view_line_edit_style())
             return w
 
+        # ── textarea ──────────────────────────────────────────────────
+        elif field_type == "textarea":
+            w = QTextEdit()
+            height = field.get("height", 120)
+            w.setFixedHeight(height)
+            if editable:
+                w.setPlaceholderText(field.get("placeholder", ""))
+                w.setStyleSheet(f"""
+                    QTextEdit {{
+                        padding: 8px 12px;
+                        border: 1px solid {COLORS['border']};
+                        border-radius: 6px;
+                        background-color: {COLORS['white']};
+                        color: {COLORS['text_primary']};
+                        font-size: 13px;
+                    }}
+                    QTextEdit:focus {{ border-color: {COLORS['link']}; }}
+                """)
+            else:
+                w.setReadOnly(True)
+                w.setStyleSheet(f"""
+                    QTextEdit {{
+                        padding: 8px 12px;
+                        border: 1px solid {COLORS['border_light']};
+                        border-radius: 6px;
+                        background-color: {COLORS['readonly_bg']};
+                        color: {COLORS['text_primary']};
+                        font-size: 13px;
+                    }}
+                """)
+            return w
+
         # ── combo / select ────────────────────────────────────────────
         elif field_type in ("combo", "select"):
-            w = AnimatedCombo(field.get("options", []))
+            options = field.get("options", [])
+            w = AnimatedCombo(options)
             if editable:
                 w.currentTextChanged.connect(
                     lambda val, fname=field["name"]: self.fieldChanged.emit(fname, val)
@@ -830,7 +891,6 @@ class GenericFormModal(QDialog):
                 disabled=not editable,
             )
 
-            # Select All / None buttons (only in editable mode)
             if editable and options:
                 container = QWidget()
                 container.setStyleSheet("background: transparent;")
@@ -863,7 +923,6 @@ class GenericFormModal(QDialog):
                 vlay.addLayout(btn_row)
                 vlay.addWidget(w)
 
-                # Store reference to inner widget for external access
                 container._checkbox_widget = w
                 container.get_value        = w.get_value
                 container.set_options      = w.set_options
@@ -1092,7 +1151,6 @@ class GenericFormModal(QDialog):
             child_widget.addItems(child_options)
             child_widget.blockSignals(False)
 
-        # Emit fieldChanged for the child so pages can react to table_name changing
         new_child_val = child_options[0] if child_options else ""
         self.fieldChanged.emit(child_name, new_child_val)
 
@@ -1128,7 +1186,9 @@ class GenericFormModal(QDialog):
             if value is None:
                 continue
 
-            if isinstance(widget, QLineEdit):
+            if isinstance(widget, QTextEdit):
+                widget.setPlainText(str(value))
+            elif isinstance(widget, QLineEdit):
                 widget.setText(str(value))
             elif isinstance(widget, AnimatedCombo):
                 if name in self._cascade_map:
@@ -1186,6 +1246,25 @@ class GenericFormModal(QDialog):
                         errors.append(f"{label} (PX): must be a positive whole number")
                         widget._set_error(widget.px_input, widget.px_err, "Must be a positive whole number")
 
+            elif isinstance(widget, QTextEdit):
+                if is_required and not widget.toPlainText().strip():
+                    errors.append(f"{label} is required")
+                    widget.setStyleSheet(f"""
+                        QTextEdit {{
+                            padding: 8px 12px; border: 1.5px solid #EF4444;
+                            border-radius: 6px; background-color: #FEF2F2;
+                            color: {COLORS['text_primary']}; font-size: 13px;
+                        }}
+                    """)
+                else:
+                    widget.setStyleSheet(f"""
+                        QTextEdit {{
+                            padding: 8px 12px; border: 1px solid {COLORS['border']};
+                            border-radius: 6px; background-color: {COLORS['white']};
+                            color: {COLORS['text_primary']}; font-size: 13px;
+                        }}
+                    """)
+
             elif isinstance(widget, QLineEdit):
                 if is_required and not widget.text().strip():
                     errors.append(f"{label} is required")
@@ -1213,6 +1292,8 @@ class GenericFormModal(QDialog):
             if getattr(widget, "_field_type", None) == "dimension_pair":
                 data[f"{name}_in"] = widget.inch_input.text().strip()
                 data[f"{name}_px"] = widget.px_input.text().strip()
+            elif isinstance(widget, QTextEdit):
+                data[name] = widget.toPlainText().strip()
             elif isinstance(widget, QLineEdit):
                 data[name] = widget.text().strip()
             elif isinstance(widget, (AnimatedCombo, QComboBox)):
@@ -1220,7 +1301,6 @@ class GenericFormModal(QDialog):
             elif isinstance(widget, _CheckboxListWidget):
                 data[name] = widget.get_value()
             elif hasattr(widget, "get_value"):
-                # checkbox_list wrapped in container (with Select All/None buttons)
                 data[name] = widget.get_value()
             elif hasattr(widget, "text_input"):
                 data[name] = widget.text_input.text().strip()

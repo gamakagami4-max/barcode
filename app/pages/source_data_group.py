@@ -15,21 +15,19 @@ from repositories.mmsdgr_repo import (
     create_sdgr,
     fetch_all_sdgr,
     fetch_sdgr_by_id,
-    fetch_table_columns,
     soft_delete_sdgr,
     update_sdgr,
 )
 from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
 
-ROW_STANDARD    = "standard"
+ROW_STANDARD     = "standard"
 QUERY_WRAP_LIMIT = 80
-_BARCODE_SCHEMA  = "barcode"   # schema passed to information_schema lookup
 
 VIEW_DETAIL_FIELDS = [
+    ("Engine",              "engine_name"),
     ("Connection",          "conn_name"),
     ("Table Name",          "table_name"),
     ("Query / Link Server", "query"),
-    ("Engine",              "engine"),
     ("Added By",            "added_by"),
     ("Added At",            "added_at"),
     ("Changed By",          "changed_by"),
@@ -38,10 +36,10 @@ VIEW_DETAIL_FIELDS = [
 ]
 
 _COL_HEADER_TO_TUPLE_IDX = {
-    "CONNECTION":        1,
-    "TABLE NAME":        2,
-    "QUERY LINK SERVER": 3,
-    "ENGINE":            4,
+    "ENGINE":            1,
+    "CONNECTION":        2,
+    "TABLE NAME":        3,
+    "QUERY LINK SERVER": 4,
     "ADDED BY":          5,
     "ADDED AT":          6,
     "CHANGED BY":        7,
@@ -82,85 +80,102 @@ def wrap_query_text(text: str, limit: int = QUERY_WRAP_LIMIT) -> str:
 def _row_to_tuple(r: dict) -> tuple:
     """
     Index layout:
-        0  key  (conn_name::table_name::pk)
-        1  conn_name
-        2  table_name
-        3  query
-        4  engine
+        0  key  (engine_code::conn_name::table_name::pk)
+        1  engine_code
+        2  conn_name
+        3  table_name
+        4  query
         5  added_by
         6  added_at   (str)
         7  changed_by
         8  changed_at (str)
         9  changed_no (str)
         10 pk         (int)
+        11 engine_name (str)
     """
     pk   = r["pk"]
-    conn = (r.get("conn_name") or "").strip()
-    tbl  = (r.get("table_name") or "").strip()
+    eng  = (r.get("engine_code") or "").strip()
+    conn = (r.get("conn_name")   or "").strip()
+    tbl  = (r.get("table_name")  or "").strip()
     return (
-        f"{conn}::{tbl}::{pk}",
+        f"{eng}::{conn}::{tbl}::{pk}",
+        eng,
         conn,
         tbl,
         (r.get("query") or "").strip(),
-        (r.get("engine") or "").strip(),
         (r.get("added_by") or "").strip(),
         str(r["added_at"])[:19] if r.get("added_at") else "",
         (r.get("changed_by") or "").strip(),
         str(r["changed_at"])[:19] if r.get("changed_at") else "",
         str(r.get("changed_no", 0)),
         pk,
+        (r.get("engine_name") or "").strip(),
     )
 
 
 # ── Form schema ───────────────────────────────────────────────────────────────
 
 def _build_form_schema(
-    connection_tables: dict,
-    columns: list[str] | None = None,
-    checked: list[str] | None = None,
+    connection_tables: dict,          # engine_code → conn_name → [table_names]
+    initial_engine: str = "",
+    initial_conn: str = "",
 ) -> list[dict]:
     """
-    columns — pre-loaded column names for the checkbox_list (None = empty / waiting for table pick)
-    checked — which columns are pre-ticked (defaults to all when columns are provided)
+    Engine      → plain combo (flat list of engine codes)
+    Connection  → plain combo, pre-populated for initial_engine in edit mode,
+                  or all connections in add mode
+    Table Name  → plain combo, pre-populated for initial_conn in edit mode,
+                  or all tables in add mode
+    Query is entered manually — no auto-fill.
     """
+    engine_options = sorted(connection_tables.keys())
+
+    if initial_engine:
+        initial_conns  = sorted(connection_tables.get(initial_engine, {}).keys())
+        initial_tables = sorted(
+            connection_tables.get(initial_engine, {}).get(initial_conn, [])
+        )
+    else:
+        # Add mode: show all connections/tables so dropdowns are never empty on open
+        all_conns: set[str] = set()
+        for conns in connection_tables.values():
+            all_conns.update(conns.keys())
+        initial_conns = sorted(all_conns)
+
+        all_tables: set[str] = set()
+        for conns in connection_tables.values():
+            for tables in conns.values():
+                all_tables.update(tables)
+        initial_tables = sorted(all_tables)
+
     return [
         {
             "name":     "engine",
             "label":    "Engine",
             "type":     "combo",
-            "options":  ["postgresql", "sqlite"],
+            "options":  engine_options,
             "required": True,
         },
         {
             "name":     "conn",
             "label":    "Connection",
-            "type":     "cascade_combo",
-            "options":  connection_tables,
-            "child":    "table_name",
+            "type":     "combo",
+            "options":  initial_conns,
             "required": True,
         },
         {
             "name":     "table_name",
             "label":    "Table Name",
             "type":     "combo",
-            "options":  [],
+            "options":  initial_tables,
             "required": True,
-        },
-        # ── Column picker — populated after table is selected ─────────
-        {
-            "name":            "columns",
-            "label":           "Select Fields",
-            "type":            "checkbox_list",
-            "options":         columns or [],
-            # tick all by default; caller may override via `checked`
-            "initial_checked": {c: True for c in (checked if checked is not None else (columns or []))},
-            "required":        False,
         },
         {
             "name":        "query",
-            "label":       "Query Preview",
-            "type":        "text",
-            "placeholder": "Auto-filled when fields are selected, or enter manually",
+            "label":       "Query / Link Server",
+            "type":        "text",   # multiline — taller than a single-line "text"
+            "placeholder": "Enter query or link server manually",
+            "height":      150,
             "required":    True,
         },
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
@@ -185,9 +200,9 @@ class SourceDataPage(QWidget):
         self._last_search_text  = ""
         self._sort_fields:       list[str]       = []
         self._sort_directions:   dict[str, str]  = {}
-        self._connection_tables: dict[str, list] = {}
-        self._tbnm_id_map:       dict[str, int]  = {}   # "conn::table" → motbnmiy
-        self._conc_id_map:       dict[str, int]  = {}   # conn_name    → mnconciy
+        self._connection_tables: dict[str, dict] = {}   # engine → conn → [tables]
+        self._tbnm_id_map:       dict[str, int]  = {}   # "eng::conn::table" → motbnmiy
+        self._conc_id_map:       dict[str, int]  = {}   # "eng::conn"        → mnconciy
         self._active_modal: GenericFormModal | None = None
         self._init_ui()
         self.load_data()
@@ -216,8 +231,8 @@ class SourceDataPage(QWidget):
         layout.addSpacing(5)
 
         self.table_comp = StandardTable([
-            "CONNECTION", "TABLE NAME", "QUERY LINK SERVER",
-            "ENGINE", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+            "ENGINE", "CONNECTION", "TABLE NAME", "QUERY LINK SERVER",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         self.table = self.table_comp.table
         self.table.setWordWrap(True)
@@ -241,19 +256,15 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-
-        # Fixed small columns
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # ENGINE
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ENGINE
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # CONNECTION
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # TABLE NAME
+        hdr.setSectionResizeMode(3, QHeaderView.Stretch)            # QUERY
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED BY
         hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED AT
         hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # CHANGED BY
         hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED AT
         hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # CHANGED NO
-
-        # Make QUERY column dominate
-        hdr.setSectionResizeMode(2, QHeaderView.Stretch)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 
@@ -329,12 +340,12 @@ class SourceDataPage(QWidget):
     def _add_table_row(self, row: tuple):
         r = self.table.rowCount()
         self.table.insertRow(r)
-        item_conn = self._make_item(row[1])
-        item_conn.setData(Qt.UserRole, ROW_STANDARD)
-        self.table.setItem(r, 0, item_conn)
+        item_eng = self._make_item(row[1])
+        item_eng.setData(Qt.UserRole, ROW_STANDARD)
+        self.table.setItem(r, 0, item_eng)
         self.table.setItem(r, 1, self._make_item(row[2]))
-        self.table.setItem(r, 2, self._make_item(wrap_query_text(row[3])))
-        self.table.setItem(r, 3, self._make_item(row[4]))
+        self.table.setItem(r, 2, self._make_item(row[3]))
+        self.table.setItem(r, 3, self._make_item(wrap_query_text(row[4])))
         self.table.setItem(r, 4, self._make_item(row[5]))
         self.table.setItem(r, 5, self._make_item(row[6]))
         self.table.setItem(r, 6, self._make_item(row[7]))
@@ -386,13 +397,13 @@ class SourceDataPage(QWidget):
     # ── Filtering & sorting ───────────────────────────────────────────────────
 
     def filter_table(self, filter_type: str, search_text: str):
-        self._last_filter_type  = filter_type
-        self._last_search_text  = search_text
+        self._last_filter_type = filter_type
+        self._last_search_text = search_text
         self._apply_filter_and_reset_page()
 
     def _apply_filter_and_reset_page(self):
         query   = (self._last_search_text or "").lower().strip()
-        col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 1)
+        col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 2)
         self.filtered_data = (
             list(self.all_data)
             if not query
@@ -403,8 +414,8 @@ class SourceDataPage(QWidget):
         self.render_page()
 
     def on_sort_changed(self, fields: list[str], field_directions: dict):
-        self._sort_fields      = fields or []
-        self._sort_directions  = field_directions or {}
+        self._sort_fields     = fields or []
+        self._sort_directions = field_directions or {}
         self._apply_filter_and_reset_page()
 
     def _apply_sort(self):
@@ -459,65 +470,42 @@ class SourceDataPage(QWidget):
             if btn:
                 btn.clicked.connect(slot)
 
-    # ── Column / query helpers ────────────────────────────────────────────────
+    # ── FK resolution ─────────────────────────────────────────────────────────
 
-    def _fetch_columns_for(self, conn_name: str, table_name: str) -> list[str]:
-        if not conn_name or not table_name:
-            return []
-        try:
-            return fetch_table_columns(_BARCODE_SCHEMA, table_name)
-        except Exception:
-            return []
-
-    def _build_query_from_columns(self, table_name: str, columns: list[str]) -> str:
-        if not columns or not table_name:
-            return ""
-        return f"SELECT {', '.join(columns)} FROM {table_name}"
-
-    def _parse_columns_from_query(self, query: str, all_columns: list[str]) -> list[str]:
-        """
-        Try to extract previously selected columns from a stored SELECT query.
-        Falls back to returning all columns if parsing fails.
-        """
-        try:
-            upper = query.strip().upper()
-            if upper.startswith("SELECT") and "FROM" in upper:
-                col_part = query[6 : query.upper().index("FROM")].strip()
-                if col_part == "*":
-                    return all_columns
-                parsed = [c.strip() for c in col_part.split(",") if c.strip() in all_columns]
-                return parsed if parsed else all_columns
-        except Exception:
-            pass
-        return all_columns
-
-    # ── Action handlers ───────────────────────────────────────────────────────
-
-    def _resolve_fk_ids(self, conn_name: str, table_name: str) -> tuple[int, int] | None:
-        conciy = self._conc_id_map.get(conn_name)
-        tbnmiy = self._tbnm_id_map.get(f"{conn_name}::{table_name}")
+    def _resolve_fk_ids(self, engine_code: str, conn_name: str,
+                         table_name: str) -> tuple[int, int] | None:
+        conc_key = f"{engine_code}::{conn_name}"
+        tbnm_key = f"{engine_code}::{conn_name}::{table_name}"
+        conciy   = self._conc_id_map.get(conc_key)
+        tbnmiy   = self._tbnm_id_map.get(tbnm_key)
         if conciy is None or tbnmiy is None:
             QMessageBox.warning(
                 self, "Lookup Error",
-                f"Could not resolve IDs for:\n  Connection: {conn_name}\n  Table: {table_name}\n\n"
+                f"Could not resolve IDs for:\n"
+                f"  Engine:     {engine_code}\n"
+                f"  Connection: {conn_name}\n"
+                f"  Table:      {table_name}\n\n"
                 "Please refresh and try again.",
             )
             return None
         return conciy, tbnmiy
 
-    def _on_table_selected(self, modal: GenericFormModal, field_name: str, value: str):
-        """
-        Fired by modal.fieldChanged. When table_name changes, fetch its columns,
-        rebuild the checkbox_list, and auto-fill the query preview.
-        """
-        if field_name != "table_name" or not value:
-            return
-        conn_name = modal.get_field_value("conn")
-        columns   = self._fetch_columns_for(conn_name, value)
-        query     = self._build_query_from_columns(value, columns)
+    # ── Cascade field handler ─────────────────────────────────────────────────
 
-        modal.update_field_options("columns", columns, checked=columns)  # tick all by default
-        modal.set_field_value("query", query)
+    def _on_field_changed(self, modal: GenericFormModal, field_name: str, value: str):
+        """
+        Engine change     → repopulate Connection list, clear Table Name.
+        Connection change → repopulate Table Name list.
+        """
+        if field_name == "engine" and value:
+            conns = sorted(self._connection_tables.get(value, {}).keys())
+            modal.update_field_options("conn", conns)
+            modal.update_field_options("table_name", [])
+
+        elif field_name == "conn" and value:
+            engine = modal.get_field_value("engine")
+            tables = sorted(self._connection_tables.get(engine, {}).get(value, []))
+            modal.update_field_options("table_name", tables)
 
     # ── Add ───────────────────────────────────────────────────────────────────
 
@@ -529,33 +517,27 @@ class SourceDataPage(QWidget):
             mode="add",
         )
         modal.fieldChanged.connect(
-            lambda name, val, m=modal: self._on_table_selected(m, name, val)
+            lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(self._on_add_submitted)
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        conn_name  = data.get("conn", "").strip()
-        table_name = data.get("table_name", "").strip()
-        engine     = data.get("engine", "").strip()
-        selected   = data.get("columns", [])   # list[str] from checkbox_list
+        engine_code = data.get("engine",     "").strip()
+        conn_name   = data.get("conn",       "").strip()
+        table_name  = data.get("table_name", "").strip()
+        query       = data.get("query",      "").strip()
 
-        # Build query from ticked columns; fall back to whatever is in the text field
-        query = (
-            self._build_query_from_columns(table_name, selected)
-            if selected
-            else data.get("query", "").strip()
-        )
-
-        if not all([conn_name, table_name, query, engine]):
+        if not all([engine_code, conn_name, table_name, query]):
             QMessageBox.warning(self, "Validation", "All fields are required.")
             return
-        ids = self._resolve_fk_ids(conn_name, table_name)
+
+        ids = self._resolve_fk_ids(engine_code, conn_name, table_name)
         if ids is None:
             return
         conciy, tbnmiy = ids
         try:
-            create_sdgr(conciy, tbnmiy, query, engine)
+            create_sdgr(conciy, tbnmiy, query, engine_code)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
@@ -573,8 +555,8 @@ class SourceDataPage(QWidget):
         ws = wb.active
         ws.title = "Master Source Group"
         ws.append([
-            "CONNECTION", "TABLE NAME", "QUERY / LINK SERVER",
-            "ENGINE", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+            "ENGINE", "CONNECTION", "TABLE NAME", "QUERY / LINK SERVER",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         for row in self.filtered_data:
             ws.append([str(row[i]) if row[i] is not None else "" for i in range(1, 10)])
@@ -614,15 +596,11 @@ class SourceDataPage(QWidget):
         if row is None:
             return
 
-        # Pre-load columns for the already-selected table so checkboxes are visible immediately
-        existing_columns   = self._fetch_columns_for(row[1], row[2])
-        previously_checked = self._parse_columns_from_query(row[3], existing_columns)
-
         initial = {
-            "conn":       row[1],
-            "table_name": row[2],
-            "query":      row[3],
-            "engine":     row[4],
+            "engine":     row[1],
+            "conn":       row[2],
+            "table_name": row[3],
+            "query":      row[4],
             "added_by":   row[5],
             "added_at":   row[6],
             "changed_by": row[7],
@@ -633,42 +611,37 @@ class SourceDataPage(QWidget):
             title="Edit Source Group",
             fields=_build_form_schema(
                 self._connection_tables,
-                columns=existing_columns,
-                checked=previously_checked,
+                initial_engine=row[1],
+                initial_conn=row[2],
             ),
             parent=self,
             mode="edit",
             initial_data=initial,
         )
         modal.fieldChanged.connect(
-            lambda name, val, m=modal: self._on_table_selected(m, name, val)
+            lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
-        conn_name  = data.get("conn", "").strip()
-        table_name = data.get("table_name", "").strip()
-        engine     = data.get("engine", "").strip()
-        selected   = data.get("columns", [])
+        engine_code = data.get("engine",     "").strip()
+        conn_name   = data.get("conn",       "").strip()
+        table_name  = data.get("table_name", "").strip()
+        query       = data.get("query",      "").strip()
 
-        query = (
-            self._build_query_from_columns(table_name, selected)
-            if selected
-            else data.get("query", "").strip()
-        )
-
-        if not all([conn_name, table_name, query, engine]):
+        if not all([engine_code, conn_name, table_name, query]):
             QMessageBox.warning(self, "Validation", "All fields are required.")
             return
-        ids = self._resolve_fk_ids(conn_name, table_name)
+
+        ids = self._resolve_fk_ids(engine_code, conn_name, table_name)
         if ids is None:
             return
         conciy, tbnmiy = ids
         pk             = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0
         try:
-            update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no)
+            update_sdgr(pk, conciy, tbnmiy, query, engine_code, old_changed_no)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
@@ -684,7 +657,7 @@ class SourceDataPage(QWidget):
         msg.setWindowTitle("Confirm Delete")
         msg.setText("Are you sure you want to delete this record?")
         msg.setInformativeText(
-            f"Connection: {row[1]}\nTable Name: {row[2]}\nEngine: {row[4]}"
+            f"Engine:     {row[1]}\nConnection: {row[2]}\nTable Name: {row[3]}"
         )
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
