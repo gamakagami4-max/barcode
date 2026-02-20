@@ -641,25 +641,6 @@ class GenericFormModal(QDialog):
         header_row.addLayout(text_block)
         header_row.addStretch()
 
-        # Close button for view mode (no save/cancel row at bottom)
-        if self.mode == "view":
-            close_btn = QPushButton("✕")
-            close_btn.setFixedSize(32, 32)
-            close_btn.setCursor(Qt.PointingHandCursor)
-            close_btn.setToolTip("Close")
-            close_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: transparent;
-                    color: {COLORS['text_muted']};
-                    border: none; border-radius: 6px;
-                    font-size: 14px; font-weight: 600;
-                }}
-                QPushButton:hover {{ background-color: #F3F4F6; color: {COLORS['text_primary']}; }}
-                QPushButton:pressed {{ background-color: {COLORS['border_light']}; }}
-            """)
-            close_btn.clicked.connect(self.reject)
-            header_row.addWidget(close_btn, alignment=Qt.AlignTop)
-
         root.addLayout(header_row)
         root.addSpacing(20)
 
