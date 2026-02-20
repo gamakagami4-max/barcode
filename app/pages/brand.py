@@ -40,8 +40,8 @@ VIEW_DETAIL_FIELDS = [
 
 def _build_form_schema(mode: str = "add") -> list[dict]:
     """
-    Add mode  → editable Code, Name, Case only.
-    Edit mode → same editable fields + 5 readonly audit fields below.
+    All modes show the same fields for consistency.
+    Audit fields are always readonly — blank in add, populated in edit/view.
     """
     schema = [
         {
@@ -65,17 +65,13 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
             "options": ["AVAILABLE", "NOT AVAILABLE", "PENDING"],
             "required": True,
         },
+        # Audit fields — always present, always readonly
+        {"name": "added_by",   "label": "Added By",   "type": "readonly"},
+        {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+        {"name": "changed_by", "label": "Changed By", "type": "readonly"},
+        {"name": "changed_at", "label": "Changed At", "type": "readonly"},
+        {"name": "changed_no", "label": "Changed No", "type": "readonly"},
     ]
-
-    if mode == "edit":
-        schema += [
-            {"name": "added_by",   "label": "Added By",   "type": "readonly"},
-            {"name": "added_at",   "label": "Added At",   "type": "readonly"},
-            {"name": "changed_by", "label": "Changed By", "type": "readonly"},
-            {"name": "changed_at", "label": "Changed At", "type": "readonly"},
-            {"name": "changed_no", "label": "Changed No", "type": "readonly"},
-        ]
-
     return schema
 
 
@@ -91,6 +87,7 @@ class BrandPage(QWidget):
         self._last_search_text = ""
         self._sort_fields = []
         self._sort_directions = {}
+        self._active_modal: GenericFormModal | None = None
         self.init_ui()
         self.load_data()
 
@@ -162,6 +159,9 @@ class BrandPage(QWidget):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
+        # Don't re-enable selection buttons while a modal is open
+        if self._active_modal is not None:
+            return
         for label in ("Edit", "Delete", "View Detail"):
             btn = self.header.get_action_button(label)
             if btn:
@@ -177,6 +177,55 @@ class BrandPage(QWidget):
             return None
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
+
+    # ------------------------------------------------------------------
+    # Modal lock helpers
+    # ------------------------------------------------------------------
+
+    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
+
+    def _lock_header(self):
+        """Disable every header button while a modal is open."""
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(False)
+
+    def _unlock_header(self):
+        """Re-enable header buttons when the modal closes."""
+        has_selection = bool(self.table.selectedItems())
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                if label in ("Edit", "Delete", "View Detail"):
+                    btn.setEnabled(has_selection)
+                else:
+                    btn.setEnabled(True)
+
+    def _clear_active_modal(self):
+        self._active_modal = None
+
+    def _open_modal(self, modal: GenericFormModal):
+        """Wire lock/unlock signals, track the active modal, and open it."""
+        modal.opened.connect(self._lock_header)
+        modal.closed.connect(self._unlock_header)
+        modal.closed.connect(self._clear_active_modal)
+        self._active_modal = modal
+        modal.exec()
+
+    # ------------------------------------------------------------------
+    # Page visibility — hide/restore modal on page switch
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._active_modal is not None and not self._active_modal.isVisible():
+            self._active_modal.show()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self._active_modal is not None and self._active_modal.isVisible():
+            self._active_modal.hide()
 
     # ------------------------------------------------------------------
     # Data
@@ -200,7 +249,6 @@ class BrandPage(QWidget):
 
         self.all_data = formatted
         self._apply_filter_and_reset_page()
-
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -383,7 +431,7 @@ class BrandPage(QWidget):
             mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-        modal.exec()
+        self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
         code = data.get("code", "").strip()
@@ -401,12 +449,10 @@ class BrandPage(QWidget):
                 case_name=case_status,
                 user="ADMIN",
             )
-
             self.load_data()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
-
 
     def handle_export_action(self):
         import openpyxl
@@ -445,7 +491,7 @@ class BrandPage(QWidget):
             parent=self,
             mode="view",
         )
-        modal.exec()
+        self._open_modal(modal)
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -454,10 +500,9 @@ class BrandPage(QWidget):
         row = self.all_data[idx]
 
         initial = {
-            "code": row[0],
-            "name": row[1],
-            "case": row[2],
-            # audit (readonly)
+            "code":       row[0],
+            "name":       row[1],
+            "case":       row[2],
             "added_by":   row[3],
             "added_at":   row[4],
             "changed_by": row[5],
@@ -473,7 +518,7 @@ class BrandPage(QWidget):
             initial_data=initial,
         )
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
-        modal.exec()
+        self._open_modal(modal)
 
     def _on_edit_submitted(self, idx, data):
         code = data.get("code", "").strip()
@@ -504,7 +549,6 @@ class BrandPage(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
-
 
     def handle_delete_action(self):
         idx = self._get_selected_global_index()

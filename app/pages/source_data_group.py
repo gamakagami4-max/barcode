@@ -231,6 +231,9 @@ class SourceDataPage(QWidget):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
+        # Don't re-enable selection buttons while a modal is open
+        if self._active_modal is not None:
+            return
         for label in ("Edit", "Delete", "View Detail"):
             btn = self.header.get_action_button(label)
             if btn:
