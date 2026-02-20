@@ -2,12 +2,17 @@
 generic_modal.py
 ----------------
 Unified modal component that handles both read-only detail view and form submission.
+View mode now reuses the exact same form layout as add/edit — fields look identical
+but are non-editable. Both tuple-based and dict-based field configs are supported
+for view mode (backward-compatible).
+
 Now features:
   - Animated modal open/close (fade + slide-up)
   - Animated custom dropdowns (combo/cascade_combo/text_with_unit unit selector)
     replacing native QComboBox with FilterTriggerButton + AnimatedFilterPanel style.
+  - Unified single-design layout for view / add / edit modes
 
-Usage — View mode (replaces ViewDetailModal):
+Usage — View mode (tuple list, backward-compatible):
 ----------------------------------------------
     from components.generic_modal import GenericFormModal
 
@@ -26,7 +31,25 @@ Usage — View mode (replaces ViewDetailModal):
     modal.exec()
 
 
-Usage — Form mode (replaces GenericFormModal):
+Usage — View mode (schema dict list, same as add/edit):
+----------------------------------------------
+    from components.generic_modal import GenericFormModal
+
+    schema = [
+        {"name": "name",  "label": "Name",  "type": "text"},
+        {"name": "role",  "label": "Role",  "type": "combo", "options": ["Admin", "User"]},
+    ]
+    modal = GenericFormModal(
+        title="Row Detail",
+        mode="view",
+        fields=schema,
+        initial_data={"name": "Alice", "role": "Admin"},
+        parent=self,
+    )
+    modal.exec()
+
+
+Usage — Form mode:
 ----------------------------------------------
     from components.generic_modal import GenericFormModal
 
@@ -156,7 +179,6 @@ class _DropdownTrigger(QFrame):
     def set_open(self, open_: bool):
         self._is_open = open_
         self._refresh_chevron()
-        # show focus ring when open
         border_color = COLORS["dd_accent"] if open_ else COLORS["border"]
         self.setStyleSheet(f"""
             _DropdownTrigger {{
@@ -200,8 +222,6 @@ class _DropdownPanel(QFrame):
             }}
         """)
         self._build_options()
-
-    # ── helpers ──────────────────────────────────────────────────────
 
     def _target_height(self) -> int:
         return min(8 + len(self._options) * (_OPTION_HEIGHT + 2), _DROPDOWN_MAX_H)
@@ -252,7 +272,6 @@ class _DropdownPanel(QFrame):
 
     def set_options(self, options: list[str], selected: str = ""):
         """Replace the option list (used by cascade_combo child refresh)."""
-        # clear layout
         lay = self.layout()
         while lay.count():
             item = lay.takeAt(0)
@@ -269,8 +288,6 @@ class _DropdownPanel(QFrame):
             self._style_btn(btn, opt == selected)
             lay.addWidget(btn)
             self._buttons.append(btn)
-
-    # ── animation ─────────────────────────────────────────────────────
 
     def show_animated(self):
         th = self._target_height()
@@ -367,13 +384,29 @@ class AnimatedCombo(QWidget):
         if self._panel:
             self._panel.set_options(self._options, self._current)
 
+    def setDisabled(self, disabled: bool):
+        """Disable interaction — used in view mode."""
+        super().setDisabled(disabled)
+        self._trigger.setCursor(Qt.ArrowCursor if disabled else Qt.PointingHandCursor)
+        if disabled:
+            self._trigger.setStyleSheet(f"""
+                _DropdownTrigger {{
+                    background: {COLORS['readonly_bg']};
+                    border: 1px solid {COLORS['border_light']};
+                    border-radius: 6px;
+                }}
+            """)
+            # Disconnect click so panel never opens
+            try:
+                self._trigger.clicked.disconnect(self._toggle)
+            except RuntimeError:
+                pass
+
     # ── internal toggle ───────────────────────────────────────────────
 
     def _ensure_panel(self):
-        """Create panel as a frameless top-level popup — no parent clipping."""
         if self._panel is None:
             self._panel = _DropdownPanel(self._options, self._current, parent=None)
-            # Qt.Popup auto-closes on outside click AND escapes all parent clipping
             self._panel.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
             self._panel.setAttribute(Qt.WA_TranslucentBackground, False)
             self._panel.optionSelected.connect(self._on_picked)
@@ -383,12 +416,10 @@ class AnimatedCombo(QWidget):
         self._ensure_panel()
 
         if not self._panel.isVisible():
-            # Use global coords — panel is a top-level window, no parent to map into
             pt_global = self._trigger.mapToGlobal(QPoint(0, self._trigger.height()))
             w         = self._trigger.width()
             th        = self._panel._target_height()
 
-            # Flip upward if not enough space below on screen
             from PySide6.QtWidgets import QApplication
             screen = QApplication.screenAt(pt_global)
             if screen:
@@ -402,7 +433,6 @@ class AnimatedCombo(QWidget):
             self._trigger.set_open(True)
             self._just_opened = True
 
-            # Install on the panel itself to catch its mouse events for _just_opened skip
             self._panel.installEventFilter(self)
             self._panel.show_animated()
         else:
@@ -421,10 +451,6 @@ class AnimatedCombo(QWidget):
         if option != prev:
             self.currentTextChanged.emit(option)
 
-    # ── event filter — only needed for _just_opened skip now ─────────
-    # Qt.Popup handles outside-click closing natively; we just need to
-    # suppress the very first event so the open-click doesn't re-close.
-
     def eventFilter(self, obj, event):
         if self._just_opened:
             self._just_opened = False
@@ -439,8 +465,14 @@ class AnimatedCombo(QWidget):
 class GenericFormModal(QDialog):
     """
     Single modal for read-only detail view and editable forms.
-    Animates in (fade + slide-up) on open, out on close.
-    Combo fields use AnimatedCombo instead of native QComboBox.
+
+    View mode now renders the exact same form layout as add/edit — same
+    field containers, same spacing, same typography — but with all inputs
+    locked (readonly QLineEdit, disabled AnimatedCombo, etc.).
+
+    Field config for view mode accepts either:
+      - List of (label, value) tuples  → auto-converted to text schema
+      - List of dicts (same schema as add/edit)  → rendered directly
     """
 
     formSubmitted = Signal(dict)
@@ -461,35 +493,35 @@ class GenericFormModal(QDialog):
             raise ValueError(f"mode must be 'view', 'add', or 'edit', got {mode!r}")
 
         self.mode = mode
-        self.fields_config = fields or []
-        self.initial_data  = initial_data or {}
-        self.inputs: dict[str, QWidget] = {}
+        self.initial_data = initial_data or {}
 
-        self._cascade_map:     dict[str, str]        = {}
-        self._cascade_options: dict[str, dict]       = {}
+        # ── Normalise field config ─────────────────────────────────────
+        # Tuple list → convert to schema dicts and fold values into initial_data
+        raw_fields = fields or []
+        if raw_fields and isinstance(raw_fields[0], (tuple, list)):
+            schema = []
+            for label, value in raw_fields:
+                name = label.lower().replace(" ", "_")
+                schema.append({"name": name, "label": label, "type": "text"})
+                if name not in self.initial_data:
+                    self.initial_data[name] = value
+            self.fields_config = schema
+        else:
+            self.fields_config = raw_fields
+
+        self.inputs: dict[str, QWidget] = {}
+        self._cascade_map:     dict[str, str]  = {}
+        self._cascade_options: dict[str, dict] = {}
 
         self.setWindowTitle(title)
         self.setMinimumWidth(min_width)
         self.setModal(False)
 
-        # ── window chrome ─────────────────────────────────────────────
-        if mode == "view":
-            self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-            self.setAttribute(Qt.WA_TranslucentBackground, False)
-            self.setStyleSheet(f"""
-                QDialog {{
-                    background-color: {COLORS['white']};
-                    border: 1px solid {COLORS['border_light']};
-                    border-radius: 10px;
-                }}
-            """)
-        else:
-            self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
+        # ── Unified window style (same for all modes) ─────────────────
+        self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
 
         self._build_ui(title, subtitle)
-
-        if mode in ("add", "edit"):
-            self._populate_initial_data()
+        self._populate_initial_data()
 
         # ── entrance animation setup ──────────────────────────────────
         self._opacity_fx = QGraphicsOpacityEffect(self)
@@ -502,7 +534,6 @@ class GenericFormModal(QDialog):
     # ------------------------------------------------------------------
 
     def exec(self):
-        """Show non-blocking and animate in."""
         self.show()
 
     def showEvent(self, event):
@@ -512,7 +543,6 @@ class GenericFormModal(QDialog):
             self._animate_in()
 
     def closeEvent(self, event):
-        """Animate out, then actually close."""
         event.ignore()
         self._animate_out(lambda: QDialog.reject(self))
 
@@ -565,7 +595,7 @@ class GenericFormModal(QDialog):
         self._out_group.start()
 
     # ------------------------------------------------------------------
-    # UI construction (unchanged structure, combo fields swapped)
+    # UI construction — single shared layout for all modes
     # ------------------------------------------------------------------
 
     def _build_ui(self, title: str, subtitle: str):
@@ -596,6 +626,7 @@ class GenericFormModal(QDialog):
         header_row.addLayout(text_block)
         header_row.addStretch()
 
+        # Close button for view mode (no save/cancel row at bottom)
         if self.mode == "view":
             close_btn = QPushButton("✕")
             close_btn.setFixedSize(32, 32)
@@ -625,70 +656,11 @@ class GenericFormModal(QDialog):
         root.addWidget(divider)
         root.addSpacing(20)
 
-        if self.mode == "view":
-            self._build_view_body(root)
-        else:
-            self._build_form_body(root)
+        # ── Shared form body ──────────────────────────────────────────
+        self._build_form_body(root)
 
     # ------------------------------------------------------------------
-    # View mode body (unchanged)
-    # ------------------------------------------------------------------
-
-    def _build_view_body(self, root: QVBoxLayout):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setMaximumHeight(480)
-        scroll.setStyleSheet("""
-            QScrollArea { background: transparent; }
-            QScrollBar:vertical { background: transparent; width: 8px; margin: 0px; }
-            QScrollBar::handle:vertical { background: #E5E7EB; border-radius: 4px; min-height: 30px; }
-            QScrollBar::handle:vertical:hover { background: #D1D5DB; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-        """)
-        container = QWidget()
-        container.setStyleSheet("background: transparent;")
-        fields_layout = QVBoxLayout(container)
-        fields_layout.setContentsMargins(0, 0, 0, 0)
-        fields_layout.setSpacing(16)
-
-        for label_text, value in self.fields_config:
-            fields_layout.addWidget(self._make_view_field(label_text, value))
-
-        fields_layout.addStretch()
-        scroll.setWidget(container)
-        root.addWidget(scroll)
-        root.addSpacing(8)
-
-    @staticmethod
-    def _make_view_field(label_text: str, value: str) -> QWidget:
-        wrapper = QWidget()
-        wrapper.setStyleSheet("background: transparent;")
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
-        lbl = QLabel(label_text.upper())
-        lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {COLORS['text_muted']};"
-            " letter-spacing: 0.05em; background: transparent;"
-        )
-        layout.addWidget(lbl)
-
-        val = QLabel(value if value and value.strip() else "—")
-        val.setWordWrap(True)
-        val.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        val.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        val.setStyleSheet(
-            f"font-size: 13px; color: {COLORS['text_primary']}; background: {COLORS['field_bg']};"
-            f" border: 1px solid {COLORS['border_light']}; border-radius: 6px; padding: 8px 10px;"
-        )
-        layout.addWidget(val)
-        return wrapper
-
-    # ------------------------------------------------------------------
-    # Form mode body
+    # Form body — used by all modes; view mode just disables everything
     # ------------------------------------------------------------------
 
     def _build_form_body(self, root: QVBoxLayout):
@@ -721,9 +693,11 @@ class GenericFormModal(QDialog):
             self.inputs[field["name"]] = widget
 
             label = field.get("label", field["name"])
-            if field.get("required"):
+            # Only show required asterisk in add/edit mode
+            if field.get("required") and self.mode != "view":
                 label += " *"
 
+            # Dim label colour for readonly-typed fields
             if field.get("type") == "readonly":
                 lbl = QLabel(label)
                 lbl.setStyleSheet(f"color: {COLORS['readonly_text']}; font-size: 13px;")
@@ -736,88 +710,96 @@ class GenericFormModal(QDialog):
         root.addSpacing(16)
         root.addStretch()
 
-        submit_text = "Create" if self.mode == "add" else "Save Changes"
-        buttons = QDialogButtonBox()
-        buttons.addButton(submit_text, QDialogButtonBox.AcceptRole)
-        buttons.addButton("Cancel", QDialogButtonBox.RejectRole)
-        buttons.accepted.connect(self._on_submit)
-        buttons.rejected.connect(self.reject)
-        buttons.setStyleSheet(f"""
-            QPushButton {{
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: 600;
-                font-size: 13px;
-                min-width: 100px;
-            }}
-            QPushButton[text="{submit_text}"] {{
-                background-color: {COLORS['link']};
-                color: white;
-                border: none;
-            }}
-            QPushButton[text="Cancel"] {{
-                background-color: {COLORS['white']};
-                color: {COLORS['text_secondary']};
-                border: 1px solid {COLORS['border']};
-            }}
-        """)
-        root.addWidget(buttons)
+        # ── Buttons — only for add/edit ───────────────────────────────
+        if self.mode != "view":
+            submit_text = "Create" if self.mode == "add" else "Save Changes"
+            buttons = QDialogButtonBox()
+            buttons.addButton(submit_text, QDialogButtonBox.AcceptRole)
+            buttons.addButton("Cancel", QDialogButtonBox.RejectRole)
+            buttons.accepted.connect(self._on_submit)
+            buttons.rejected.connect(self.reject)
+            buttons.setStyleSheet(f"""
+                QPushButton {{
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    font-size: 13px;
+                    min-width: 100px;
+                }}
+                QPushButton[text="{submit_text}"] {{
+                    background-color: {COLORS['link']};
+                    color: white;
+                    border: none;
+                }}
+                QPushButton[text="Cancel"] {{
+                    background-color: {COLORS['white']};
+                    color: {COLORS['text_secondary']};
+                    border: 1px solid {COLORS['border']};
+                }}
+            """)
+            root.addWidget(buttons)
 
     # ------------------------------------------------------------------
-    # Widget factory — combos now use AnimatedCombo
+    # Widget factory
+    #
+    # A single function handles all modes. The `editable` flag drives
+    # every branching decision — no per-mode scattered conditionals.
+    #
+    # editable=True  → normal interactive widget  (add / edit mode)
+    # editable=False → same visual, but locked    (view mode, or
+    #                  fields with type="readonly")
     # ------------------------------------------------------------------
 
     def _create_form_widget(self, field: dict) -> QWidget:
         field_type = field.get("type", "text")
+        # view mode makes everything non-editable; "readonly" type is
+        # always locked regardless of mode
+        editable = (self.mode != "view") and (field_type != "readonly")
 
-        # ── readonly ──────────────────────────────────────────────────
-        if field_type == "readonly":
+        # ── text / readonly ───────────────────────────────────────────
+        if field_type in ("text", "readonly"):
             w = QLineEdit()
-            w.setReadOnly(True)
-            w.setPlaceholderText("—")
-            w.setCursor(QCursor(Qt.ForbiddenCursor))
-            w.setStyleSheet(f"""
-                QLineEdit {{
-                    padding: 8px 12px;
-                    border: 1px solid {COLORS['border_light']};
-                    border-radius: 6px;
-                    background-color: {COLORS['readonly_bg']};
-                    color: {COLORS['readonly_text']};
-                    font-size: 13px;
-                    font-style: italic;
-                }}
-            """)
             w.setMinimumHeight(36)
+            if editable:
+                w.setPlaceholderText(field.get("placeholder", ""))
+                self._style_input(w)
+            else:
+                w.setReadOnly(True)
+                w.setPlaceholderText("")
+                # "readonly" schema fields get italic muted style;
+                # view-mode locked fields stay full-colour but shaded
+                if field_type == "readonly":
+                    w.setStyleSheet(self._readonly_line_edit_style())
+                    w.setCursor(QCursor(Qt.ForbiddenCursor))
+                else:
+                    w.setStyleSheet(self._view_line_edit_style())
             return w
 
-        # ── text ──────────────────────────────────────────────────────
-        if field_type == "text":
-            w = QLineEdit()
-            w.setPlaceholderText(field.get("placeholder", ""))
-            self._style_input(w)
-            return w
-
-        # ── combo / select  →  AnimatedCombo ─────────────────────────
+        # ── combo / select ────────────────────────────────────────────
         elif field_type in ("combo", "select"):
             w = AnimatedCombo(field.get("options", []))
+            if not editable:
+                w.setDisabled(True)
             return w
 
-        # ── cascade_combo  →  AnimatedCombo (parent) ─────────────────
+        # ── cascade_combo ─────────────────────────────────────────────
         elif field_type == "cascade_combo":
             options_map: dict = field.get("options", {})
             child_name: str   = field.get("child", "")
 
             w = AnimatedCombo(list(options_map.keys()))
-
             self._cascade_map[field["name"]]     = child_name
             self._cascade_options[field["name"]] = options_map
 
-            w.currentTextChanged.connect(
-                lambda text, pname=field["name"]: self._on_cascade_changed(pname, text)
-            )
+            if editable:
+                w.currentTextChanged.connect(
+                    lambda text, pname=field["name"]: self._on_cascade_changed(pname, text)
+                )
+            else:
+                w.setDisabled(True)
             return w
 
-        # ── text_with_unit  →  QLineEdit + AnimatedCombo ─────────────
+        # ── text_with_unit ────────────────────────────────────────────
         elif field_type == "text_with_unit":
             container = QWidget()
             h = QHBoxLayout(container)
@@ -825,15 +807,22 @@ class GenericFormModal(QDialog):
             h.setSpacing(8)
 
             text_input = QLineEdit()
-            text_input.setPlaceholderText(field.get("placeholder", ""))
-            self._style_input(text_input)
+            text_input.setMinimumHeight(36)
+            if editable:
+                text_input.setPlaceholderText(field.get("placeholder", ""))
+                self._style_input(text_input)
+            else:
+                text_input.setReadOnly(True)
+                text_input.setStyleSheet(self._view_line_edit_style())
 
-            units = field.get("units", ["unit"])
+            units      = field.get("units", ["unit"])
             unit_combo = AnimatedCombo(units)
             unit_combo.setFixedWidth(100)
             default_unit = field.get("default_unit")
             if default_unit and default_unit in units:
                 unit_combo.setCurrentText(default_unit)
+            if not editable:
+                unit_combo.setDisabled(True)
 
             h.addWidget(text_input, stretch=1)
             h.addWidget(unit_combo)
@@ -842,7 +831,7 @@ class GenericFormModal(QDialog):
             container.unit_combo = unit_combo
             return container
 
-        # ── dimension_pair (unchanged — no combo involved) ────────────
+        # ── dimension_pair ────────────────────────────────────────────
         elif field_type == "dimension_pair":
             from PySide6.QtGui import QDoubleValidator, QIntValidator
             from PySide6.QtCore import QLocale
@@ -867,8 +856,13 @@ class GenericFormModal(QDialog):
                     " letter-spacing: 0.04em; background: transparent;"
                 )
                 inp = QLineEdit()
-                inp.setPlaceholderText(placeholder)
-                self._style_input(inp)
+                inp.setMinimumHeight(36)
+                if editable:
+                    inp.setPlaceholderText(placeholder)
+                    self._style_input(inp)
+                else:
+                    inp.setReadOnly(True)
+                    inp.setStyleSheet(self._view_line_edit_style())
 
                 err_lbl = QLabel("")
                 err_lbl.setStyleSheet("font-size: 11px; color: #EF4444; background: transparent;")
@@ -885,16 +879,6 @@ class GenericFormModal(QDialog):
             outer.addWidget(inch_cell, stretch=1)
             outer.addWidget(px_cell,   stretch=1)
 
-            inch_validator = QDoubleValidator(0.0001, 99999.0, 4)
-            from PySide6.QtCore import QLocale
-            inch_validator.setLocale(QLocale(QLocale.English))
-            inch_validator.setNotation(QDoubleValidator.StandardNotation)
-            inch_input.setValidator(inch_validator)
-
-            from PySide6.QtGui import QIntValidator
-            px_validator = QIntValidator(1, 999999)
-            px_input.setValidator(px_validator)
-
             container._converting = False
 
             def _set_error(inp_widget, err_widget, msg: str):
@@ -910,48 +894,55 @@ class GenericFormModal(QDialog):
                     self._style_input(inp_widget)
                     err_widget.setVisible(False)
 
-            def _inch_changed(text, _dpi=dpi):
-                if container._converting:
-                    return
-                container._converting = True
-                try:
-                    val = float(text)
-                    if val <= 0:
-                        raise ValueError("zero")
-                    px_input.setText(str(int(round(val * _dpi))))
-                    _set_error(inch_input, inch_err, "")
-                    _set_error(px_input,   px_err,   "")
-                except ValueError:
-                    px_input.clear()
-                    if text.strip():
-                        _set_error(inch_input, inch_err, "Must be a positive number")
-                    else:
+            if editable:
+                inch_validator = QDoubleValidator(0.0001, 99999.0, 4)
+                inch_validator.setLocale(QLocale(QLocale.English))
+                inch_validator.setNotation(QDoubleValidator.StandardNotation)
+                inch_input.setValidator(inch_validator)
+                px_input.setValidator(QIntValidator(1, 999999))
+
+                def _inch_changed(text, _dpi=dpi):
+                    if container._converting:
+                        return
+                    container._converting = True
+                    try:
+                        val = float(text)
+                        if val <= 0:
+                            raise ValueError
+                        px_input.setText(str(int(round(val * _dpi))))
                         _set_error(inch_input, inch_err, "")
-                finally:
-                    container._converting = False
+                        _set_error(px_input,   px_err,   "")
+                    except ValueError:
+                        px_input.clear()
+                        if text.strip():
+                            _set_error(inch_input, inch_err, "Must be a positive number")
+                        else:
+                            _set_error(inch_input, inch_err, "")
+                    finally:
+                        container._converting = False
 
-            def _px_changed(text, _dpi=dpi):
-                if container._converting:
-                    return
-                container._converting = True
-                try:
-                    val = int(text)
-                    if val <= 0:
-                        raise ValueError("zero")
-                    inch_input.setText(f"{val / _dpi:.4f}")
-                    _set_error(px_input,   px_err,   "")
-                    _set_error(inch_input, inch_err, "")
-                except ValueError:
-                    inch_input.clear()
-                    if text.strip():
-                        _set_error(px_input, px_err, "Must be a positive whole number")
-                    else:
-                        _set_error(px_input, px_err, "")
-                finally:
-                    container._converting = False
+                def _px_changed(text, _dpi=dpi):
+                    if container._converting:
+                        return
+                    container._converting = True
+                    try:
+                        val = int(text)
+                        if val <= 0:
+                            raise ValueError
+                        inch_input.setText(f"{val / _dpi:.4f}")
+                        _set_error(px_input,   px_err,   "")
+                        _set_error(inch_input, inch_err, "")
+                    except ValueError:
+                        inch_input.clear()
+                        if text.strip():
+                            _set_error(px_input, px_err, "Must be a positive whole number")
+                        else:
+                            _set_error(px_input, px_err, "")
+                    finally:
+                        container._converting = False
 
-            inch_input.textEdited.connect(_inch_changed)
-            px_input.textEdited.connect(_px_changed)
+                inch_input.textEdited.connect(_inch_changed)
+                px_input.textEdited.connect(_px_changed)
 
             container.inch_input  = inch_input
             container.px_input    = px_input
@@ -963,6 +954,10 @@ class GenericFormModal(QDialog):
 
         else:
             raise ValueError(f"Unsupported field type: {field_type!r}")
+
+    # ------------------------------------------------------------------
+    # Style helpers
+    # ------------------------------------------------------------------
 
     def _style_input(self, widget):
         widget.setMinimumHeight(36)
@@ -978,8 +973,35 @@ class GenericFormModal(QDialog):
             QLineEdit:focus, QComboBox:focus {{ border-color: {COLORS['link']}; }}
         """)
 
+    def _view_line_edit_style(self) -> str:
+        """Readonly field in view mode — same shape as editable, softer colours."""
+        return f"""
+            QLineEdit {{
+                padding: 8px 12px;
+                border: 1px solid {COLORS['border_light']};
+                border-radius: 6px;
+                background-color: {COLORS['readonly_bg']};
+                color: {COLORS['text_primary']};
+                font-size: 13px;
+            }}
+        """
+
+    def _readonly_line_edit_style(self) -> str:
+        """Explicitly readonly schema fields (italic, muted)."""
+        return f"""
+            QLineEdit {{
+                padding: 8px 12px;
+                border: 1px solid {COLORS['border_light']};
+                border-radius: 6px;
+                background-color: {COLORS['readonly_bg']};
+                color: {COLORS['readonly_text']};
+                font-size: 13px;
+                font-style: italic;
+            }}
+        """
+
     # ------------------------------------------------------------------
-    # Cascade logic — works with AnimatedCombo
+    # Cascade logic
     # ------------------------------------------------------------------
 
     def _on_cascade_changed(self, parent_name: str, selected_text: str):
@@ -987,8 +1009,8 @@ class GenericFormModal(QDialog):
         if not child_name or child_name not in self.inputs:
             return
 
-        child_widget = self.inputs[child_name]
-        options_map  = self._cascade_options.get(parent_name, {})
+        child_widget  = self.inputs[child_name]
+        options_map   = self._cascade_options.get(parent_name, {})
         child_options = options_map.get(selected_text, [])
 
         if isinstance(child_widget, AnimatedCombo):
@@ -1001,7 +1023,7 @@ class GenericFormModal(QDialog):
             child_widget.blockSignals(False)
 
     # ------------------------------------------------------------------
-    # Populate / validate / collect — updated for AnimatedCombo
+    # Populate initial data (called for all modes)
     # ------------------------------------------------------------------
 
     def _populate_initial_data(self):
@@ -1039,12 +1061,12 @@ class GenericFormModal(QDialog):
                     self._on_cascade_changed(name, str(value))
                 widget.setCurrentText(str(value))
                 if name in self._cascade_map:
-                    child_name = self._cascade_map[name]
-                    child_val  = self.initial_data.get(child_name, "")
+                    child_name   = self._cascade_map[name]
+                    child_val    = self.initial_data.get(child_name, "")
                     child_widget = self.inputs.get(child_name)
                     if isinstance(child_widget, AnimatedCombo) and child_val:
                         child_widget.setCurrentText(str(child_val))
-            elif isinstance(widget, QComboBox):          # fallback — shouldn't happen
+            elif isinstance(widget, QComboBox):
                 widget.setCurrentText(str(value))
             elif hasattr(widget, "text_input"):
                 widget.text_input.setText(str(value))
@@ -1052,13 +1074,17 @@ class GenericFormModal(QDialog):
                 if unit_key in self.initial_data and hasattr(widget, "unit_combo"):
                     widget.unit_combo.setCurrentText(str(self.initial_data[unit_key]))
 
+    # ------------------------------------------------------------------
+    # Validate / collect / submit (add/edit only)
+    # ------------------------------------------------------------------
+
     def _validate(self) -> list[str]:
         errors = []
         for field in self.fields_config:
             if field.get("type") in ("readonly",):
                 continue
-            widget     = self.inputs[field["name"]]
-            label      = field.get("label", field["name"])
+            widget      = self.inputs[field["name"]]
+            label       = field.get("label", field["name"])
             is_required = field.get("required", False)
 
             if getattr(widget, "_field_type", None) == "dimension_pair":
@@ -1097,11 +1123,7 @@ class GenericFormModal(QDialog):
                 else:
                     self._style_input(widget)
 
-            elif isinstance(widget, AnimatedCombo):
-                if is_required and not widget.currentText():
-                    errors.append(f"{label} is required")
-
-            elif isinstance(widget, QComboBox):
+            elif isinstance(widget, (AnimatedCombo, QComboBox)):
                 if is_required and not widget.currentText():
                     errors.append(f"{label} is required")
 
@@ -1119,9 +1141,7 @@ class GenericFormModal(QDialog):
                 data[f"{name}_px"] = widget.px_input.text().strip()
             elif isinstance(widget, QLineEdit):
                 data[name] = widget.text().strip()
-            elif isinstance(widget, AnimatedCombo):
-                data[name] = widget.currentText()
-            elif isinstance(widget, QComboBox):
+            elif isinstance(widget, (AnimatedCombo, QComboBox)):
                 data[name] = widget.currentText()
             elif hasattr(widget, "text_input"):
                 data[name] = widget.text_input.text().strip()

@@ -134,14 +134,11 @@ def _build_form_schema(connection_tables: dict, mode: str = "add") -> list[dict]
             "placeholder": "Enter SQL query or link server path",
             "required":    True,
         },
-    ]
-    if mode == "edit":
-        schema += [
-            {"name": "added_by",   "label": "Added By",   "type": "readonly"},
-            {"name": "added_at",   "label": "Added At",   "type": "readonly"},
-            {"name": "changed_by", "label": "Changed By", "type": "readonly"},
-            {"name": "changed_at", "label": "Changed At", "type": "readonly"},
-            {"name": "changed_no", "label": "Changed No", "type": "readonly"},
+        {"name": "added_by",   "label": "Added By",   "type": "readonly"},
+        {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+        {"name": "changed_by", "label": "Changed By", "type": "readonly"},
+        {"name": "changed_at", "label": "Changed At", "type": "readonly"},
+        {"name": "changed_no", "label": "Changed No", "type": "readonly"},
         ]
     return schema
 
