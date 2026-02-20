@@ -519,6 +519,14 @@ class GenericFormModal(QDialog):
         self.setMinimumWidth(min_width)
         self.setModal(False)
 
+        # Remove minimize (and maximize) buttons
+        self.setWindowFlags(
+            Qt.Dialog |
+            Qt.CustomizeWindowHint |
+            Qt.WindowTitleHint |
+            Qt.WindowCloseButtonHint
+        )
+
         # ── Unified window style (same for all modes) ─────────────────
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
 
