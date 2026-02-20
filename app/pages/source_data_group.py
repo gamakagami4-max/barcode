@@ -139,7 +139,7 @@ def _build_form_schema(connection_tables: dict, mode: str = "add") -> list[dict]
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
         {"name": "changed_at", "label": "Changed At", "type": "readonly"},
         {"name": "changed_no", "label": "Changed No", "type": "readonly"},
-        ]
+    ]
     return schema
 
 
@@ -158,6 +158,7 @@ class SourceDataPage(QWidget):
         self._sort_fields: list[str] = []
         self._sort_directions: dict[str, str] = {}
         self._connection_tables: dict[str, list[str]] = {}
+        self._active_modal: GenericFormModal | None = None
         self._init_ui()
         self.load_data()
 
@@ -244,6 +245,56 @@ class SourceDataPage(QWidget):
         if global_idx >= len(self.filtered_data):
             return None
         return self.filtered_data[global_idx]
+
+    # ── Modal lock helpers ────────────────────────────────────────────────────
+
+    # Every action button on this page's header
+    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
+
+    def _lock_header(self):
+        """Disable every header button while a modal is open."""
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(False)
+
+    def _unlock_header(self):
+        """Re-enable header buttons when the modal closes.
+
+        Selection-dependent buttons (Edit / Delete / View Detail) are only
+        re-enabled when a table row is still selected.
+        """
+        has_selection = bool(self.table.selectedItems())
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                if label in ("Edit", "Delete", "View Detail"):
+                    btn.setEnabled(has_selection)
+                else:
+                    btn.setEnabled(True)
+
+    def _open_modal(self, modal: GenericFormModal):
+        """Wire lock/unlock signals, track the active modal, and open it."""
+        modal.opened.connect(self._lock_header)
+        modal.closed.connect(self._unlock_header)
+        modal.closed.connect(self._clear_active_modal)
+        self._active_modal = modal
+        modal.exec()
+
+    def _clear_active_modal(self):
+        self._active_modal = None
+
+    # ── Page visibility — hide/restore modal on page switch ───────────────────
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, "_active_modal", None) and not self._active_modal.isVisible():
+            self._active_modal.show()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if getattr(self, "_active_modal", None) and self._active_modal.isVisible():
+            self._active_modal.hide()
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -396,7 +447,7 @@ class SourceDataPage(QWidget):
             mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-        modal.exec()
+        self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
         conn_name  = data.get("conn", "").strip()
@@ -433,7 +484,6 @@ class SourceDataPage(QWidget):
         row = self._get_selected_row()
         if row is None:
             return
-        # Re-fetch the single record's detail dict for the view modal
         try:
             all_raw = fetch_all_source_data()
             detail = next((r for r in all_raw if r["pk"] == row[9]), None)
@@ -443,13 +493,14 @@ class SourceDataPage(QWidget):
         if detail is None:
             return
         fields = [(label, str(detail.get(key, "") or "")) for label, key in VIEW_DETAIL_FIELDS]
-        GenericFormModal(
+        modal = GenericFormModal(
             title="Row Detail",
             subtitle="Full details for the selected record.",
             fields=fields,
             parent=self,
             mode="view",
-        ).exec()
+        )
+        self._open_modal(modal)
 
     def handle_edit_action(self):
         row = self._get_selected_row()
@@ -473,7 +524,7 @@ class SourceDataPage(QWidget):
             initial_data=initial,
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
-        modal.exec()
+        self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
         conn_name  = data.get("conn", "").strip()

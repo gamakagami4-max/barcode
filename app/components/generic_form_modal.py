@@ -476,6 +476,8 @@ class GenericFormModal(QDialog):
     """
 
     formSubmitted = Signal(dict)
+    opened = Signal()   # emitted once the modal is visible
+    closed = Signal()   # emitted after the modal is fully dismissed
 
     def __init__(
         self,
@@ -541,6 +543,7 @@ class GenericFormModal(QDialog):
         if not self._entrance_done:
             self._entrance_done = True
             self._animate_in()
+            self.opened.emit()
 
     def closeEvent(self, event):
         event.ignore()
@@ -588,10 +591,14 @@ class GenericFormModal(QDialog):
         slide.setEndValue(self.pos() + QPoint(0, _MODAL_SLIDE_PX))
         slide.setEasingCurve(QEasingCurve.InCubic)
 
+        def _finish():
+            callback()
+            self.closed.emit()
+
         self._out_group = QParallelAnimationGroup()
         self._out_group.addAnimation(fade)
         self._out_group.addAnimation(slide)
-        self._out_group.finished.connect(callback)
+        self._out_group.finished.connect(_finish)
         self._out_group.start()
 
     # ------------------------------------------------------------------
