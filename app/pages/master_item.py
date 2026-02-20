@@ -22,10 +22,6 @@ COLORS = {
     "text_muted":"#64748B"
 }
 
-# Row tuple shape:
-# (ITEM CODE, NAME, BRAND, WHS, PART NO,
-#  INTERCHANGE 1, INTERCHANGE 2, INTERCHANGE 3, INTERCHANGE 4,
-#  QTY, UOM, ADDED_BY, ADDED_AT, CHANGED_BY, CHANGED_AT, CHANGED_NO)
 VIEW_DETAIL_FIELDS = [
     ("Item Code",     0),
     ("Name",          1),
@@ -47,10 +43,6 @@ VIEW_DETAIL_FIELDS = [
 
 
 def _build_form_schema(mode: str = "add") -> list[dict]:
-    """
-    Add mode  → editable item fields only.
-    Edit mode → same editable fields + 5 readonly audit fields below.
-    """
     schema = [
         {"name": "item_code",     "label": "Item Code",      "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
         {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True},
@@ -80,15 +72,16 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
 class MasterItemPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.all_data = []
-        self.filtered_data = []
-        self.current_page = 0
-        self.page_size = 25
+        self.all_data            = []
+        self.filtered_data       = []
+        self.current_page        = 0
+        self.page_size           = 25
         self.available_page_sizes = [25, 50, 100]
-        self._last_filter_type = "ITEM CODE"
-        self._last_search_text = ""
-        self._sort_fields = []
-        self._sort_directions = {}
+        self._last_filter_type   = "ITEM CODE"
+        self._last_search_text   = ""
+        self._sort_fields        = []
+        self._sort_directions    = {}
+        self._active_modal: GenericFormModal | None = None   # ← modal lock tracker
         self.init_ui()
         self.load_data()
 
@@ -99,7 +92,6 @@ class MasterItemPage(QWidget):
         self.main_layout.setSpacing(0)
         enabled = ["Add", "Excel", "Refresh", "View Detail"]
 
-        # 1. Page Header
         self.header = StandardPageHeader(
             title="Master Item",
             subtitle="Description",
@@ -109,13 +101,11 @@ class MasterItemPage(QWidget):
         self.main_layout.addSpacing(12)
         self._connect_header_actions()
 
-        # 2. Search Bar
         self.search_bar = StandardSearchBar()
         self.search_bar.searchChanged.connect(self.filter_table)
         self.main_layout.addWidget(self.search_bar)
         self.main_layout.addSpacing(5)
 
-        # 3. Content Area
         self.content_layout = QHBoxLayout()
 
         headers = [
@@ -134,15 +124,14 @@ class MasterItemPage(QWidget):
         self.table.setColumnWidth(5, 110)
         self.table.setColumnWidth(6, 80)
         self.table.setColumnWidth(7, 100)
-        h_header.setSectionResizeMode(8,  QHeaderView.ResizeToContents)  # ADDED AT
+        h_header.setSectionResizeMode(8,  QHeaderView.ResizeToContents)
         self.table.setColumnWidth(9, 60)
-        h_header.setSectionResizeMode(10, QHeaderView.ResizeToContents)  # CHANGED AT
+        h_header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
         h_header.setSectionResizeMode(1,  QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         self.content_layout.addWidget(self.table_comp, stretch=4)
 
-        # 4. Detail Panel
         self.detail_panel = self._create_detail_panel()
         self.detail_panel.setVisible(False)
         self.content_layout.addWidget(self.detail_panel, stretch=1)
@@ -157,7 +146,6 @@ class MasterItemPage(QWidget):
         self.main_layout.addWidget(self.table_comp)
         self.main_layout.addSpacing(16)
 
-        # Shared pagination from StandardTable
         self.pagination = self.table_comp.pagination
         self.pagination.pageChanged.connect(self.on_page_changed)
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
@@ -175,6 +163,9 @@ class MasterItemPage(QWidget):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
+        # Don't re-enable selection buttons while a modal is open
+        if self._active_modal is not None:
+            return
         for label in ("Edit", "Delete", "View Detail"):
             btn = self.header.get_action_button(label)
             if btn:
@@ -184,12 +175,64 @@ class MasterItemPage(QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return None
-        table_row = selected_rows[0].row()
+        table_row    = selected_rows[0].row()
         global_index = (self.current_page * self.page_size) + table_row
         if global_index >= len(self.filtered_data):
             return None
         actual_row = self.filtered_data[global_index]
         return self.all_data.index(actual_row)
+
+    # ------------------------------------------------------------------
+    # Modal lock helpers  (same pattern as SourceDataPage)
+    # ------------------------------------------------------------------
+
+    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
+
+    def _lock_header(self):
+        """Disable every header button while a modal is open."""
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(False)
+
+    def _unlock_header(self):
+        """Re-enable header buttons when the modal closes.
+
+        Selection-dependent buttons only come back when a row is still selected.
+        """
+        has_selection = bool(self.table.selectedItems())
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                if label in ("Edit", "Delete", "View Detail"):
+                    btn.setEnabled(has_selection)
+                else:
+                    btn.setEnabled(True)
+
+    def _open_modal(self, modal: GenericFormModal):
+        """Wire lock/unlock signals, track the active modal, and open it."""
+        modal.opened.connect(self._lock_header)
+        modal.closed.connect(self._unlock_header)
+        modal.closed.connect(self._clear_active_modal)
+        self._active_modal = modal
+        modal.exec()
+
+    def _clear_active_modal(self):
+        self._active_modal = None
+
+    # ------------------------------------------------------------------
+    # Page visibility — hide/restore modal on page switch
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, "_active_modal", None) and not self._active_modal.isVisible():
+            self._active_modal.show()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if getattr(self, "_active_modal", None) and self._active_modal.isVisible():
+            self._active_modal.hide()
 
     # ------------------------------------------------------------------
     # Detail panel
@@ -201,9 +244,9 @@ class MasterItemPage(QWidget):
         panel.setStyleSheet(
             f"background: {COLORS['panel_bg']}; border-left: 1px solid {COLORS['border']};"
         )
-
-        layout = QVBoxLayout(panel)
+        layout  = QVBoxLayout(panel)
         top_bar = QHBoxLayout()
+
         self.detail_title = QLabel("Item Details")
         self.detail_title.setStyleSheet("font-size: 16px; font-weight: 700;")
 
@@ -244,7 +287,6 @@ class MasterItemPage(QWidget):
             ("Interchange 4", data[8]),
             ("Stock",         f"{data[9]} {data[10]}")
         ]
-
         for label, val in fields:
             lbl = QLabel(
                 f"<b>{label}</b><br>"
@@ -277,18 +319,17 @@ class MasterItemPage(QWidget):
         self.table.setRowCount(0)
         data = self.filtered_data or []
 
-        total = len(data)
+        total     = len(data)
         start_idx = self.current_page * self.page_size
-        end_idx = min(start_idx + self.page_size, total)
+        end_idx   = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
-        # Columns shown in the table (data tuple indices)
         display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
 
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
             for c_idx, data_idx in enumerate(display_indices):
-                val = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
+                val  = str(row_data[data_idx]) if data_idx < len(row_data) else "-"
                 item = QTableWidgetItem(val)
                 font = item.font()
                 font.setPointSize(9)
@@ -301,14 +342,12 @@ class MasterItemPage(QWidget):
         for r in range(len(page_data)):
             self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
 
-        has_prev = self.current_page > 0
-        has_next = end_idx < total
         self.pagination.update(
             start=0 if total == 0 else start_idx + 1,
             end=0 if total == 0 else end_idx,
             total=total,
-            has_prev=has_prev,
-            has_next=has_next,
+            has_prev=self.current_page > 0,
+            has_next=end_idx < total,
             current_page=self.current_page,
             page_size=self.page_size,
             available_page_sizes=self.available_page_sizes,
@@ -324,48 +363,44 @@ class MasterItemPage(QWidget):
         self._apply_filter_and_reset_page()
 
     def _apply_filter_and_reset_page(self) -> None:
-        query = (self._last_search_text or "").lower().strip()
-        headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}
-        col_index = header_to_index.get(self._last_filter_type, 0)
+        query         = (self._last_search_text or "").lower().strip()
+        headers       = self.table_comp.headers()
+        header_to_idx = {h: i for i, h in enumerate(headers)}
+        col_index     = header_to_idx.get(self._last_filter_type, 0)
 
-        if not query:
-            self.filtered_data = list(self.all_data)
-        else:
-            self.filtered_data = [
+        self.filtered_data = (
+            list(self.all_data)
+            if not query
+            else [
                 row for row in self.all_data
                 if col_index < len(row) and query in str(row[col_index] or "").lower()
             ]
-
+        )
         self._apply_sort()
         self.current_page = 0
         self.render_page()
 
     def on_sort_changed(self, fields: list[str], field_directions: dict):
-        self._sort_fields = fields or []
+        self._sort_fields     = fields or []
         self._sort_directions = field_directions or {}
         self._apply_filter_and_reset_page()
 
     def _apply_sort(self):
         if not self._sort_fields or not self.filtered_data:
             return
-
-        headers = self.table_comp.headers()
-        header_to_index = {h: i for i, h in enumerate(headers)}
-
+        headers       = self.table_comp.headers()
+        header_to_idx = {h: i for i, h in enumerate(headers)}
         for field in reversed(self._sort_fields):
-            direction = self._sort_directions.get(field, "asc")
-            idx = header_to_index.get(field)
+            idx = header_to_idx.get(field)
             if idx is None:
                 continue
             self.filtered_data.sort(
                 key=lambda row, i=idx: self._get_sort_value(row, i),
-                reverse=(direction == "desc")
+                reverse=(self._sort_directions.get(field, "asc") == "desc"),
             )
 
     def _get_sort_value(self, row, idx):
-        """Always returns a (type_tag, value) tuple so mixed types never crash sort."""
-        val = row[idx] if idx < len(row) else ""
+        val     = row[idx] if idx < len(row) else ""
         str_val = "" if val is None else str(val).replace(",", "").strip()
         try:
             return (0, float(str_val))
@@ -377,7 +412,7 @@ class MasterItemPage(QWidget):
     # ------------------------------------------------------------------
 
     def on_page_changed(self, page_action: int) -> None:
-        total = len(self.filtered_data) if self.filtered_data is not None else 0
+        total       = len(self.filtered_data) if self.filtered_data else 0
         total_pages = (total + self.page_size - 1) // self.page_size
         if total_pages <= 0:
             self.current_page = 0
@@ -392,7 +427,7 @@ class MasterItemPage(QWidget):
         self.render_page()
 
     def on_page_size_changed(self, new_size: int) -> None:
-        self.page_size = new_size
+        self.page_size    = new_size
         self.current_page = 0
         self.render_page()
 
@@ -401,19 +436,18 @@ class MasterItemPage(QWidget):
     # ------------------------------------------------------------------
 
     def _connect_header_actions(self):
-        for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
+        mapping = {
+            "Refresh":     self.load_data,
+            "Add":         self.handle_add_action,
+            "Excel":       self.handle_export_action,
+            "Edit":        self.handle_edit_action,
+            "Delete":      self.handle_delete_action,
+            "View Detail": self.handle_view_detail_action,
+        }
+        for action, slot in mapping.items():
             btn = self.header.get_action_button(action)
             if btn:
-                mapping = {
-                    "Refresh":     self.load_data,
-                    "Add":         self.handle_add_action,
-                    "Excel":       self.handle_export_action,
-                    "Edit":        self.handle_edit_action,
-                    "Delete":      self.handle_delete_action,
-                    "View Detail": self.handle_view_detail_action,
-                }
-                if action in mapping:
-                    btn.clicked.connect(mapping[action])
+                btn.clicked.connect(slot)
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -427,7 +461,7 @@ class MasterItemPage(QWidget):
             mode="add",
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-        modal.exec()
+        self._open_modal(modal)   # ← replaces modal.exec()
 
     def _on_add_submitted(self, data: dict):
         import datetime
@@ -490,7 +524,7 @@ class MasterItemPage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-        row = self.all_data[idx]
+        row    = self.all_data[idx]
         fields = [
             (label, str(row[i]) if i < len(row) and row[i] is not None else "")
             for label, i in VIEW_DETAIL_FIELDS
@@ -502,7 +536,7 @@ class MasterItemPage(QWidget):
             parent=self,
             mode="view",
         )
-        modal.exec()
+        self._open_modal(modal)   # ← replaces modal.exec()
 
     def handle_edit_action(self):
         idx = self._get_selected_global_index()
@@ -522,14 +556,12 @@ class MasterItemPage(QWidget):
             "interchange_4": row[8],
             "qty":           row[9],
             "uom":           row[10],
-            # audit (readonly)
             "added_by":      row[11],
             "added_at":      row[12],
             "changed_by":    row[13],
             "changed_at":    row[14],
             "changed_no":    row[15],
         }
-
         modal = GenericFormModal(
             title="Edit Master Item",
             fields=_build_form_schema(mode="edit"),
@@ -538,7 +570,7 @@ class MasterItemPage(QWidget):
             initial_data=initial,
         )
         modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
-        modal.exec()
+        self._open_modal(modal)   # ← replaces modal.exec()
 
     def _on_edit_submitted(self, idx, data):
         import datetime
@@ -573,7 +605,7 @@ class MasterItemPage(QWidget):
             item_code, name, brand, warehouse, part_no,
             interchange_1, interchange_2, interchange_3, interchange_4,
             qty, uom,
-            old_row[11], old_row[12],   # added_by, added_at unchanged
+            old_row[11], old_row[12],
             "Admin", now, changed_no,
         )
         self._apply_filter_and_reset_page()
