@@ -11,99 +11,126 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-from repositories.mbstlt_repo import (
-    fetch_all_stlt,
-    create_stlt,
-    update_stlt,
-    soft_delete_stlt,
+from server.repositories.mmstkr_repo import (
+    fetch_all_mmstkr,
+    create_mmstkr,
+    update_mmstkr,
+    soft_delete_mmstkr,
 )
 
-DPI = 96
+DPI = 96  # inch → px: px = round(inches × DPI)
 
-VIEW_DETAIL_FIELDS = [
-    ("Name",           "name"),
-    ("Size",           "size"),
-    ("Display",        "disp"),
-    ("Added By",       "added_by"),
-    ("Added At",       "added_at"),
-    ("Changed By",     "changed_by"),
-    ("Changed At",     "changed_at"),
-    ("Changed No",     "changed_no"),
-]
+
+# ── Column mapping ────────────────────────────────────────────────────────────
+#
+#   Tuple layout:
+#       0   pk
+#       1   name
+#       2   w_in   (float)
+#       3   w_px   (int)
+#       4   h_in   (float)
+#       5   h_px   (int)
+#       6   added_by
+#       7   added_at
+#       8   changed_by
+#       9   changed_at
+#       10  changed_no
 
 _COL_HEADER_TO_TUPLE_IDX = {
-    "NAME":           1,
-    "SIZE":           2,
-    "DISPLAY":        3,
-    "ADDED BY":       4,
-    "ADDED AT":       5,
-    "CHANGED BY":     6,
-    "CHANGED AT":     7,
-    "CHANGED NO":     8,
+    "NAME":        1,
+    "WIDTH (INCH)":  2,
+    "WIDTH (PX)":  3,
+    "HEIGHT (INCH)": 4,
+    "HEIGHT (PX)": 5,
+    "ADDED BY":    6,
+    "ADDED AT":    7,
+    "CHANGED BY":  8,
+    "CHANGED AT":  9,
+    "CHANGED NO":  10,
 }
-
-
-# ── Data conversion ───────────────────────────────────────────────────────────
-
-def _row_to_tuple(r: dict) -> tuple:
-    """
-    Index layout:
-        0  pk
-        1  name
-        2  size
-        3  disp       (str)
-        4  added_by
-        5  added_at   (str)
-        6  changed_by
-        7  changed_at (str)
-        8  changed_no (str)
-    """
-    return (
-        r["pk"],
-        (r.get("name") or "").strip(),
-        (r.get("size") or "").strip(),
-        "Yes" if r.get("disp") else "No",
-        (r.get("added_by") or "").strip(),
-        str(r["added_at"])[:19] if r.get("added_at") else "",
-        (r.get("changed_by") or "").strip(),
-        str(r["changed_at"])[:19] if r.get("changed_at") else "",
-        str(r.get("changed_no", 0)),
-    )
 
 
 # ── Form schema ───────────────────────────────────────────────────────────────
 
-def _build_form_schema(mode: str = "add") -> list[dict]:
-    schema = [
+def _build_form_schema() -> list[dict]:
+    """
+    Add / Edit schema.
+
+    The 'dimension_pair' type renders two side-by-side inputs (inch + px)
+    that keep each other in sync.  On submit the modal emits:
+        {field_name}_in  →  inch value (str)
+        {field_name}_px  →  pixel value (str)
+    """
+    return [
         {
-            "name":        "name",
-            "label":       "Sticker Name",
-            "type":        "text",
+            "name":     "name",
+            "label":    "Sticker Name",
+            "type":     "text",
             "placeholder": "Enter sticker name",
-            "required":    True,
+            "required": True,
         },
         {
-            "name":        "size",
-            "label":       "Size",
-            "type":        "text",
-            "placeholder": "e.g. A4, 10x15cm",
-            "required":    False,
+            "name":     "width",
+            "label":    "Width",
+            "type":     "dimension_pair",
+            "dpi":      DPI,
+            "required": True,
         },
         {
-            "name":     "disp",
-            "label":    "Display",
-            "type":     "combo",
-            "options":  ["Yes", "No"],
-            "required": False,
+            "name":     "height",
+            "label":    "Height",
+            "type":     "dimension_pair",
+            "dpi":      DPI,
+            "required": True,
         },
-        # Audit fields shown in all modes — blank in add, populated in edit/view
+        # ── Audit (always readonly) ───────────────────────────────────
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
         {"name": "changed_at", "label": "Changed At", "type": "readonly"},
         {"name": "changed_no", "label": "Changed No", "type": "readonly"},
     ]
-    return schema
+
+
+# ── Data conversion ───────────────────────────────────────────────────────────
+
+def _row_to_tuple(r: dict) -> tuple:
+    h_in = float(r.get("h_in") or 0)
+    w_in = float(r.get("w_in") or 0)
+    h_px = int(r.get("h_px") or 0)
+    w_px = int(r.get("w_px") or 0)
+    return (
+        r["pk"],                                                        # 0
+        (r.get("name") or "").strip(),                                  # 1
+        w_in,                                                           # 2
+        w_px,                                                           # 3
+        h_in,                                                           # 4
+        h_px,                                                           # 5
+        (r.get("added_by") or "").strip(),                              # 6
+        str(r["added_at"])[:19] if r.get("added_at") else "",           # 7
+        (r.get("changed_by") or "").strip(),                            # 8
+        str(r["changed_at"])[:19] if r.get("changed_at") else "",       # 9
+        str(r.get("changed_no", 0)),                                    # 10
+    )
+
+
+def _parse_submitted_dims(data: dict) -> tuple[float, float, int, int] | None:
+    """
+    Extract and validate w_in, h_in, w_px, h_px from a GenericFormModal
+    submission where dimension_pair fields are named 'width' and 'height'.
+
+    Returns (w_in, h_in, w_px, h_px) or None on failure.
+    """
+    try:
+        w_in = float(data["width_in"])
+        w_px = int(data["width_px"])
+        h_in = float(data["height_in"])
+        h_px = int(data["height_px"])
+    except (KeyError, ValueError, TypeError):
+        return None
+    if w_in <= 0 or w_px <= 0 or h_in <= 0 or h_px <= 0:
+        return None
+    return w_in, h_in, w_px, h_px
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
@@ -135,7 +162,7 @@ class StickerSizePage(QWidget):
 
         self.header = StandardPageHeader(
             title="Sticker Size",
-            subtitle="Manage sticker size definitions.",
+            subtitle="Manage sticker size definitions (width x height).",
             enabled_actions=["Add", "Excel", "Refresh", "View Detail"],
         )
         layout.addWidget(self.header)
@@ -148,7 +175,9 @@ class StickerSizePage(QWidget):
         layout.addSpacing(5)
 
         self.table_comp = StandardTable([
-            "NAME", "SIZE", "DISPLAY",
+            "NAME",
+            "WIDTH (INCH)", "WIDTH (PX)",
+            "HEIGHT (INCH)", "HEIGHT (PX)",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         self.table = self.table_comp.table
@@ -175,7 +204,6 @@ class StickerSizePage(QWidget):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
-        # Don't re-enable selection buttons while a modal is open
         if self._active_modal is not None:
             return
         for label in ("Edit", "Delete", "View Detail"):
@@ -192,40 +220,34 @@ class StickerSizePage(QWidget):
             return None
         return self.filtered_data[global_idx]
 
-    # ── Modal lock helpers ────────────────────────────────────────────────────
+    # ── Modal helpers ─────────────────────────────────────────────────────────
 
     _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
 
     def _lock_header(self):
-        """Disable every header button while a modal is open."""
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
             if btn:
                 btn.setEnabled(False)
 
     def _unlock_header(self):
-        """Re-enable header buttons when the modal closes."""
-        has_selection = bool(self.table.selectedItems())
+        has_sel = bool(self.table.selectedItems())
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
             if btn:
-                if label in ("Edit", "Delete", "View Detail"):
-                    btn.setEnabled(has_selection)
-                else:
-                    btn.setEnabled(True)
+                btn.setEnabled(has_sel if label in ("Edit", "Delete", "View Detail") else True)
 
     def _clear_active_modal(self):
         self._active_modal = None
 
     def _open_modal(self, modal: GenericFormModal):
-        """Wire lock/unlock signals, track the active modal, and open it."""
         modal.opened.connect(self._lock_header)
         modal.closed.connect(self._unlock_header)
         modal.closed.connect(self._clear_active_modal)
         self._active_modal = modal
         modal.exec()
 
-    # ── Page visibility — hide/restore modal on page switch ───────────────────
+    # ── Page visibility ───────────────────────────────────────────────────────
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -247,14 +269,16 @@ class StickerSizePage(QWidget):
     def _add_table_row(self, row: tuple):
         r = self.table.rowCount()
         self.table.insertRow(r)
-        self.table.setItem(r, 0, self._make_item(row[1]))  # name
-        self.table.setItem(r, 1, self._make_item(row[2]))  # size
-        self.table.setItem(r, 2, self._make_item(row[3]))  # disp
-        self.table.setItem(r, 3, self._make_item(row[4]))  # added_by
-        self.table.setItem(r, 4, self._make_item(row[5]))  # added_at
-        self.table.setItem(r, 5, self._make_item(row[6]))  # changed_by
-        self.table.setItem(r, 6, self._make_item(row[7]))  # changed_at
-        self.table.setItem(r, 7, self._make_item(row[8]))  # changed_no
+        self.table.setItem(r, 0, self._make_item(row[1]))          # name
+        self.table.setItem(r, 1, self._make_item(str(row[2])))     # w_in
+        self.table.setItem(r, 2, self._make_item(str(row[3])))     # w_px
+        self.table.setItem(r, 3, self._make_item(str(row[4])))     # h_in
+        self.table.setItem(r, 4, self._make_item(str(row[5])))     # h_px
+        self.table.setItem(r, 5, self._make_item(row[6]))          # added_by
+        self.table.setItem(r, 6, self._make_item(row[7]))          # added_at
+        self.table.setItem(r, 7, self._make_item(row[8]))          # changed_by
+        self.table.setItem(r, 8, self._make_item(row[9]))          # changed_at
+        self.table.setItem(r, 9, self._make_item(row[10]))         # changed_no
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -287,7 +311,7 @@ class StickerSizePage(QWidget):
 
     def load_data(self):
         try:
-            self.all_data = [_row_to_tuple(r) for r in fetch_all_stlt()]
+            self.all_data = [_row_to_tuple(r) for r in fetch_all_mmstkr()]
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Failed to load data:\n\n{exc}")
             self.all_data = []
@@ -303,14 +327,9 @@ class StickerSizePage(QWidget):
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
         col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 1)
-
         self.filtered_data = (
-            list(self.all_data)
-            if not query
-            else [
-                row for row in self.all_data
-                if query in str(row[col_idx] or "").lower()
-            ]
+            list(self.all_data) if not query
+            else [row for row in self.all_data if query in str(row[col_idx] or "").lower()]
         )
         self._apply_sort()
         self.current_page = 0
@@ -378,7 +397,7 @@ class StickerSizePage(QWidget):
     def handle_add_action(self):
         modal = GenericFormModal(
             title="Add Sticker Size",
-            fields=_build_form_schema(mode="add"),
+            fields=_build_form_schema(),
             parent=self,
             mode="add",
         )
@@ -387,17 +406,99 @@ class StickerSizePage(QWidget):
 
     def _on_add_submitted(self, data: dict):
         name = data.get("name", "").strip()
-        size = data.get("size", "").strip()
-        disp = data.get("disp", "No") == "Yes"
         if not name:
             QMessageBox.warning(self, "Validation", "Sticker name is required.")
             return
+        dims = _parse_submitted_dims(data)
+        if dims is None:
+            QMessageBox.warning(self, "Validation",
+                                "Width and height must be valid positive numbers.")
+            return
+        w_in, h_in, w_px, h_px = dims
         try:
-            create_stlt(code=name, name=name, size=size, disp=disp)
+            create_mmstkr(name=name, h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
         self.load_data()
+
+    def handle_edit_action(self):
+        row = self._get_selected_row()
+        if row is None:
+            return
+        modal = GenericFormModal(
+            title="Edit Sticker Size",
+            fields=_build_form_schema(),
+            parent=self,
+            mode="edit",
+            initial_data={
+                "name":       row[1],
+                # dimension_pair reads {field}_in and {field}_px from initial_data
+                "width_in":   str(row[2]),
+                "width_px":   str(row[3]),
+                "height_in":  str(row[4]),
+                "height_px":  str(row[5]),
+                "added_by":   row[6],
+                "added_at":   row[7],
+                "changed_by": row[8],
+                "changed_at": row[9],
+                "changed_no": row[10],
+            },
+        )
+        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
+        self._open_modal(modal)
+
+    def _on_edit_submitted(self, row: tuple, data: dict):
+        name = data.get("name", "").strip()
+        if not name:
+            QMessageBox.warning(self, "Validation", "Sticker name is required.")
+            return
+        dims = _parse_submitted_dims(data)
+        if dims is None:
+            QMessageBox.warning(self, "Validation",
+                                "Width and height must be valid positive numbers.")
+            return
+        w_in, h_in, w_px, h_px = dims
+        old_changed_no = int(row[10]) if str(row[10]).isdigit() else 0
+        try:
+            update_mmstkr(
+                pk=row[0],
+                name=name,
+                h_in=h_in,
+                w_in=w_in,
+                h_px=h_px,
+                w_px=w_px,
+                old_changed_no=old_changed_no,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
+            return
+        self.load_data()
+
+    def handle_view_detail_action(self):
+        row = self._get_selected_row()
+        if row is None:
+            return
+        modal = GenericFormModal(
+            title="Sticker Size Detail",
+            subtitle="Full details for the selected record.",
+            fields=_build_form_schema(),
+            parent=self,
+            mode="view",
+            initial_data={
+                "name":       row[1],
+                "width_in":   str(row[2]),
+                "width_px":   str(row[3]),
+                "height_in":  str(row[4]),
+                "height_px":  str(row[5]),
+                "added_by":   row[6],
+                "added_at":   row[7],
+                "changed_by": row[8],
+                "changed_at": row[9],
+                "changed_no": row[10],
+            },
+        )
+        self._open_modal(modal)
 
     def handle_export_action(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -408,75 +509,22 @@ class StickerSizePage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Sticker Size"
-        ws.append(["NAME", "SIZE", "DISPLAY",
-                   "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"])
+        ws.append([
+            "NAME",
+            "WIDTH (INCH)", "WIDTH (PX)",
+            "HEIGHT (INCH)", "HEIGHT (PX)",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+        ])
         for row in self.filtered_data:
-            ws.append([str(row[i]) if row[i] is not None else "" for i in range(1, 9)])
+            ws.append([
+                row[1],  row[2],  row[3],   # name, w_in, w_px
+                row[4],  row[5],             # h_in, h_px
+                row[6],  row[7],  row[8],    # added_by/at, changed_by
+                row[9],  row[10],            # changed_at, changed_no
+            ])
         wb.save(path)
         QMessageBox.information(self, "Export Complete",
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
-
-    def handle_view_detail_action(self):
-        row = self._get_selected_row()
-        if row is None:
-            return
-        try:
-            all_raw = fetch_all_stlt()
-            detail = next((r for r in all_raw if r["pk"] == row[0]), None)
-        except Exception as exc:
-            QMessageBox.critical(self, "Database Error", f"Could not load detail:\n\n{exc}")
-            return
-        if detail is None:
-            return
-        fields = [(label, str(detail.get(key, "") or "")) for label, key in VIEW_DETAIL_FIELDS]
-        modal = GenericFormModal(
-            title="Sticker Size Detail",
-            subtitle="Full details for the selected record.",
-            fields=fields,
-            parent=self,
-            mode="view",
-        )
-        self._open_modal(modal)
-
-    def handle_edit_action(self):
-        row = self._get_selected_row()
-        if row is None:
-            return
-        initial = {
-            "name":       row[1],
-            "size":       row[2],
-            "disp":       "Yes" if row[3] == "Yes" else "No",
-            "added_by":   row[4],
-            "added_at":   row[5],
-            "changed_by": row[6],
-            "changed_at": row[7],
-            "changed_no": row[8],
-        }
-        modal = GenericFormModal(
-            title="Edit Sticker Size",
-            fields=_build_form_schema(mode="edit"),
-            parent=self,
-            mode="edit",
-            initial_data=initial,
-        )
-        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
-        self._open_modal(modal)
-
-    def _on_edit_submitted(self, row: tuple, data: dict):
-        name = data.get("name", "").strip()
-        size = data.get("size", "").strip()
-        disp = data.get("disp", "No") == "Yes"
-        if not name:
-            QMessageBox.warning(self, "Validation", "Sticker name is required.")
-            return
-        pk = row[0]
-        old_changed_no = int(row[8]) if str(row[8]).isdigit() else 0
-        try:
-            update_stlt(pk, name, name, size, disp, old_changed_no)
-        except Exception as exc:
-            QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
-            return
-        self.load_data()
 
     def handle_delete_action(self):
         row = self._get_selected_row()
@@ -491,7 +539,7 @@ class StickerSizePage(QWidget):
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
             try:
-                soft_delete_stlt(row[0])
+                soft_delete_mmstkr(row[0])
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
                 return
