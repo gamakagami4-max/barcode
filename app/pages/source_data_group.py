@@ -23,7 +23,7 @@ from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_m
 
 ROW_STANDARD          = "standard"
 QUERY_COL_FIXED_WIDTH = 370   # pixels — column width
-_QUERY_PADDING_PX     = 24    # 12px left + 12px right (matches stylesheet padding)
+_QUERY_PADDING_PX     = 12
 _WRAP_PIXEL_LIMIT     = QUERY_COL_FIXED_WIDTH - _QUERY_PADDING_PX
 
 VIEW_DETAIL_FIELDS = [
@@ -308,7 +308,7 @@ class SourceDataPage(QWidget):
         self.table = self.table_comp.table
         self.table.setWordWrap(True)
         self.table.setStyleSheet(
-            self.table.styleSheet() + "\nQTableWidget::item { padding: 4px 12px; }"
+            self.table.styleSheet() + "\nQTableWidget::item { padding: 4px 6px; }"
         )
 
         self.sort_bar = SortByWidget(self.table)
