@@ -21,7 +21,8 @@ from repositories.mmsdgr_repo import (
 from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
 
 ROW_STANDARD     = "standard"
-QUERY_WRAP_LIMIT = 80
+QUERY_WRAP_LIMIT      = 55   # characters per line before \n is inserted
+QUERY_COL_FIXED_WIDTH = 370  # pixels — keep in sync with wrap limit
 
 VIEW_DETAIL_FIELDS = [
     ("Engine",              "engine_name"),
@@ -306,7 +307,8 @@ class SourceDataPage(QWidget):
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
         hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
-        hdr.setSectionResizeMode(2, QHeaderView.Stretch)            # QUERY LINK SERVER
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)              # QUERY LINK SERVER
+        hdr.resizeSection(2, QUERY_COL_FIXED_WIDTH)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # ENGINE
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED BY
         hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED AT
@@ -405,7 +407,9 @@ class SourceDataPage(QWidget):
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
         self.table.setItem(r, 0, item_conn)
         self.table.setItem(r, 1, self._make_item(row[3]))                   # table_name
-        self.table.setItem(r, 2, self._make_item(wrap_query_text(row[4])))  # query
+        query_item = self._make_item(wrap_query_text(row[4]))
+        query_item.setData(Qt.UserRole + 1, "padded")          # optional tag
+        self.table.setItem(r, 2, query_item)
         self.table.setItem(r, 3, self._make_item(row[1]))                   # engine_code
         self.table.setItem(r, 4, self._make_item(row[5]))                   # added_by
         self.table.setItem(r, 5, self._make_item(row[6]))                   # added_at
