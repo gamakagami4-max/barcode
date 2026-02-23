@@ -102,8 +102,8 @@ def wrap_query_text(text: str, limit_px: int = _WRAP_PIXEL_LIMIT) -> str:
 # ── Name splitting ────────────────────────────────────────────────────────────
 
 def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
-    tables = sorted(name for name in mixed if "." in name)
-    fields = sorted(name for name in mixed if "." not in name)
+    tables = sorted(name[2:] for name in mixed if name.startswith("t."))
+    fields = sorted(name for name in mixed if not name.startswith("t."))
     return tables, fields
 
 
@@ -404,7 +404,7 @@ class SourceDataPage(QWidget):
         fields_text = row[12] if len(row) > 12 else ""
         if fields_text and len(fields_text) > 60:
             _flds = [f.strip() for f in fields_text.split(",") if f.strip()]
-            _per_line = 3
+            _per_line = 4
             fields_display = "\n".join(
                 ", ".join(_flds[i:i + _per_line])
                 for i in range(0, len(_flds), _per_line)
@@ -544,11 +544,13 @@ class SourceDataPage(QWidget):
     # ── FK resolution ─────────────────────────────────────────────────────────
 
     def _resolve_fk_ids(self, engine: str, conn_name: str,
-                         table_name: str) -> tuple[int, int] | None:
+                        table_name: str) -> tuple[int, int] | None:
         conc_key = f"{engine}::{conn_name}"
+        # Try both plain and t. prefixed key
         tbnm_key = f"{engine}::{conn_name}::{table_name}"
-        conciy   = self._conc_id_map.get(conc_key)
-        tbnmiy   = self._tbnm_id_map.get(tbnm_key)
+        tbnm_key_prefixed = f"{engine}::{conn_name}::t.{table_name}"
+        conciy = self._conc_id_map.get(conc_key)
+        tbnmiy = self._tbnm_id_map.get(tbnm_key) or self._tbnm_id_map.get(tbnm_key_prefixed)
         if conciy is None or tbnmiy is None:
             QMessageBox.warning(
                 self, "Lookup Error",
@@ -584,20 +586,28 @@ class SourceDataPage(QWidget):
     # ── Source-type mutual-exclusion ──────────────────────────────────────────
 
     def _apply_source_type_state(self, modal: GenericFormModal, source_type: str):
-        """
-        Enable table_name + fields when source_type == SOURCE_TYPE_TABLE,
-        enable query when source_type == SOURCE_TYPE_QUERY.
-        The other branch is disabled so the user can only fill one at a time.
-        """
         use_table = (source_type == SOURCE_TYPE_TABLE)
 
-        # Table + Fields branch
         modal.set_field_disabled("table_name", not use_table)
         modal.set_field_disabled("fields",     not use_table)
-
-        # Query branch
         modal.set_field_disabled("query", use_table)
 
+        fields_widget = modal.inputs.get("fields")
+        if fields_widget:
+            # Only show height if table mode AND a table is actually selected
+            table_selected = bool(modal.get_field_value("table_name")) if use_table else False
+            if use_table and table_selected:
+                fields_widget.setMinimumHeight(155)
+                fields_widget.setMaximumHeight(230)
+            else:
+                fields_widget.setMinimumHeight(0)
+                fields_widget.setMaximumHeight(0)
+            cbw = getattr(fields_widget, "_checkbox_widget", None)
+            if cbw and hasattr(cbw, "_scroll"):
+                if use_table and table_selected:
+                    cbw._scroll.setFixedHeight(125)
+                else:
+                    cbw._scroll.setFixedHeight(0)
     # ── Cascade field handler ─────────────────────────────────────────────────
 
     def _on_field_changed(self, modal: "GenericFormModal", field_name: str, value: str):
@@ -653,23 +663,35 @@ class SourceDataPage(QWidget):
         elif field_name == "table_name" and value:
             engine = modal.get_field_value("engine")
             conn   = modal.get_field_value("conn")
-            _, fields = self._get_tables_and_fields(engine, conn)
-            modal.update_field_options("fields", fields, checked=fields)
-            # Table is now selected → show Select All / Select None
+            try:
+                from repositories.mmsdgr_repo import fetch_table_columns
+                cols = fetch_table_columns("barcode", value)
+            except Exception:
+                cols = []
+            # Preserve any already-saved field selections
+            saved = getattr(modal, "_saved_fields", None)
+            checked = saved if saved else cols
+            modal.update_field_options("fields", cols, checked=checked)
             fields_widget = modal.inputs.get("fields")
-            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
-                fields_widget.set_actions_visible(True)
+            if fields_widget:
+                fields_widget.setMinimumHeight(155)
+                fields_widget.setMaximumHeight(155)
+                cbw = getattr(fields_widget, "_checkbox_widget", None)
+                if cbw and hasattr(cbw, "_scroll"):
+                    cbw._scroll.setFixedHeight(125)
+                if hasattr(fields_widget, "set_actions_visible"):
+                    fields_widget.set_actions_visible(True)
 
         elif field_name == "table_name" and not value:
-            # Table was cleared
             fields_widget = modal.inputs.get("fields")
-            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
-                fields_widget.set_actions_visible(False)
-
-        # Re-apply disabled state after cascade updates
-        src = modal.get_field_value("source_type")
-        if src and field_name in ("engine", "conn", "table_name"):
-            self._apply_source_type_state(modal, src)
+            if fields_widget:
+                fields_widget.setMinimumHeight(0)
+                fields_widget.setMaximumHeight(0)
+                cbw = getattr(fields_widget, "_checkbox_widget", None)
+                if cbw and hasattr(cbw, "_scroll"):
+                    cbw._scroll.setFixedHeight(0)
+                if hasattr(fields_widget, "set_actions_visible"):
+                    fields_widget.set_actions_visible(False)
 
     # ── Add ───────────────────────────────────────────────────────────────────
 
@@ -820,8 +842,7 @@ class SourceDataPage(QWidget):
 
         saved_fields: list[str] = detail.get("fields", []) if detail else []
 
-        # Determine which mode was previously saved:
-        # if table_name is set → Table + Fields; otherwise → Query / Link Server
+        # Determine source type
         initial_source_type = SOURCE_TYPE_TABLE if table_name else SOURCE_TYPE_QUERY
 
         initial = {
@@ -836,6 +857,7 @@ class SourceDataPage(QWidget):
             "changed_at":  row[8],
             "changed_no":  row[9],
         }
+
         modal = GenericFormModal(
             title="Edit Source Group",
             fields=_build_form_schema(
@@ -850,13 +872,24 @@ class SourceDataPage(QWidget):
             mode="edit",
             initial_data=initial,
         )
+
+        # ✅ SET SAVED FIELDS HERE (after modal exists)
+        modal._saved_fields = saved_fields
+
         modal.fieldChanged.connect(
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
 
-        # Apply the saved source-type state so the correct branch is active
+        # Apply correct source-type state
         self._apply_source_type_state(modal, initial_source_type)
+
+        # Force table selection if needed
+        if table_name and initial_source_type == SOURCE_TYPE_TABLE:
+            table_widget = modal.inputs.get("table_name")
+            if table_widget:
+                table_widget.setCurrentText(table_name)
+                self._on_field_changed(modal, "table_name", table_name)
 
         self._open_modal(modal)
 

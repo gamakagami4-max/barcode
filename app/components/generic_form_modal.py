@@ -164,7 +164,18 @@ class _DropdownPanel(QFrame):
         return min(8 + len(self._options) * (_OPTION_HEIGHT + 2), _DROPDOWN_MAX_H)
 
     def _build_options(self):
-        lay = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }
+            QScrollBar::handle:vertical { background: #D1D5DB; border-radius: 3px; min-height: 20px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+        inner = QWidget()
+        lay = QVBoxLayout(inner)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(2)
         for opt in self._options:
@@ -175,6 +186,11 @@ class _DropdownPanel(QFrame):
             self._style_btn(btn, opt == self._selected)
             lay.addWidget(btn)
             self._buttons.append(btn)
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll)
 
     def _style_btn(self, btn: QPushButton, selected: bool):
         if selected:
@@ -474,7 +490,7 @@ class _CheckboxListWidget(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setMaximumHeight(320)
+        self._scroll.setFixedHeight(200)
         self._scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
             QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }
@@ -987,7 +1003,7 @@ class GenericFormModal(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setMaximumHeight(560)
+        scroll.setMaximumHeight(800)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.verticalScrollBar().setSingleStep(12)
         scroll.setStyleSheet("""
@@ -1199,6 +1215,7 @@ class GenericFormModal(QDialog):
             if editable:
                 container = QWidget()
                 container.setStyleSheet("background: transparent;")
+                container.setMinimumHeight(230)
                 vlay = QVBoxLayout(container)
                 vlay.setContentsMargins(0, 0, 0, 0)
                 vlay.setSpacing(4)
