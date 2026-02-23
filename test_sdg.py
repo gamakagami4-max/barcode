@@ -1,242 +1,36 @@
 # test_seed_connections.py
 #
-# Run this once to seed mmengn, mmconc, and mmtbnm with test data.
+# Reads REAL data from barcode.mmengn, barcode.mmconc, and barcode.mmtbnm.
+# No fake data is inserted — this script only inspects and verifies what's
+# already in the database.
+#
 # Usage:
-#   python test_seed_connections.py
-#   python test_seed_connections.py --clean   ← wipes seeded rows first
+#   python test_seed_connections.py              ← verify current DB state
+#   python test_seed_connections.py --verify     ← same, explicit flag
+#   python test_seed_connections.py --summary    ← compact count summary only
+#   python test_seed_connections.py --check-fk   ← check mmsdgr + mmsdgf integrity
 
 import argparse
 import sys
-from datetime import datetime
 
-# ── adjust this import to match your project structure ───────────────────────
 from server.db import get_connection
-
-
-# ── Seed definitions ──────────────────────────────────────────────────────────
-#
-# Structure:
-#   ENGINE_CODE → list of {conn_name, tables: [str]}
-#
-SEED_DATA = {
-    "postgresql": [
-        {
-            "conn_name": "WarehouseDB",
-            "tables": [
-                "inventory",
-                "stock_movements",
-                "suppliers",
-            ],
-        },
-        {
-            "conn_name": "SalesDB",
-            "tables": [
-                "orders",
-                "order_items",
-                "customers",
-                "products",
-            ],
-        },
-        {
-            "conn_name": "BarcodeCoreDB",
-            "tables": [
-                "barcode.mmitem",
-                "barcode.mmbrnd",
-                "barcode.mmfltr",
-                "barcode.mmprty",
-            ],
-        },
-    ],
-    "sqlite": [
-        {
-            "conn_name": "LocalCache",
-            "tables": [
-                "cached_items",
-                "cached_barcodes",
-            ],
-        },
-        {
-            "conn_name": "OfflineSync",
-            "tables": [
-                "sync_queue",
-                "sync_log",
-                "pending_prints",
-            ],
-        },
-    ],
-}
-
-USER = "seed_script"
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _now():
-    return datetime.now()
-
-
-def _get_engine_id(cur, engine_code: str) -> int:
-    cur.execute(
-        "SELECT mpengniy FROM barcode.mmengn WHERE mpcode = %s AND mpdlfg <> '1'",
-        (engine_code,),
-    )
-    row = cur.fetchone()
-    if not row:
-        raise ValueError(
-            f"Engine '{engine_code}' not found in barcode.mmengn.\n"
-            "Make sure you've run the mmengn CREATE + INSERT statements first."
-        )
-    return row[0]
-
-
-def _get_or_create_connection(cur, conn_name: str, engine_id: int) -> tuple[int, bool]:
-    """Returns (mnconciy, created: bool)."""
-    cur.execute(
-        """
-        SELECT mnconciy FROM barcode.mmconc
-        WHERE mnname = %s AND mnengniy = %s AND mndlfg <> '1'
-        LIMIT 1
-        """,
-        (conn_name, engine_id),
-    )
-    row = cur.fetchone()
-    if row:
-        return row[0], False
-
-    now = _now()
-    cur.execute(
-        """
-        INSERT INTO barcode.mmconc (
-            mnname, mnengniy,
-            mnrgid, mnrgdt,
-            mnchid, mnchdt,
-            mncsdt, mncsid
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING mnconciy
-        """,
-        (conn_name, engine_id, USER, now, USER, now, now, USER),
-    )
-    return cur.fetchone()[0], True
-
-
-def _get_or_create_table(cur, table_name: str, conciy: int) -> tuple[int, bool]:
-    """Returns (motbnmiy, created: bool)."""
-    cur.execute(
-        """
-        SELECT motbnmiy FROM barcode.mmtbnm
-        WHERE moname = %s AND moconciy = %s AND modlfg <> '1'
-        LIMIT 1
-        """,
-        (table_name, conciy),
-    )
-    row = cur.fetchone()
-    if row:
-        return row[0], False
-
-    now = _now()
-    cur.execute(
-        """
-        INSERT INTO barcode.mmtbnm (
-            moname, moconciy,
-            morgid, morgdt,
-            mochid, mochdt,
-            mocsdt, mocsid
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING motbnmiy
-        """,
-        (table_name, conciy, USER, now, USER, now, now, USER),
-    )
-    return cur.fetchone()[0], True
-
-
-# ── Seed ──────────────────────────────────────────────────────────────────────
-
-def seed():
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        total_conns  = 0
-        total_tables = 0
-
-        for engine_code, connections in SEED_DATA.items():
-            print(f"\n── Engine: {engine_code} ──")
-            engine_id = _get_engine_id(cur, engine_code)
-
-            for entry in connections:
-                conn_name = entry["conn_name"]
-                conciy, conn_created = _get_or_create_connection(cur, conn_name, engine_id)
-                status = "CREATED" if conn_created else "exists"
-                print(f"  [{status}] Connection: {conn_name!r} (id={conciy})")
-                if conn_created:
-                    total_conns += 1
-
-                for table_name in entry["tables"]:
-                    tbnmiy, tbl_created = _get_or_create_table(cur, table_name, conciy)
-                    status = "CREATED" if tbl_created else "exists"
-                    print(f"             [{status}] Table: {table_name!r} (id={tbnmiy})")
-                    if tbl_created:
-                        total_tables += 1
-
-        conn.commit()
-        print(f"\n✅ Seed complete — {total_conns} connection(s), {total_tables} table(s) created.")
-    except Exception as exc:
-        conn.rollback()
-        print(f"\n❌ Seed failed: {exc}", file=sys.stderr)
-        raise
-    finally:
-        conn.close()
-
-
-# ── Clean ─────────────────────────────────────────────────────────────────────
-
-def clean():
-    """
-    Soft-delete all mmtbnm and mmconc rows that were created by this script.
-    Does NOT touch mmengn.
-    """
-    conn = get_connection()
-    now  = _now()
-    try:
-        cur = conn.cursor()
-
-        # Soft-delete table rows first (FK child)
-        cur.execute(
-            """
-            UPDATE barcode.mmtbnm SET modlfg = '1', mochid = %s, mochdt = %s
-            WHERE morgid = %s AND modlfg <> '1'
-            """,
-            (USER, now, USER),
-        )
-        tbls = cur.rowcount
-
-        # Soft-delete connection rows (FK parent)
-        cur.execute(
-            """
-            UPDATE barcode.mmconc SET mndlfg = '1', mnchid = %s, mnchdt = %s
-            WHERE mnrgid = %s AND mndlfg <> '1'
-            """,
-            (USER, now, USER),
-        )
-        conns = cur.rowcount
-
-        conn.commit()
-        print(f"🗑️  Cleaned — {conns} connection(s), {tbls} table(s) soft-deleted.")
-    except Exception as exc:
-        conn.rollback()
-        print(f"❌ Clean failed: {exc}", file=sys.stderr)
-        raise
-    finally:
-        conn.close()
 
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 
-def verify():
-    """Print a readable summary of what's currently in the DB."""
+def verify(show_fields: bool = True):
+    """
+    Print a full readable tree of engines → connections → tables/fields
+    that currently exist in the DB (active rows only).
+    """
     sql = """
-        SELECT e.mpcode, c.mnname, t.moname, t.motbnmiy
+        SELECT
+            e.mpcode     AS engine_code,
+            e.mpengniy   AS engine_id,
+            c.mnname     AS conn_name,
+            c.mnconciy   AS conn_id,
+            t.moname     AS entry_name,
+            t.motbnmiy   AS entry_id
         FROM barcode.mmengn  e
         JOIN barcode.mmconc  c ON c.mnengniy = e.mpengniy AND c.mndlfg <> '1'
         JOIN barcode.mmtbnm  t ON t.moconciy  = c.mnconciy AND t.modlfg <> '1'
@@ -248,21 +42,188 @@ def verify():
         cur = conn.cursor()
         cur.execute(sql)
         rows = cur.fetchall()
-        if not rows:
-            print("(no active connections / tables found)")
-            return
+    finally:
+        conn.close()
 
-        current_eng  = None
-        current_conn = None
-        for engine_code, conn_name, table_name, tbnmiy in rows:
-            if engine_code != current_eng:
-                print(f"\n── Engine: {engine_code} ──")
-                current_eng  = engine_code
-                current_conn = None
-            if conn_name != current_conn:
-                print(f"  Connection: {conn_name!r}")
-                current_conn = conn_name
-            print(f"    • {table_name!r} (id={tbnmiy})")
+    if not rows:
+        print("(no active engines / connections / entries found)")
+        return
+
+    current_eng  = None
+    current_conn = None
+    table_count  = 0
+    field_count  = 0
+
+    for engine_code, engine_id, conn_name, conn_id, entry_name, entry_id in rows:
+        if engine_code != current_eng:
+            print(f"\n── Engine: {engine_code!r} (id={engine_id}) ──")
+            current_eng  = engine_code
+            current_conn = None
+
+        if conn_name != current_conn:
+            print(f"  Connection: {conn_name!r} (id={conn_id})")
+            current_conn = conn_name
+
+        is_table = "." in entry_name
+        kind = "Table" if is_table else "Field"
+
+        if is_table:
+            table_count += 1
+        else:
+            field_count += 1
+
+        if show_fields or is_table:
+            print(f"    [{kind}] {entry_name!r} (id={entry_id})")
+
+    print(f"\n── Totals: {table_count} table(s), {field_count} field(s) ──")
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+def summary():
+    """Print a compact count summary per engine → connection."""
+    sql = """
+        SELECT
+            e.mpcode,
+            c.mnname,
+            COUNT(*) FILTER (WHERE t.moname LIKE '%.%') AS table_count,
+            COUNT(*) FILTER (WHERE t.moname NOT LIKE '%.%') AS field_count
+        FROM barcode.mmengn  e
+        JOIN barcode.mmconc  c ON c.mnengniy = e.mpengniy AND c.mndlfg <> '1'
+        JOIN barcode.mmtbnm  t ON t.moconciy  = c.mnconciy AND t.modlfg <> '1'
+        WHERE e.mpdlfg <> '1'
+        GROUP BY e.mpcode, c.mnname
+        ORDER BY e.mpcode, c.mnname
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        print("(no active data found)")
+        return
+
+    print(f"\n{'ENGINE':<20} {'CONNECTION':<25} {'TABLES':>7} {'FIELDS':>7}")
+    print("─" * 62)
+    for engine_code, conn_name, tbl_cnt, fld_cnt in rows:
+        print(f"{engine_code:<20} {conn_name:<25} {tbl_cnt:>7} {fld_cnt:>7}")
+    print("─" * 62)
+    total_tbls = sum(r[2] for r in rows)
+    total_flds = sum(r[3] for r in rows)
+    print(f"{'TOTAL':<46} {total_tbls:>7} {total_flds:>7}")
+
+
+# ── FK integrity check ────────────────────────────────────────────────────────
+
+def check_fk():
+    """
+    Verify mmsdgr and mmsdgf referential integrity:
+    - Every active mmsdgr row should have a valid maconciy (mmconc)
+    - Every active mmsdgr row with a matbnmiy should have a valid mmtbnm row
+    - Every active mmsdgf row should have a valid masgdriy (mmsdgr) and matbnmiy (mmtbnm)
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        issues = 0
+
+        # ── mmsdgr → mmconc ───────────────────────────────────────────────────
+        cur.execute("""
+            SELECT s.masgdriy, s.maconciy
+            FROM barcode.mmsdgr s
+            LEFT JOIN barcode.mmconc c ON c.mnconciy = s.maconciy AND c.mndlfg <> '1'
+            WHERE s.madlfg <> '1'
+              AND c.mnconciy IS NULL
+        """)
+        orphan_conc = cur.fetchall()
+        if orphan_conc:
+            print(f"⚠️  mmsdgr rows with missing/deleted mmconc ({len(orphan_conc)}):")
+            for pk, conciy in orphan_conc:
+                print(f"   masgdriy={pk}, maconciy={conciy}")
+            issues += len(orphan_conc)
+        else:
+            print("✅ mmsdgr → mmconc: all OK")
+
+        # ── mmsdgr → mmtbnm (table) ───────────────────────────────────────────
+        cur.execute("""
+            SELECT s.masgdriy, s.matbnmiy
+            FROM barcode.mmsdgr s
+            LEFT JOIN barcode.mmtbnm t ON t.motbnmiy = s.matbnmiy AND t.modlfg <> '1'
+            WHERE s.madlfg <> '1'
+              AND s.matbnmiy IS NOT NULL
+              AND t.motbnmiy IS NULL
+        """)
+        orphan_tbnm = cur.fetchall()
+        if orphan_tbnm:
+            print(f"⚠️  mmsdgr rows with missing/deleted mmtbnm (table) ({len(orphan_tbnm)}):")
+            for pk, tbnmiy in orphan_tbnm:
+                print(f"   masgdriy={pk}, matbnmiy={tbnmiy}")
+            issues += len(orphan_tbnm)
+        else:
+            print("✅ mmsdgr → mmtbnm (table): all OK")
+
+        # ── mmsdgf → mmsdgr ───────────────────────────────────────────────────
+        cur.execute("""
+            SELECT f.masgdfiy, f.masgdriy
+            FROM barcode.mmsdgf f
+            LEFT JOIN barcode.mmsdgr s ON s.masgdriy = f.masgdriy AND s.madlfg <> '1'
+            WHERE f.madlfg <> '1'
+              AND s.masgdriy IS NULL
+        """)
+        orphan_sdgf_sgdr = cur.fetchall()
+        if orphan_sdgf_sgdr:
+            print(f"⚠️  mmsdgf rows with missing/deleted mmsdgr ({len(orphan_sdgf_sgdr)}):")
+            for pk, sgdriy in orphan_sdgf_sgdr:
+                print(f"   masgdfiy={pk}, masgdriy={sgdriy}")
+            issues += len(orphan_sdgf_sgdr)
+        else:
+            print("✅ mmsdgf → mmsdgr: all OK")
+
+        # ── mmsdgf → mmtbnm (field) ───────────────────────────────────────────
+        cur.execute("""
+            SELECT f.masgdfiy, f.matbnmiy
+            FROM barcode.mmsdgf f
+            LEFT JOIN barcode.mmtbnm t ON t.motbnmiy = f.matbnmiy AND t.modlfg <> '1'
+            WHERE f.madlfg <> '1'
+              AND t.motbnmiy IS NULL
+        """)
+        orphan_sdgf_tbnm = cur.fetchall()
+        if orphan_sdgf_tbnm:
+            print(f"⚠️  mmsdgf rows with missing/deleted mmtbnm (field) ({len(orphan_sdgf_tbnm)}):")
+            for pk, tbnmiy in orphan_sdgf_tbnm:
+                print(f"   masgdfiy={pk}, matbnmiy={tbnmiy}")
+            issues += len(orphan_sdgf_tbnm)
+        else:
+            print("✅ mmsdgf → mmtbnm (field): all OK")
+
+        # ── mmsdgr counts ─────────────────────────────────────────────────────
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE madlfg <> '1') AS active,
+                COUNT(*) FILTER (WHERE madlfg  = '1') AS deleted
+            FROM barcode.mmsdgr
+        """)
+        active, deleted = cur.fetchone()
+        print(f"\n📊 mmsdgr: {active} active row(s), {deleted} soft-deleted")
+
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE madlfg <> '1') AS active,
+                COUNT(*) FILTER (WHERE madlfg  = '1') AS deleted
+            FROM barcode.mmsdgf
+        """)
+        f_active, f_deleted = cur.fetchone()
+        print(f"📊 mmsdgf: {f_active} active field link(s), {f_deleted} soft-deleted")
+
+        if issues == 0:
+            print("\n✅ All FK checks passed — data integrity looks good.")
+        else:
+            print(f"\n❌ {issues} integrity issue(s) found.")
+
     finally:
         conn.close()
 
@@ -270,19 +231,33 @@ def verify():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Seed / clean test connections and table names.")
-    parser.add_argument("--clean",  action="store_true", help="Soft-delete all seeded rows")
-    parser.add_argument("--verify", action="store_true", help="Print current DB state and exit")
+    parser = argparse.ArgumentParser(
+        description="Inspect real barcode DB connection/table data and check integrity."
+    )
+    parser.add_argument(
+        "--verify",   action="store_true",
+        help="Print full engine → connection → table/field tree (default)"
+    )
+    parser.add_argument(
+        "--no-fields", action="store_true",
+        help="When verifying, hide field entries and show tables only"
+    )
+    parser.add_argument(
+        "--summary",  action="store_true",
+        help="Print compact count table per engine/connection"
+    )
+    parser.add_argument(
+        "--check-fk", action="store_true",
+        help="Check mmsdgr and mmsdgf referential integrity"
+    )
     args = parser.parse_args()
 
-    if args.verify:
-        print("\n── Current DB state ──")
-        verify()
-    elif args.clean:
-        clean()
-        print()
-        verify()
+    if args.summary:
+        summary()
+    elif args.check_fk:
+        print("\n── FK Integrity Check ──")
+        check_fk()
     else:
-        seed()
-        print()
-        verify()
+        # Default: verify (full tree)
+        print("\n── Current DB State ──")
+        verify(show_fields=not args.no_fields)

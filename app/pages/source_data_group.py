@@ -608,6 +608,7 @@ class SourceDataPage(QWidget):
                     cbw._scroll.setFixedHeight(125)
                 else:
                     cbw._scroll.setFixedHeight(0)
+
     # ── Cascade field handler ─────────────────────────────────────────────────
 
     def _on_field_changed(self, modal: "GenericFormModal", field_name: str, value: str):
@@ -663,11 +664,21 @@ class SourceDataPage(QWidget):
         elif field_name == "table_name" and value:
             engine = modal.get_field_value("engine")
             conn   = modal.get_field_value("conn")
-            try:
-                from repositories.mmsdgr_repo import fetch_table_columns
-                cols = fetch_table_columns("barcode", value)
-            except Exception:
-                cols = []
+
+            # ── Use pre-fetched columns if available (avoids redundant DB
+            #    call when the edit modal first opens).  Once consumed, clear
+            #    so that subsequent table changes fetch fresh columns.
+            prefetched = getattr(modal, "_prefetched_cols", None)
+            if prefetched:
+                cols = prefetched
+                modal._prefetched_cols = []   # consume — next change fetches fresh
+            else:
+                try:
+                    from repositories.mmsdgr_repo import fetch_table_columns
+                    cols = fetch_table_columns("barcode", value)
+                except Exception:
+                    cols = []
+
             # Preserve any already-saved field selections
             saved = getattr(modal, "_saved_fields", None)
             checked = saved if saved else cols
@@ -845,6 +856,16 @@ class SourceDataPage(QWidget):
         # Determine source type
         initial_source_type = SOURCE_TYPE_TABLE if table_name else SOURCE_TYPE_QUERY
 
+        # ── Pre-fetch columns BEFORE building the modal so there is zero
+        #    blocking DB work happening while the UI is trying to paint. ──
+        prefetched_cols: list[str] = []
+        if table_name and initial_source_type == SOURCE_TYPE_TABLE:
+            try:
+                from repositories.mmsdgr_repo import fetch_table_columns
+                prefetched_cols = fetch_table_columns("barcode", table_name)
+            except Exception:
+                prefetched_cols = []
+
         initial = {
             "engine":      engine,
             "conn":        conn_name,
@@ -858,38 +879,61 @@ class SourceDataPage(QWidget):
             "changed_no":  row[9],
         }
 
+        # Build schema, then guarantee the saved table_name is always a valid
+        # option even if _connection_tables doesn't list it — this is what
+        # caused "Please select a table..." to show instead of the real value.
+        schema = _build_form_schema(
+            self._connection_tables,
+            initial_engine=engine,
+            initial_conn=conn_name,
+            initial_table=table_name,
+            initial_fields=saved_fields,
+            initial_source_type=initial_source_type,
+        )
+        for field_def in schema:
+            if field_def.get("name") == "table_name" and table_name:
+                if table_name not in field_def.get("options", []):
+                    field_def["options"] = sorted(set(field_def["options"]) | {table_name})
+                break
+
         modal = GenericFormModal(
             title="Edit Source Group",
-            fields=_build_form_schema(
-                self._connection_tables,
-                initial_engine=engine,
-                initial_conn=conn_name,
-                initial_table=table_name,
-                initial_fields=saved_fields,
-                initial_source_type=initial_source_type,
-            ),
+            fields=schema,
             parent=self,
             mode="edit",
             initial_data=initial,
         )
 
-        # ✅ SET SAVED FIELDS HERE (after modal exists)
-        modal._saved_fields = saved_fields
+        modal._saved_fields    = saved_fields
+        modal._prefetched_cols = prefetched_cols   # consumed once in _on_field_changed
 
         modal.fieldChanged.connect(
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
 
-        # Apply correct source-type state
+        # Apply correct source-type visibility state
         self._apply_source_type_state(modal, initial_source_type)
 
-        # Force table selection if needed
+        # Set table combo to the saved value (now guaranteed to be in options)
+        # and populate the fields list using the already-fetched columns.
         if table_name and initial_source_type == SOURCE_TYPE_TABLE:
             table_widget = modal.inputs.get("table_name")
             if table_widget:
                 table_widget.setCurrentText(table_name)
-                self._on_field_changed(modal, "table_name", table_name)
+
+            if prefetched_cols:
+                checked = saved_fields if saved_fields else prefetched_cols
+                modal.update_field_options("fields", prefetched_cols, checked=checked)
+                fields_widget = modal.inputs.get("fields")
+                if fields_widget:
+                    fields_widget.setMinimumHeight(155)
+                    fields_widget.setMaximumHeight(155)
+                    cbw = getattr(fields_widget, "_checkbox_widget", None)
+                    if cbw and hasattr(cbw, "_scroll"):
+                        cbw._scroll.setFixedHeight(125)
+                    if hasattr(fields_widget, "set_actions_visible"):
+                        fields_widget.set_actions_visible(True)
 
         self._open_modal(modal)
 
