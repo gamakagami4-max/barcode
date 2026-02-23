@@ -35,6 +35,7 @@ VIEW_DETAIL_FIELDS = [
     ("Connection",          "conn_name"),
     ("Table Name",          "table_name"),
     ("Query / Link Server", "query"),
+    ("Fields",              "fields"),
     ("Added By",            "added_by"),
     ("Added At",            "added_at"),
     ("Changed By",          "changed_by"),
@@ -46,6 +47,7 @@ _COL_HEADER_TO_TUPLE_IDX = {
     "CONNECTION":        2,
     "TABLE NAME":        3,
     "QUERY LINK SERVER": 4,
+    "FIELDS":            12,
     "ENGINE":            1,
     "ADDED BY":          5,
     "ADDED AT":          6,
@@ -108,23 +110,32 @@ def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
 # ── Data conversion ───────────────────────────────────────────────────────────
 
 def _row_to_tuple(r: dict) -> tuple:
-    pk   = r["pk"]
-    eng  = (r.get("engine")     or "").strip()
-    conn = (r.get("conn_name")  or "").strip()
-    tbl  = (r.get("table_name") or "").strip()
+    pk      = r["pk"]
+    eng     = (r.get("engine")     or "").strip()
+    conn    = (r.get("conn_name")  or "").strip()
+    tbl     = (r.get("table_name") or "").strip()
+    # fields is expected to be a list[str] or None from the repo
+    fields_raw = r.get("fields") or []
+    if isinstance(fields_raw, str):
+        fields_list = [f.strip() for f in fields_raw.split(",") if f.strip()]
+    else:
+        fields_list = [str(f).strip() for f in fields_raw if f]
+    fields_display = ", ".join(fields_list)
+
     return (
-        f"{eng}::{conn}::{tbl}::{pk}",
-        eng,
-        conn,
-        tbl,
-        (r.get("query") or "").strip(),
-        (r.get("added_by") or "").strip(),
-        str(r["added_at"])[:19] if r.get("added_at") else "",
-        (r.get("changed_by") or "").strip(),
-        str(r["changed_at"])[:19] if r.get("changed_at") else "",
-        str(r.get("changed_no", 0)),
-        pk,
-        eng,
+        f"{eng}::{conn}::{tbl}::{pk}",   # 0  composite key
+        eng,                               # 1  engine
+        conn,                              # 2  connection
+        tbl,                               # 3  table_name
+        (r.get("query") or "").strip(),    # 4  query
+        (r.get("added_by") or "").strip(), # 5  added_by
+        str(r["added_at"])[:19] if r.get("added_at") else "",    # 6
+        (r.get("changed_by") or "").strip(),                     # 7
+        str(r["changed_at"])[:19] if r.get("changed_at") else "", # 8
+        str(r.get("changed_no", 0)),       # 9  changed_no
+        pk,                                # 10 pk
+        eng,                               # 11 (dup engine, kept for legacy)
+        fields_display,                    # 12 fields (comma-separated display)
     )
 
 
@@ -262,6 +273,7 @@ class SourceDataPage(QWidget):
 
         self.table_comp = StandardTable([
             "CONNECTION", "TABLE NAME", "QUERY LINK SERVER",
+            "FIELDS",
             "ENGINE",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
@@ -290,16 +302,17 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)             # QUERY LINK SERVER
         hdr.resizeSection(2, QUERY_COL_FIXED_WIDTH)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # FIELDS
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ENGINE
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED BY
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # ADDED AT
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED BY
+        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # CHANGED AT
+        hdr.setSectionResizeMode(9, QHeaderView.ResizeToContents)  # CHANGED NO
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 
@@ -376,17 +389,39 @@ class SourceDataPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
 
+        # col 0: CONNECTION
         item_conn = self._make_item(row[2])
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
         self.table.setItem(r, 0, item_conn)
+
+        # col 1: TABLE NAME
         self.table.setItem(r, 1, self._make_item(row[3]))
+
+        # col 2: QUERY LINK SERVER
         self.table.setItem(r, 2, self._make_item(wrap_query_text(row[4])))
-        self.table.setItem(r, 3, self._make_item(row[1]))
-        self.table.setItem(r, 4, self._make_item(row[5]))
-        self.table.setItem(r, 5, self._make_item(row[6]))
-        self.table.setItem(r, 6, self._make_item(row[7]))
-        self.table.setItem(r, 7, self._make_item(row[8]))
-        self.table.setItem(r, 8, self._make_item(row[9]))
+
+        # col 3: FIELDS — inline if short, wrapped N-per-line if long
+        fields_text = row[12] if len(row) > 12 else ""
+        if fields_text and len(fields_text) > 60:
+            _flds = [f.strip() for f in fields_text.split(",") if f.strip()]
+            _per_line = 3
+            fields_display = "\n".join(
+                ", ".join(_flds[i:i + _per_line])
+                for i in range(0, len(_flds), _per_line)
+            )
+        else:
+            fields_display = fields_text
+        self.table.setItem(r, 3, self._make_item(fields_display))
+
+        # col 4: ENGINE
+        self.table.setItem(r, 4, self._make_item(row[1]))
+
+        # col 5-9: audit columns
+        self.table.setItem(r, 5, self._make_item(row[5]))
+        self.table.setItem(r, 6, self._make_item(row[6]))
+        self.table.setItem(r, 7, self._make_item(row[7]))
+        self.table.setItem(r, 8, self._make_item(row[8]))
+        self.table.setItem(r, 9, self._make_item(row[9]))
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -565,10 +600,33 @@ class SourceDataPage(QWidget):
 
     # ── Cascade field handler ─────────────────────────────────────────────────
 
-    def _on_field_changed(self, modal: GenericFormModal, field_name: str, value: str):
+    def _on_field_changed(self, modal: "GenericFormModal", field_name: str, value: str):
         # ── Source-type toggle ─────────────────────────────────────────────
         if field_name == "source_type":
             self._apply_source_type_state(modal, value)
+
+            if value == SOURCE_TYPE_QUERY:
+                # Switching to Query — clear table + fields so they don't bleed through
+                modal.update_field_options("table_name", [])
+                modal.update_field_options("fields", [])
+                fields_widget = modal.inputs.get("fields")
+                if fields_widget and hasattr(fields_widget, "set_actions_visible"):
+                    fields_widget.set_actions_visible(False)
+
+            elif value == SOURCE_TYPE_TABLE:
+                # Switching back to Table — clear the query textarea
+                query_widget = modal.inputs.get("query")
+                if query_widget:
+                    from PySide6.QtWidgets import QTextEdit as _QTE
+                    if isinstance(query_widget, _QTE):
+                        query_widget.setPlainText("")
+                # Re-populate table options from current engine+conn selection
+                engine = modal.get_field_value("engine")
+                conn   = modal.get_field_value("conn")
+                if engine and conn:
+                    tables, _ = self._get_tables_and_fields(engine, conn)
+                    modal.update_field_options("table_name", tables)
+
             return
 
         # ── Cascade updates (only relevant in Table + Fields mode) ─────────
@@ -577,21 +635,38 @@ class SourceDataPage(QWidget):
             modal.update_field_options("conn", conns)
             modal.update_field_options("table_name", [])
             modal.update_field_options("fields", [])
+            # No table selected yet → hide Select All / Select None
+            fields_widget = modal.inputs.get("fields")
+            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
+                fields_widget.set_actions_visible(False)
 
         elif field_name == "conn" and value:
             engine = modal.get_field_value("engine")
             tables, _ = self._get_tables_and_fields(engine, value)
             modal.update_field_options("table_name", tables)
             modal.update_field_options("fields", [])
+            # No table selected yet → hide
+            fields_widget = modal.inputs.get("fields")
+            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
+                fields_widget.set_actions_visible(False)
 
         elif field_name == "table_name" and value:
             engine = modal.get_field_value("engine")
             conn   = modal.get_field_value("conn")
             _, fields = self._get_tables_and_fields(engine, conn)
             modal.update_field_options("fields", fields, checked=fields)
+            # Table is now selected → show Select All / Select None
+            fields_widget = modal.inputs.get("fields")
+            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
+                fields_widget.set_actions_visible(True)
 
-        # Re-apply disabled state after cascade updates so newly-populated
-        # table_name / fields combos remain disabled if in Query mode.
+        elif field_name == "table_name" and not value:
+            # Table was cleared
+            fields_widget = modal.inputs.get("fields")
+            if fields_widget and hasattr(fields_widget, "set_actions_visible"):
+                fields_widget.set_actions_visible(False)
+
+        # Re-apply disabled state after cascade updates
         src = modal.get_field_value("source_type")
         if src and field_name in ("engine", "conn", "table_name"):
             self._apply_source_type_state(modal, src)
@@ -646,8 +721,12 @@ class SourceDataPage(QWidget):
                 return
             tbnmiy = None   # no table selected in query mode
 
+        selected_fields = data.get("fields", [])
+        if isinstance(selected_fields, str):
+            selected_fields = [f.strip() for f in selected_fields.split(",") if f.strip()]
+
         try:
-            create_sdgr(conciy, tbnmiy, query, engine)
+            create_sdgr(conciy, tbnmiy, query, engine, selected_fields)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
@@ -665,14 +744,16 @@ class SourceDataPage(QWidget):
         ws = wb.active
         ws.title = "Master Source Group"
         ws.append([
-            "CONNECTION", "TABLE NAME", "QUERY / LINK SERVER", "ENGINE",
+            "CONNECTION", "TABLE NAME", "QUERY / LINK SERVER", "FIELDS", "ENGINE",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         for row in self.filtered_data:
+            fields_val = row[12] if len(row) > 12 else ""
             ws.append([
                 str(row[2]) if row[2] is not None else "",
                 str(row[3]) if row[3] is not None else "",
                 str(row[4]) if row[4] is not None else "",
+                fields_val,
                 str(row[1]) if row[1] is not None else "",
                 str(row[5]) if row[5] is not None else "",
                 str(row[6]) if row[6] is not None else "",
@@ -699,7 +780,17 @@ class SourceDataPage(QWidget):
             return
         if detail is None:
             return
-        fields = [(label, str(detail.get(key, "") or "")) for label, key in VIEW_DETAIL_FIELDS]
+
+        # Render fields list nicely for the view detail modal
+        fields_raw = detail.get("fields") or []
+        if isinstance(fields_raw, list):
+            fields_str = ", ".join(str(f) for f in fields_raw)
+        else:
+            fields_str = str(fields_raw)
+        detail_copy = dict(detail)
+        detail_copy["fields"] = fields_str
+
+        fields = [(label, str(detail_copy.get(key, "") or "")) for label, key in VIEW_DETAIL_FIELDS]
         modal  = GenericFormModal(
             title="Row Detail",
             subtitle="Full details for the selected record.",
@@ -802,8 +893,12 @@ class SourceDataPage(QWidget):
                 return
             tbnmiy = None
 
+        selected_fields = data.get("fields", [])
+        if isinstance(selected_fields, str):
+            selected_fields = [f.strip() for f in selected_fields.split(",") if f.strip()]
+
         try:
-            update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no)
+            update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no, selected_fields)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
