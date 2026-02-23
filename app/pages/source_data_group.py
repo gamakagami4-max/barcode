@@ -1,7 +1,8 @@
 # app/pages/master_source_group.py
 
+import threading
 import openpyxl
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -55,6 +56,24 @@ _COL_HEADER_TO_TUPLE_IDX = {
     "CHANGED AT":        8,
     "CHANGED NO":        9,
 }
+
+
+# ── Background column fetcher ─────────────────────────────────────────────────
+# Runs fetch_table_columns on a daemon thread and emits `done` back on the
+# Qt main thread via a queued signal — zero UI blocking.
+
+class _ColsFetcher(QObject):
+    done = Signal(list)   # emitted with the fetched column list
+
+    def start(self, table_name: str):
+        def _run():
+            try:
+                from repositories.mmsdgr_repo import fetch_table_columns
+                cols = fetch_table_columns("barcode", table_name)
+            except Exception:
+                cols = []
+            self.done.emit(cols)   # Qt queues this safely to the main thread
+        threading.Thread(target=_run, daemon=True).start()
 
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
@@ -114,7 +133,6 @@ def _row_to_tuple(r: dict) -> tuple:
     eng     = (r.get("engine")     or "").strip()
     conn    = (r.get("conn_name")  or "").strip()
     tbl     = (r.get("table_name") or "").strip()
-    # fields is expected to be a list[str] or None from the repo
     fields_raw = r.get("fields") or []
     if isinstance(fields_raw, str):
         fields_list = [f.strip() for f in fields_raw.split(",") if f.strip()]
@@ -188,14 +206,12 @@ def _build_form_schema(
             "placeholder": "Please select a connection...",
             "required":    True,
         },
-        # ── Source-type toggle ─────────────────────────────────────────
         {
             "name":    "source_type",
             "label":   "Source Type",
             "type":    "tab_select",
             "options": [SOURCE_TYPE_TABLE, SOURCE_TYPE_QUERY],
         },
-        # ── Table + Fields branch ──────────────────────────────────────
         {
             "name":        "table_name",
             "label":       "Table Name",
@@ -210,7 +226,6 @@ def _build_form_schema(
             "options":         initial_field_opts,
             "initial_checked": {f: (f in checked) for f in initial_field_opts},
         },
-        # ── Query branch ───────────────────────────────────────────────
         {
             "name":        "query",
             "label":       "Query / Link Server",
@@ -218,7 +233,6 @@ def _build_form_schema(
             "placeholder": "Enter query or link server manually",
             "height":      150,
         },
-        # ── Readonly audit fields ──────────────────────────────────────
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
@@ -302,17 +316,17 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)             # QUERY LINK SERVER
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
         hdr.resizeSection(2, QUERY_COL_FIXED_WIDTH)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # FIELDS
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ENGINE
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED BY
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # ADDED AT
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED BY
-        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # CHANGED AT
-        hdr.setSectionResizeMode(9, QHeaderView.ResizeToContents)  # CHANGED NO
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(9, QHeaderView.ResizeToContents)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 
@@ -389,18 +403,12 @@ class SourceDataPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
 
-        # col 0: CONNECTION
         item_conn = self._make_item(row[2])
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
         self.table.setItem(r, 0, item_conn)
-
-        # col 1: TABLE NAME
         self.table.setItem(r, 1, self._make_item(row[3]))
-
-        # col 2: QUERY LINK SERVER
         self.table.setItem(r, 2, self._make_item(wrap_query_text(row[4])))
 
-        # col 3: FIELDS — inline if short, wrapped N-per-line if long
         fields_text = row[12] if len(row) > 12 else ""
         if fields_text and len(fields_text) > 60:
             _flds = [f.strip() for f in fields_text.split(",") if f.strip()]
@@ -413,10 +421,7 @@ class SourceDataPage(QWidget):
             fields_display = fields_text
         self.table.setItem(r, 3, self._make_item(fields_display))
 
-        # col 4: ENGINE
         self.table.setItem(r, 4, self._make_item(row[1]))
-
-        # col 5-9: audit columns
         self.table.setItem(r, 5, self._make_item(row[5]))
         self.table.setItem(r, 6, self._make_item(row[6]))
         self.table.setItem(r, 7, self._make_item(row[7]))
@@ -546,7 +551,6 @@ class SourceDataPage(QWidget):
     def _resolve_fk_ids(self, engine: str, conn_name: str,
                         table_name: str) -> tuple[int, int] | None:
         conc_key = f"{engine}::{conn_name}"
-        # Try both plain and t. prefixed key
         tbnm_key = f"{engine}::{conn_name}::{table_name}"
         tbnm_key_prefixed = f"{engine}::{conn_name}::t.{table_name}"
         conciy = self._conc_id_map.get(conc_key)
@@ -564,7 +568,6 @@ class SourceDataPage(QWidget):
         return conciy, tbnmiy
 
     def _resolve_conn_id(self, engine: str, conn_name: str) -> int | None:
-        """Resolve only the connection ID (used when source type is Query)."""
         conc_key = f"{engine}::{conn_name}"
         conciy   = self._conc_id_map.get(conc_key)
         if conciy is None:
@@ -594,7 +597,6 @@ class SourceDataPage(QWidget):
 
         fields_widget = modal.inputs.get("fields")
         if fields_widget:
-            # Only show height if table mode AND a table is actually selected
             table_selected = bool(modal.get_field_value("table_name")) if use_table else False
             if use_table and table_selected:
                 fields_widget.setMinimumHeight(155)
@@ -612,12 +614,10 @@ class SourceDataPage(QWidget):
     # ── Cascade field handler ─────────────────────────────────────────────────
 
     def _on_field_changed(self, modal: "GenericFormModal", field_name: str, value: str):
-        # ── Source-type toggle ─────────────────────────────────────────────
         if field_name == "source_type":
             self._apply_source_type_state(modal, value)
 
             if value == SOURCE_TYPE_QUERY:
-                # Switching to Query — clear table + fields so they don't bleed through
                 modal.update_field_options("table_name", [])
                 modal.update_field_options("fields", [])
                 fields_widget = modal.inputs.get("fields")
@@ -625,13 +625,11 @@ class SourceDataPage(QWidget):
                     fields_widget.set_actions_visible(False)
 
             elif value == SOURCE_TYPE_TABLE:
-                # Switching back to Table — clear the query textarea
                 query_widget = modal.inputs.get("query")
                 if query_widget:
                     from PySide6.QtWidgets import QTextEdit as _QTE
                     if isinstance(query_widget, _QTE):
                         query_widget.setPlainText("")
-                # Re-populate table options from current engine+conn selection
                 engine = modal.get_field_value("engine")
                 conn   = modal.get_field_value("conn")
                 if engine and conn:
@@ -640,13 +638,11 @@ class SourceDataPage(QWidget):
 
             return
 
-        # ── Cascade updates (only relevant in Table + Fields mode) ─────────
         if field_name == "engine" and value:
             conns = sorted(self._connection_tables.get(value, {}).keys())
             modal.update_field_options("conn", conns)
             modal.update_field_options("table_name", [])
             modal.update_field_options("fields", [])
-            # No table selected yet → hide Select All / Select None
             fields_widget = modal.inputs.get("fields")
             if fields_widget and hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(False)
@@ -656,42 +652,13 @@ class SourceDataPage(QWidget):
             tables, _ = self._get_tables_and_fields(engine, value)
             modal.update_field_options("table_name", tables)
             modal.update_field_options("fields", [])
-            # No table selected yet → hide
             fields_widget = modal.inputs.get("fields")
             if fields_widget and hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(False)
 
         elif field_name == "table_name" and value:
-            engine = modal.get_field_value("engine")
-            conn   = modal.get_field_value("conn")
-
-            # ── Use pre-fetched columns if available (avoids redundant DB
-            #    call when the edit modal first opens).  Once consumed, clear
-            #    so that subsequent table changes fetch fresh columns.
-            prefetched = getattr(modal, "_prefetched_cols", None)
-            if prefetched:
-                cols = prefetched
-                modal._prefetched_cols = []   # consume — next change fetches fresh
-            else:
-                try:
-                    from repositories.mmsdgr_repo import fetch_table_columns
-                    cols = fetch_table_columns("barcode", value)
-                except Exception:
-                    cols = []
-
-            # Preserve any already-saved field selections
-            saved = getattr(modal, "_saved_fields", None)
-            checked = saved if saved else cols
-            modal.update_field_options("fields", cols, checked=checked)
-            fields_widget = modal.inputs.get("fields")
-            if fields_widget:
-                fields_widget.setMinimumHeight(155)
-                fields_widget.setMaximumHeight(155)
-                cbw = getattr(fields_widget, "_checkbox_widget", None)
-                if cbw and hasattr(cbw, "_scroll"):
-                    cbw._scroll.setFixedHeight(125)
-                if hasattr(fields_widget, "set_actions_visible"):
-                    fields_widget.set_actions_visible(True)
+            # Always async — modal stays fully interactive while columns load
+            self._fetch_and_populate_fields(modal, value)
 
         elif field_name == "table_name" and not value:
             fields_widget = modal.inputs.get("fields")
@@ -703,6 +670,38 @@ class SourceDataPage(QWidget):
                     cbw._scroll.setFixedHeight(0)
                 if hasattr(fields_widget, "set_actions_visible"):
                     fields_widget.set_actions_visible(False)
+
+    # ── Async field population ────────────────────────────────────────────────
+
+    def _fetch_and_populate_fields(self, modal: GenericFormModal, table_name: str):
+        """Start a background fetch for columns then populate the fields
+        checkbox list on the main thread via Qt's queued signal mechanism.
+        The modal is fully interactive the whole time — zero blocking."""
+
+        fetcher = _ColsFetcher(parent=self)
+
+        def _on_cols_ready(cols: list):
+            # Guard: modal may have closed before the fetch finished
+            if not modal.isVisible():
+                return
+            saved   = getattr(modal, "_saved_fields", None)
+            checked = saved if saved else cols
+            modal.update_field_options("fields", cols, checked=checked)
+            fields_widget = modal.inputs.get("fields")
+            if fields_widget:
+                fields_widget.setMinimumHeight(155)
+                fields_widget.setMaximumHeight(155)
+                cbw = getattr(fields_widget, "_checkbox_widget", None)
+                if cbw and hasattr(cbw, "_scroll"):
+                    cbw._scroll.setFixedHeight(125)
+                if hasattr(fields_widget, "set_actions_visible"):
+                    fields_widget.set_actions_visible(True)
+            # Clear saved fields after first population so switching to a
+            # different table doesn't incorrectly re-apply old selections.
+            modal._saved_fields = None
+
+        fetcher.done.connect(_on_cols_ready)
+        fetcher.start(table_name)
 
     # ── Add ───────────────────────────────────────────────────────────────────
 
@@ -717,10 +716,7 @@ class SourceDataPage(QWidget):
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-
-        # Default to "Table + Fields" mode
         self._apply_source_type_state(modal, SOURCE_TYPE_TABLE)
-
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
@@ -734,7 +730,7 @@ class SourceDataPage(QWidget):
 
         if source_type == SOURCE_TYPE_TABLE:
             table_name = data.get("table_name", "").strip()
-            query      = ""        # not used in table mode
+            query      = ""
             if not table_name:
                 QMessageBox.warning(self, "Validation", "Table Name is required.")
                 return
@@ -743,7 +739,6 @@ class SourceDataPage(QWidget):
                 return
             conciy, tbnmiy = ids
         else:
-            # Query / Link Server mode
             query      = data.get("query", "").strip()
             table_name = ""
             if not query:
@@ -752,7 +747,7 @@ class SourceDataPage(QWidget):
             conciy = self._resolve_conn_id(engine, conn_name)
             if conciy is None:
                 return
-            tbnmiy = None   # no table selected in query mode
+            tbnmiy = None
 
         selected_fields = data.get("fields", [])
         if isinstance(selected_fields, str):
@@ -814,7 +809,6 @@ class SourceDataPage(QWidget):
         if detail is None:
             return
 
-        # Render fields list nicely for the view detail modal
         fields_raw = detail.get("fields") or []
         if isinstance(fields_raw, list):
             fields_str = ", ".join(str(f) for f in fields_raw)
@@ -852,19 +846,7 @@ class SourceDataPage(QWidget):
             return
 
         saved_fields: list[str] = detail.get("fields", []) if detail else []
-
-        # Determine source type
         initial_source_type = SOURCE_TYPE_TABLE if table_name else SOURCE_TYPE_QUERY
-
-        # ── Pre-fetch columns BEFORE building the modal so there is zero
-        #    blocking DB work happening while the UI is trying to paint. ──
-        prefetched_cols: list[str] = []
-        if table_name and initial_source_type == SOURCE_TYPE_TABLE:
-            try:
-                from repositories.mmsdgr_repo import fetch_table_columns
-                prefetched_cols = fetch_table_columns("barcode", table_name)
-            except Exception:
-                prefetched_cols = []
 
         initial = {
             "engine":      engine,
@@ -879,9 +861,8 @@ class SourceDataPage(QWidget):
             "changed_no":  row[9],
         }
 
-        # Build schema, then guarantee the saved table_name is always a valid
-        # option even if _connection_tables doesn't list it — this is what
-        # caused "Please select a table..." to show instead of the real value.
+        # Build schema and guarantee the saved table_name is always a valid
+        # combo option (prevents "Please select a table..." showing on open).
         schema = _build_form_schema(
             self._connection_tables,
             initial_engine=engine,
@@ -896,6 +877,7 @@ class SourceDataPage(QWidget):
                     field_def["options"] = sorted(set(field_def["options"]) | {table_name})
                 break
 
+        # ── Open modal immediately — no blocking DB calls here ───────────────
         modal = GenericFormModal(
             title="Edit Source Group",
             fields=schema,
@@ -904,36 +886,25 @@ class SourceDataPage(QWidget):
             initial_data=initial,
         )
 
-        modal._saved_fields    = saved_fields
-        modal._prefetched_cols = prefetched_cols   # consumed once in _on_field_changed
+        # Store saved fields so _fetch_and_populate_fields can pre-check them
+        modal._saved_fields = saved_fields
 
         modal.fieldChanged.connect(
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
 
-        # Apply correct source-type visibility state
         self._apply_source_type_state(modal, initial_source_type)
 
-        # Set table combo to the saved value (now guaranteed to be in options)
-        # and populate the fields list using the already-fetched columns.
+        # Set the table combo to the saved value (guaranteed to be in options)
         if table_name and initial_source_type == SOURCE_TYPE_TABLE:
             table_widget = modal.inputs.get("table_name")
             if table_widget:
                 table_widget.setCurrentText(table_name)
 
-            if prefetched_cols:
-                checked = saved_fields if saved_fields else prefetched_cols
-                modal.update_field_options("fields", prefetched_cols, checked=checked)
-                fields_widget = modal.inputs.get("fields")
-                if fields_widget:
-                    fields_widget.setMinimumHeight(155)
-                    fields_widget.setMaximumHeight(155)
-                    cbw = getattr(fields_widget, "_checkbox_widget", None)
-                    if cbw and hasattr(cbw, "_scroll"):
-                        cbw._scroll.setFixedHeight(125)
-                    if hasattr(fields_widget, "set_actions_visible"):
-                        fields_widget.set_actions_visible(True)
+            # Kick off background column fetch — modal is already open and
+            # interactive while this runs; fields populate when ready.
+            self._fetch_and_populate_fields(modal, table_name)
 
         self._open_modal(modal)
 
