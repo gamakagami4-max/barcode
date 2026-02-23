@@ -22,9 +22,13 @@ from repositories.mmsdgr_repo import (
 from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
 
 ROW_STANDARD          = "standard"
-QUERY_COL_FIXED_WIDTH = 370   # pixels — column width
+QUERY_COL_FIXED_WIDTH = 370
 _QUERY_PADDING_PX     = 12
 _WRAP_PIXEL_LIMIT     = QUERY_COL_FIXED_WIDTH - _QUERY_PADDING_PX
+
+# Source-type toggle options
+SOURCE_TYPE_TABLE = "Table + Fields"
+SOURCE_TYPE_QUERY = "Query / Link Server"
 
 VIEW_DETAIL_FIELDS = [
     ("Engine",              "engine"),
@@ -37,33 +41,6 @@ VIEW_DETAIL_FIELDS = [
     ("Changed At",          "changed_at"),
     ("Changed No",          "changed_no"),
 ]
-
-# Maps the search-bar filter label → index in the _row_to_tuple result
-#
-# Tuple layout (see _row_to_tuple):
-#   0  composite key
-#   1  engine
-#   2  conn_name
-#   3  table_name
-#   4  query
-#   5  added_by
-#   6  added_at
-#   7  changed_by
-#   8  changed_at
-#   9  changed_no
-#   10 pk
-#   11 engine  (same as 1)
-#
-# Table column order (0-based):
-#   0  CONNECTION          → tuple[2]
-#   1  TABLE NAME          → tuple[3]
-#   2  QUERY LINK SERVER   → tuple[4]
-#   3  ENGINE              → tuple[1]
-#   4  ADDED BY            → tuple[5]
-#   5  ADDED AT            → tuple[6]
-#   6  CHANGED BY          → tuple[7]
-#   7  CHANGED AT          → tuple[8]
-#   8  CHANGED NO          → tuple[9]
 
 _COL_HEADER_TO_TUPLE_IDX = {
     "CONNECTION":        2,
@@ -81,12 +58,10 @@ _COL_HEADER_TO_TUPLE_IDX = {
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
 def _get_fm() -> QFontMetrics:
-    """Return font metrics for the current application font."""
     return QFontMetrics(QApplication.font())
 
 
 def _wrap_line_px(line: str, fm: QFontMetrics, limit_px: int) -> list[str]:
-    """Wrap a single line so each chunk fits within limit_px pixels."""
     if not line:
         return []
     if fm.horizontalAdvance(line) <= limit_px:
@@ -97,7 +72,6 @@ def _wrap_line_px(line: str, fm: QFontMetrics, limit_px: int) -> list[str]:
         if fm.horizontalAdvance(rest) <= limit_px:
             chunks.append(rest)
             break
-        # Binary-search for the longest prefix that fits
         lo, hi = 1, len(rest)
         while lo < hi:
             mid = (lo + hi + 1) // 2
@@ -105,7 +79,6 @@ def _wrap_line_px(line: str, fm: QFontMetrics, limit_px: int) -> list[str]:
                 lo = mid
             else:
                 hi = mid - 1
-        # Try to break at a space for readability
         seg = rest[:lo]
         sp  = seg.rfind(" ")
         bp  = sp if sp > lo // 2 else lo
@@ -115,7 +88,6 @@ def _wrap_line_px(line: str, fm: QFontMetrics, limit_px: int) -> list[str]:
 
 
 def wrap_query_text(text: str, limit_px: int = _WRAP_PIXEL_LIMIT) -> str:
-    """Wrap query text so each line fits within the fixed column width."""
     if not text:
         return text
     fm = _get_fm()
@@ -128,15 +100,6 @@ def wrap_query_text(text: str, limit_px: int = _WRAP_PIXEL_LIMIT) -> str:
 # ── Name splitting ────────────────────────────────────────────────────────────
 
 def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
-    """
-    fetch_connection_table_map returns a flat list that mixes actual table
-    names (schema.tablename, e.g. 'barcode.mmbrnd') with plain column/field
-    names (e.g. 'customers', 'inventory').
-
-    Split them by whether the name contains a dot:
-      • contains '.'  → table name  (goes in the Table Name combo)
-      • no dot        → field name  (goes in the Fields checkbox list)
-    """
     tables = sorted(name for name in mixed if "." in name)
     fields = sorted(name for name in mixed if "." not in name)
     return tables, fields
@@ -145,38 +108,23 @@ def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
 # ── Data conversion ───────────────────────────────────────────────────────────
 
 def _row_to_tuple(r: dict) -> tuple:
-    """
-    Index layout:
-        0  composite key  (engine::conn_name::table_name::pk)
-        1  engine
-        2  conn_name
-        3  table_name
-        4  query
-        5  added_by
-        6  added_at   (str)
-        7  changed_by
-        8  changed_at (str)
-        9  changed_no (str)
-        10 pk         (int)
-        11 engine     (same as 1)
-    """
     pk   = r["pk"]
-    eng  = (r.get("engine")     or "").strip()   # ← SQL alias is "engine"
+    eng  = (r.get("engine")     or "").strip()
     conn = (r.get("conn_name")  or "").strip()
     tbl  = (r.get("table_name") or "").strip()
     return (
-        f"{eng}::{conn}::{tbl}::{pk}",      # 0
-        eng,                                  # 1  engine
-        conn,                                 # 2  conn_name
-        tbl,                                  # 3  table_name
-        (r.get("query") or "").strip(),       # 4  query
-        (r.get("added_by") or "").strip(),    # 5  added_by
-        str(r["added_at"])[:19] if r.get("added_at") else "",     # 6  added_at
-        (r.get("changed_by") or "").strip(),                       # 7  changed_by
-        str(r["changed_at"])[:19] if r.get("changed_at") else "",  # 8  changed_at
-        str(r.get("changed_no", 0)),          # 9  changed_no
-        pk,                                   # 10 pk
-        eng,                                  # 11 engine (display copy)
+        f"{eng}::{conn}::{tbl}::{pk}",
+        eng,
+        conn,
+        tbl,
+        (r.get("query") or "").strip(),
+        (r.get("added_by") or "").strip(),
+        str(r["added_at"])[:19] if r.get("added_at") else "",
+        (r.get("changed_by") or "").strip(),
+        str(r["changed_at"])[:19] if r.get("changed_at") else "",
+        str(r.get("changed_no", 0)),
+        pk,
+        eng,
     )
 
 
@@ -188,6 +136,7 @@ def _build_form_schema(
     initial_conn: str = "",
     initial_table: str = "",
     initial_fields: list[str] | None = None,
+    initial_source_type: str = SOURCE_TYPE_TABLE,
 ) -> list[dict]:
     engine_options = sorted(connection_tables.keys())
 
@@ -213,25 +162,35 @@ def _build_form_schema(
 
     return [
         {
-            "name":     "engine",
-            "label":    "Engine",
-            "type":     "combo",
-            "options":  engine_options,
-            "required": True,
+            "name":        "engine",
+            "label":       "Engine",
+            "type":        "combo",
+            "options":     engine_options,
+            "placeholder": "Please select an engine...",
+            "required":    True,
         },
         {
-            "name":     "conn",
-            "label":    "Connection",
-            "type":     "combo",
-            "options":  initial_conns,
-            "required": True,
+            "name":        "conn",
+            "label":       "Connection",
+            "type":        "combo",
+            "options":     initial_conns,
+            "placeholder": "Please select a connection...",
+            "required":    True,
         },
+        # ── Source-type toggle ─────────────────────────────────────────
         {
-            "name":     "table_name",
-            "label":    "Table Name",
-            "type":     "combo",
-            "options":  initial_tables,
-            "required": True,
+            "name":    "source_type",
+            "label":   "Source Type",
+            "type":    "tab_select",
+            "options": [SOURCE_TYPE_TABLE, SOURCE_TYPE_QUERY],
+        },
+        # ── Table + Fields branch ──────────────────────────────────────
+        {
+            "name":        "table_name",
+            "label":       "Table Name",
+            "type":        "combo",
+            "options":     initial_tables,
+            "placeholder": "Please select a table...",
         },
         {
             "name":            "fields",
@@ -240,14 +199,15 @@ def _build_form_schema(
             "options":         initial_field_opts,
             "initial_checked": {f: (f in checked) for f in initial_field_opts},
         },
+        # ── Query branch ───────────────────────────────────────────────
         {
             "name":        "query",
             "label":       "Query / Link Server",
             "type":        "textarea",
             "placeholder": "Enter query or link server manually",
             "height":      150,
-            "required":    True,
         },
+        # ── Readonly audit fields ──────────────────────────────────────
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
@@ -317,7 +277,7 @@ class SourceDataPage(QWidget):
         layout.addSpacing(8)
 
         layout.addWidget(self.table_comp)
-        self._configure_table_columns()   # ← after addWidget so nothing overrides it
+        self._configure_table_columns()
         layout.addSpacing(16)
 
         self.pagination = self.table_comp.pagination
@@ -330,16 +290,16 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # CONNECTION
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # TABLE NAME
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)              # QUERY LINK SERVER
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
         hdr.resizeSection(2, QUERY_COL_FIXED_WIDTH)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # ENGINE
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED BY
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED AT
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # CHANGED BY
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED AT
-        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # CHANGED NO
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 
@@ -413,18 +373,6 @@ class SourceDataPage(QWidget):
         return it
 
     def _add_table_row(self, row: tuple):
-        """
-        Table col → tuple index:
-            0 CONNECTION        → row[2]
-            1 TABLE NAME        → row[3]
-            2 QUERY LINK SERVER → row[4]
-            3 ENGINE            → row[1]
-            4 ADDED BY          → row[5]
-            5 ADDED AT          → row[6]
-            6 CHANGED BY        → row[7]
-            7 CHANGED AT        → row[8]
-            8 CHANGED NO        → row[9]
-        """
         r = self.table.rowCount()
         self.table.insertRow(r)
 
@@ -578,15 +526,52 @@ class SourceDataPage(QWidget):
             return None
         return conciy, tbnmiy
 
+    def _resolve_conn_id(self, engine: str, conn_name: str) -> int | None:
+        """Resolve only the connection ID (used when source type is Query)."""
+        conc_key = f"{engine}::{conn_name}"
+        conciy   = self._conc_id_map.get(conc_key)
+        if conciy is None:
+            QMessageBox.warning(
+                self, "Lookup Error",
+                f"Could not resolve connection ID for:\n"
+                f"  Engine:     {engine}\n"
+                f"  Connection: {conn_name}\n\n"
+                "Please refresh and try again.",
+            )
+        return conciy
+
     # ── Helper: split mixed list for a given engine+conn ─────────────────────
 
     def _get_tables_and_fields(self, engine: str, conn: str) -> tuple[list[str], list[str]]:
         mixed = self._connection_tables.get(engine, {}).get(conn, [])
         return _split_tables_and_fields(mixed)
 
+    # ── Source-type mutual-exclusion ──────────────────────────────────────────
+
+    def _apply_source_type_state(self, modal: GenericFormModal, source_type: str):
+        """
+        Enable table_name + fields when source_type == SOURCE_TYPE_TABLE,
+        enable query when source_type == SOURCE_TYPE_QUERY.
+        The other branch is disabled so the user can only fill one at a time.
+        """
+        use_table = (source_type == SOURCE_TYPE_TABLE)
+
+        # Table + Fields branch
+        modal.set_field_disabled("table_name", not use_table)
+        modal.set_field_disabled("fields",     not use_table)
+
+        # Query branch
+        modal.set_field_disabled("query", use_table)
+
     # ── Cascade field handler ─────────────────────────────────────────────────
 
     def _on_field_changed(self, modal: GenericFormModal, field_name: str, value: str):
+        # ── Source-type toggle ─────────────────────────────────────────────
+        if field_name == "source_type":
+            self._apply_source_type_state(modal, value)
+            return
+
+        # ── Cascade updates (only relevant in Table + Fields mode) ─────────
         if field_name == "engine" and value:
             conns = sorted(self._connection_tables.get(value, {}).keys())
             modal.update_field_options("conn", conns)
@@ -605,6 +590,12 @@ class SourceDataPage(QWidget):
             _, fields = self._get_tables_and_fields(engine, conn)
             modal.update_field_options("fields", fields, checked=fields)
 
+        # Re-apply disabled state after cascade updates so newly-populated
+        # table_name / fields combos remain disabled if in Query mode.
+        src = modal.get_field_value("source_type")
+        if src and field_name in ("engine", "conn", "table_name"):
+            self._apply_source_type_state(modal, src)
+
     # ── Add ───────────────────────────────────────────────────────────────────
 
     def handle_add_action(self):
@@ -618,22 +609,43 @@ class SourceDataPage(QWidget):
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(self._on_add_submitted)
+
+        # Default to "Table + Fields" mode
+        self._apply_source_type_state(modal, SOURCE_TYPE_TABLE)
+
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        engine     = data.get("engine",     "").strip()
-        conn_name  = data.get("conn",       "").strip()
-        table_name = data.get("table_name", "").strip()
-        query      = data.get("query",      "").strip()
+        engine      = data.get("engine",      "").strip()
+        conn_name   = data.get("conn",        "").strip()
+        source_type = data.get("source_type", SOURCE_TYPE_TABLE)
 
-        if not all([engine, conn_name, table_name, query]):
-            QMessageBox.warning(self, "Validation", "All fields are required.")
+        if not engine or not conn_name:
+            QMessageBox.warning(self, "Validation", "Engine and Connection are required.")
             return
 
-        ids = self._resolve_fk_ids(engine, conn_name, table_name)
-        if ids is None:
-            return
-        conciy, tbnmiy = ids
+        if source_type == SOURCE_TYPE_TABLE:
+            table_name = data.get("table_name", "").strip()
+            query      = ""        # not used in table mode
+            if not table_name:
+                QMessageBox.warning(self, "Validation", "Table Name is required.")
+                return
+            ids = self._resolve_fk_ids(engine, conn_name, table_name)
+            if ids is None:
+                return
+            conciy, tbnmiy = ids
+        else:
+            # Query / Link Server mode
+            query      = data.get("query", "").strip()
+            table_name = ""
+            if not query:
+                QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
+                return
+            conciy = self._resolve_conn_id(engine, conn_name)
+            if conciy is None:
+                return
+            tbnmiy = None   # no table selected in query mode
+
         try:
             create_sdgr(conciy, tbnmiy, query, engine)
         except Exception as exc:
@@ -658,15 +670,15 @@ class SourceDataPage(QWidget):
         ])
         for row in self.filtered_data:
             ws.append([
-                str(row[2]) if row[2] is not None else "",   # conn_name
-                str(row[3]) if row[3] is not None else "",   # table_name
-                str(row[4]) if row[4] is not None else "",   # query
-                str(row[1]) if row[1] is not None else "",   # engine
-                str(row[5]) if row[5] is not None else "",   # added_by
-                str(row[6]) if row[6] is not None else "",   # added_at
-                str(row[7]) if row[7] is not None else "",   # changed_by
-                str(row[8]) if row[8] is not None else "",   # changed_at
-                str(row[9]) if row[9] is not None else "",   # changed_no
+                str(row[2]) if row[2] is not None else "",
+                str(row[3]) if row[3] is not None else "",
+                str(row[4]) if row[4] is not None else "",
+                str(row[1]) if row[1] is not None else "",
+                str(row[5]) if row[5] is not None else "",
+                str(row[6]) if row[6] is not None else "",
+                str(row[7]) if row[7] is not None else "",
+                str(row[8]) if row[8] is not None else "",
+                str(row[9]) if row[9] is not None else "",
             ])
         wb.save(path)
         QMessageBox.information(
@@ -707,6 +719,7 @@ class SourceDataPage(QWidget):
         engine     = row[1]
         conn_name  = row[2]
         table_name = row[3]
+        query      = row[4]
 
         try:
             detail = fetch_sdgr_by_id(row[10])
@@ -716,16 +729,21 @@ class SourceDataPage(QWidget):
 
         saved_fields: list[str] = detail.get("fields", []) if detail else []
 
+        # Determine which mode was previously saved:
+        # if table_name is set → Table + Fields; otherwise → Query / Link Server
+        initial_source_type = SOURCE_TYPE_TABLE if table_name else SOURCE_TYPE_QUERY
+
         initial = {
-            "engine":     engine,
-            "conn":       conn_name,
-            "table_name": table_name,
-            "query":      row[4],
-            "added_by":   row[5],
-            "added_at":   row[6],
-            "changed_by": row[7],
-            "changed_at": row[8],
-            "changed_no": row[9],
+            "engine":      engine,
+            "conn":        conn_name,
+            "source_type": initial_source_type,
+            "table_name":  table_name,
+            "query":       query,
+            "added_by":    row[5],
+            "added_at":    row[6],
+            "changed_by":  row[7],
+            "changed_at":  row[8],
+            "changed_no":  row[9],
         }
         modal = GenericFormModal(
             title="Edit Source Group",
@@ -735,6 +753,7 @@ class SourceDataPage(QWidget):
                 initial_conn=conn_name,
                 initial_table=table_name,
                 initial_fields=saved_fields,
+                initial_source_type=initial_source_type,
             ),
             parent=self,
             mode="edit",
@@ -744,24 +763,45 @@ class SourceDataPage(QWidget):
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
+
+        # Apply the saved source-type state so the correct branch is active
+        self._apply_source_type_state(modal, initial_source_type)
+
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
-        engine     = data.get("engine",     "").strip()
-        conn_name  = data.get("conn",       "").strip()
-        table_name = data.get("table_name", "").strip()
-        query      = data.get("query",      "").strip()
+        engine      = data.get("engine",      "").strip()
+        conn_name   = data.get("conn",        "").strip()
+        source_type = data.get("source_type", SOURCE_TYPE_TABLE)
 
-        if not all([engine, conn_name, table_name, query]):
-            QMessageBox.warning(self, "Validation", "All fields are required.")
+        if not engine or not conn_name:
+            QMessageBox.warning(self, "Validation", "Engine and Connection are required.")
             return
 
-        ids = self._resolve_fk_ids(engine, conn_name, table_name)
-        if ids is None:
-            return
-        conciy, tbnmiy = ids
         pk             = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0
+
+        if source_type == SOURCE_TYPE_TABLE:
+            table_name = data.get("table_name", "").strip()
+            query      = ""
+            if not table_name:
+                QMessageBox.warning(self, "Validation", "Table Name is required.")
+                return
+            ids = self._resolve_fk_ids(engine, conn_name, table_name)
+            if ids is None:
+                return
+            conciy, tbnmiy = ids
+        else:
+            query      = data.get("query", "").strip()
+            table_name = ""
+            if not query:
+                QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
+                return
+            conciy = self._resolve_conn_id(engine, conn_name)
+            if conciy is None:
+                return
+            tbnmiy = None
+
         try:
             update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no)
         except Exception as exc:

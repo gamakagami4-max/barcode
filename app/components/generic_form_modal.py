@@ -250,11 +250,6 @@ class _DropdownPanel(QFrame):
 # ==================================================================
 
 class _OutsideClickFilter(QObject):
-    """
-    Application-level event filter that closes the dropdown when the
-    user clicks anywhere outside the panel or the trigger widget.
-    Installed only while the panel is visible; removed on close.
-    """
     def __init__(self, combo: "AnimatedCombo"):
         super().__init__(combo)
         self._combo = combo
@@ -268,9 +263,9 @@ class _OutsideClickFilter(QObject):
                 return False
 
             try:
-                gpos = event.globalPosition().toPoint()   # Qt 6
+                gpos = event.globalPosition().toPoint()
             except AttributeError:
-                gpos = event.globalPos()                  # Qt 5 compat
+                gpos = event.globalPos()
 
             in_panel   = panel.geometry().contains(gpos)
             in_trigger = trigger.rect().contains(trigger.mapFromGlobal(gpos))
@@ -278,7 +273,7 @@ class _OutsideClickFilter(QObject):
             if not in_panel and not in_trigger:
                 self._combo._close()
 
-        return False  # never consume the event
+        return False
 
 
 # ==================================================================
@@ -288,11 +283,13 @@ class _OutsideClickFilter(QObject):
 class AnimatedCombo(QWidget):
     currentTextChanged = Signal(str)
 
-    def __init__(self, options: list[str], parent=None):
+    def __init__(self, options: list[str], placeholder: str = "", parent=None):
         super().__init__(parent)
-        self._options     = list(options)
-        self._current     = options[0] if options else ""
-        self._panel       = None
+        self._options      = list(options)
+        self._placeholder  = placeholder
+        # Start with no selection when a placeholder is provided
+        self._current      = "" if placeholder else (options[0] if options else "")
+        self._panel        = None
         self._global_filter_installed = False
 
         self.setMinimumHeight(36)
@@ -303,32 +300,52 @@ class AnimatedCombo(QWidget):
         lay.setSpacing(0)
 
         self._trigger = _DropdownTrigger(parent=self)
-        self._trigger.set_text(self._current)
+        # Show placeholder text in muted colour, or the current value
+        if placeholder:
+            self._trigger.set_text(placeholder)
+            self._trigger._lbl.setStyleSheet(
+                f"color: {COLORS['text_muted']}; font-size: 13px;"
+                " background: transparent; border: none;"
+            )
+        else:
+            self._trigger.set_text(self._current)
         self._trigger.clicked.connect(self._toggle)
+        self._toggle_connected = True   # track whether _toggle is wired
         lay.addWidget(self._trigger)
 
         self._global_filter = _OutsideClickFilter(self)
 
     def currentText(self) -> str:
-        return self._current
+        return self._current   # "" when placeholder is showing
 
     def setCurrentText(self, text: str):
         if text in self._options:
             self._current = text
             self._trigger.set_text(text)
+            # Switch label to normal colour (was muted while placeholder shown)
+            self._trigger._lbl.setStyleSheet(
+                f"color: {COLORS['text_primary']}; font-size: 13px;"
+                " background: transparent; border: none;"
+            )
             if self._panel:
                 self._panel.set_selected(text)
 
     def clear(self):
         self._options = []
         self._current = ""
-        self._trigger.set_text("")
+        # Restore placeholder text when options are cleared
+        display = self._placeholder or ""
+        self._trigger.set_text(display)
+        self._trigger._lbl.setStyleSheet(
+            f"color: {COLORS['text_muted'] if display else COLORS['text_primary']}; font-size: 13px;"
+            " background: transparent; border: none;"
+        )
         if self._panel:
             self._panel.set_options([], "")
 
     def addItems(self, items: list[str]):
         self._options.extend(items)
-        if not self._current and items:
+        if not self._current and items and not self._placeholder:
             self._current = items[0]
             self._trigger.set_text(self._current)
         if self._panel:
@@ -345,16 +362,19 @@ class AnimatedCombo(QWidget):
                     border-radius: 6px;
                 }}
             """)
-            try:
+            if self._toggle_connected:
                 self._trigger.clicked.disconnect(self._toggle)
-            except RuntimeError:
-                pass
+                self._toggle_connected = False
+        else:
+            # Restore normal closed appearance and reconnect click handler
+            self._trigger.set_open(False)
+            if not self._toggle_connected:
+                self._trigger.clicked.connect(self._toggle)
+                self._toggle_connected = True
 
     def _ensure_panel(self):
         if self._panel is None:
             self._panel = _DropdownPanel(self._options, self._current, parent=None)
-            # Qt.Tool instead of Qt.Popup — prevents Qt from auto-calling hide()
-            # on outside clicks, which would skip our close animation entirely.
             self._panel.setWindowFlags(
                 Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
             )
@@ -387,7 +407,6 @@ class AnimatedCombo(QWidget):
         self._trigger.set_open(True)
         self._panel.show_animated()
 
-        # Start watching for outside clicks
         if not self._global_filter_installed:
             from PySide6.QtWidgets import QApplication
             QApplication.instance().installEventFilter(self._global_filter)
@@ -398,7 +417,6 @@ class AnimatedCombo(QWidget):
             self._trigger.set_open(False)
             self._panel.hide_animated()
 
-        # Stop watching for outside clicks
         if self._global_filter_installed:
             from PySide6.QtWidgets import QApplication
             QApplication.instance().removeEventFilter(self._global_filter)
@@ -408,12 +426,16 @@ class AnimatedCombo(QWidget):
         prev = self._current
         self._current = option
         self._trigger.set_text(option)
+        # Switch label to normal colour (clears placeholder muted style)
+        self._trigger._lbl.setStyleSheet(
+            f"color: {COLORS['text_primary']}; font-size: 13px;"
+            " background: transparent; border: none;"
+        )
         self._close()
         if option != prev:
             self.currentTextChanged.emit(option)
 
     def hideEvent(self, event):
-        """Ensure the panel closes if the combo itself is hidden/destroyed."""
         super().hideEvent(event)
         self._close()
 
@@ -423,10 +445,6 @@ class AnimatedCombo(QWidget):
 # ==================================================================
 
 class _CheckboxListWidget(QWidget):
-    """
-    A scrollable list of checkboxes for multi-column selection.
-    Used by the 'checkbox_list' field type.
-    """
     def __init__(self, options: list[str], checked_options: list[str] | None = None,
                  disabled: bool = False, parent=None):
         super().__init__(parent)
@@ -437,7 +455,6 @@ class _CheckboxListWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Scrollable container
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
@@ -469,7 +486,6 @@ class _CheckboxListWidget(QWidget):
         self._scroll.setWidget(self._inner)
         outer.addWidget(self._scroll)
 
-        # Empty state label
         self._empty_lbl = QLabel("Select a table to see its fields")
         self._empty_lbl.setStyleSheet(
             f"color: {COLORS['text_muted']}; font-size: 12px; font-style: italic;"
@@ -526,6 +542,19 @@ class _CheckboxListWidget(QWidget):
         self._scroll.setVisible(has_opts)
         self._empty_lbl.setVisible(not has_opts)
 
+    def set_all_enabled(self, enabled: bool):
+        """Enable or disable all checkboxes (for mutual-exclusion toggling)."""
+        for cb in self._checkboxes.values():
+            cb.setEnabled(enabled)
+        # Grey out the container border to signal disabled state
+        self._inner.setStyleSheet(f"""
+            QWidget {{
+                background: {COLORS['white'] if enabled else COLORS['readonly_bg']};
+                border: 1px solid {COLORS['border'] if enabled else COLORS['border_light']};
+                border-radius: 6px;
+            }}
+        """)
+
     def select_all(self):
         for cb in self._checkboxes.values():
             cb.setChecked(True)
@@ -536,12 +565,129 @@ class _CheckboxListWidget(QWidget):
 
 
 # ==================================================================
+# Tab select widget  (left / right pill-style toggle)
+# ==================================================================
+
+class _TabSelectWidget(QWidget):
+    """
+    A pair of horizontally-joined tab buttons for mutually-exclusive
+    selection.  Emits currentTextChanged when the active tab changes.
+    """
+    currentTextChanged = Signal(str)
+
+    def __init__(self, options: list[str], parent=None):
+        super().__init__(parent)
+        self._options = list(options)
+        self._current = options[0] if options else ""
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        self._buttons: dict[str, QPushButton] = {}
+        n = len(options)
+        for i, opt in enumerate(options):
+            btn = QPushButton(opt)
+            btn.setFixedHeight(36)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.clicked.connect(lambda _=False, o=opt: self._select(o))
+
+            # Determine border-radius based on position
+            if n == 1:
+                self._btn_radius = {opt: "6px"}
+            elif i == 0:
+                btn._tab_radius = "6px 0 0 6px"
+            elif i == n - 1:
+                btn._tab_radius = "0 6px 6px 0"
+            else:
+                btn._tab_radius = "0"
+
+            self._buttons[opt] = btn
+            lay.addWidget(btn)
+
+        self._apply_styles()
+
+    def _select(self, option: str, emit: bool = True):
+        prev = self._current
+        self._current = option
+        self._apply_styles()
+        if emit and option != prev:
+            self.currentTextChanged.emit(option)
+
+    def _apply_styles(self):
+        options = self._options
+        n = len(options)
+        for i, opt in enumerate(options):
+            btn = self._buttons[opt]
+            selected = (opt == self._current)
+
+            # Border: right button has no left-border to avoid double line
+            border_left = "none" if i > 0 else f"1px solid {COLORS['border']}"
+            border_color = COLORS["dd_accent"] if selected else COLORS["border"]
+
+            if i == 0:
+                radius = "6px 0 0 6px"
+            elif i == n - 1:
+                radius = "0 6px 6px 0"
+            else:
+                radius = "0"
+
+            if selected:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {COLORS['dd_accent']};
+                        color: white;
+                        border-top:    1px solid {COLORS['dd_accent']};
+                        border-bottom: 1px solid {COLORS['dd_accent']};
+                        border-right:  1px solid {COLORS['dd_accent']};
+                        border-left:   {border_left};
+                        border-radius: {radius};
+                        font-size: 13px;
+                        font-weight: 600;
+                        padding: 0 16px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {COLORS['white']};
+                        color: {COLORS['text_secondary']};
+                        border-top:    1px solid {COLORS['border']};
+                        border-bottom: 1px solid {COLORS['border']};
+                        border-right:  1px solid {COLORS['border']};
+                        border-left:   {border_left};
+                        border-radius: {radius};
+                        font-size: 13px;
+                        padding: 0 16px;
+                    }}
+                    QPushButton:hover {{
+                        background: {COLORS['bg_main']};
+                        color: {COLORS['text_primary']};
+                    }}
+                """)
+
+    def currentText(self) -> str:
+        return self._current
+
+    def setCurrentText(self, text: str):
+        if text in self._options:
+            self._select(text, emit=False)
+
+    def setDisabled(self, disabled: bool):
+        super().setDisabled(disabled)
+        for btn in self._buttons.values():
+            btn.setEnabled(not disabled)
+            btn.setCursor(Qt.ArrowCursor if disabled else Qt.PointingHandCursor)
+
+
+# ==================================================================
 # Main modal
 # ==================================================================
 
 class GenericFormModal(QDialog):
     formSubmitted = Signal(dict)
-    fieldChanged  = Signal(str, str)   # (field_name, new_value)
+    fieldChanged  = Signal(str, str)
     opened        = Signal()
     closed        = Signal()
 
@@ -608,6 +754,8 @@ class GenericFormModal(QDialog):
             return widget.toPlainText().strip()
         if isinstance(widget, QLineEdit):
             return widget.text().strip()
+        if isinstance(widget, _TabSelectWidget):
+            return widget.currentText()
         if isinstance(widget, (AnimatedCombo, QComboBox)):
             return widget.currentText()
         if isinstance(widget, _CheckboxListWidget):
@@ -622,8 +770,82 @@ class GenericFormModal(QDialog):
             widget.setPlainText(value)
         elif isinstance(widget, QLineEdit):
             widget.setText(value)
+        elif isinstance(widget, _TabSelectWidget):
+            widget.setCurrentText(value)
         elif isinstance(widget, (AnimatedCombo, QComboBox)):
             widget.setCurrentText(value)
+
+    def set_field_disabled(self, name: str, disabled: bool):
+        """
+        Dynamically enable or disable a form field.
+        Works for all supported widget types.
+        """
+        widget = self.inputs.get(name)
+        if widget is None:
+            return
+
+        if isinstance(widget, QTextEdit):
+            widget.setReadOnly(disabled)
+            if disabled:
+                widget.setStyleSheet(f"""
+                    QTextEdit {{
+                        padding: 8px 12px;
+                        border: 1px solid {COLORS['border_light']};
+                        border-radius: 6px;
+                        background-color: {COLORS['readonly_bg']};
+                        color: {COLORS['text_muted']};
+                        font-size: 13px;
+                    }}
+                """)
+            else:
+                widget.setStyleSheet(f"""
+                    QTextEdit {{
+                        padding: 8px 12px;
+                        border: 1px solid {COLORS['border']};
+                        border-radius: 6px;
+                        background-color: {COLORS['white']};
+                        color: {COLORS['text_primary']};
+                        font-size: 13px;
+                    }}
+                    QTextEdit:focus {{ border-color: {COLORS['link']}; }}
+                """)
+
+        elif isinstance(widget, QLineEdit):
+            widget.setReadOnly(disabled)
+            widget.setStyleSheet(
+                self._readonly_line_edit_style() if disabled else self._style_input_str()
+            )
+
+        elif isinstance(widget, AnimatedCombo):
+            widget.setDisabled(disabled)
+
+        elif isinstance(widget, _TabSelectWidget):
+            widget.setDisabled(disabled)
+
+        elif isinstance(widget, _CheckboxListWidget):
+            widget.set_all_enabled(not disabled)
+
+        elif hasattr(widget, '_checkbox_widget'):
+            # Container produced by checkbox_list with Select All/None buttons
+            cbw: _CheckboxListWidget = widget._checkbox_widget
+            cbw.set_all_enabled(not disabled)
+            # Disable/enable the Select All / Select None buttons
+            for i in range(widget.layout().count()):
+                item = widget.layout().itemAt(i)
+                if item and item.layout():
+                    sub = item.layout()
+                    for j in range(sub.count()):
+                        sub_item = sub.itemAt(j)
+                        if sub_item and sub_item.widget():
+                            sub_item.widget().setEnabled(not disabled)
+
+        elif hasattr(widget, 'text_input'):
+            # text_with_unit container
+            widget.text_input.setReadOnly(disabled)
+            widget.text_input.setStyleSheet(
+                self._readonly_line_edit_style() if disabled else self._style_input_str()
+            )
+            widget.unit_combo.setDisabled(disabled)
 
     def update_field_options(self, name: str, options: list[str],
                              checked: list[str] | None = None):
@@ -631,17 +853,28 @@ class GenericFormModal(QDialog):
         widget = self.inputs.get(name)
         if widget is None:
             return
+        if isinstance(widget, _TabSelectWidget):
+            return  # tab options are fixed at construction time
         if isinstance(widget, _CheckboxListWidget):
             widget.set_options(options, checked)
+        elif hasattr(widget, '_checkbox_widget'):
+            widget._checkbox_widget.set_options(options, checked)
         elif isinstance(widget, AnimatedCombo):
             widget.clear()
             if options:
                 widget.addItems(options)
-                # Force-display the first item so the trigger is never blank
-                widget._current = options[0]
-                widget._trigger.set_text(options[0])
-                if widget._panel:
-                    widget._panel.set_options(options, options[0])
+                # If this combo has a placeholder, keep _current="" so the
+                # placeholder stays shown and any subsequent user pick will
+                # always differ from _current, guaranteeing currentTextChanged
+                # fires. Without this, auto-selecting options[0] would silently
+                # suppress the signal if the user happened to pick the same item.
+                if not widget._placeholder:
+                    widget._current = options[0]
+                    widget._trigger.set_text(options[0])
+                    if widget._panel:
+                        widget._panel.set_options(options, options[0])
+                # else: clear() already restored the placeholder display;
+                # the panel (if open) was updated by addItems() → set_options()
         elif isinstance(widget, QComboBox):
             widget.blockSignals(True)
             widget.clear()
@@ -870,11 +1103,11 @@ class GenericFormModal(QDialog):
         lay.addWidget(widget)
 
         return box
+
     def _create_form_widget(self, field: dict) -> QWidget:
         field_type = field.get("type", "text")
         editable   = (self.mode != "view") and (field_type != "readonly")
 
-        # ── text / readonly ───────────────────────────────────────────
         if field_type in ("text", "readonly"):
             w = QLineEdit()
             w.setMinimumHeight(36)
@@ -891,7 +1124,6 @@ class GenericFormModal(QDialog):
                     w.setStyleSheet(self._view_line_edit_style())
             return w
 
-        # ── textarea ──────────────────────────────────────────────────
         elif field_type == "textarea":
             w = QTextEdit()
             height = field.get("height", 120)
@@ -923,10 +1155,10 @@ class GenericFormModal(QDialog):
                 """)
             return w
 
-        # ── combo / select ────────────────────────────────────────────
         elif field_type in ("combo", "select"):
-            options = field.get("options", [])
-            w = AnimatedCombo(options)
+            options     = field.get("options", [])
+            placeholder = field.get("placeholder", "")
+            w = AnimatedCombo(options, placeholder=placeholder)
             if editable:
                 w.currentTextChanged.connect(
                     lambda val, fname=field["name"]: self.fieldChanged.emit(fname, val)
@@ -935,7 +1167,17 @@ class GenericFormModal(QDialog):
                 w.setDisabled(True)
             return w
 
-        # ── cascade_combo ─────────────────────────────────────────────
+        elif field_type == "tab_select":
+            options = field.get("options", [])
+            w = _TabSelectWidget(options)
+            if editable:
+                w.currentTextChanged.connect(
+                    lambda val, fname=field["name"]: self.fieldChanged.emit(fname, val)
+                )
+            else:
+                w.setDisabled(True)
+            return w
+
         elif field_type == "cascade_combo":
             options_map: dict = field.get("options", {})
             child_name: str   = field.get("child", "")
@@ -955,7 +1197,6 @@ class GenericFormModal(QDialog):
                 w.setDisabled(True)
             return w
 
-        # ── checkbox_list ─────────────────────────────────────────────
         elif field_type == "checkbox_list":
             options         = field.get("options", [])
             initial_checked = field.get("initial_checked", {})
@@ -1006,7 +1247,6 @@ class GenericFormModal(QDialog):
 
             return self._wrap_in_box(w)
 
-        # ── text_with_unit ────────────────────────────────────────────
         elif field_type == "text_with_unit":
             container = QWidget()
             h = QHBoxLayout(container)
@@ -1038,7 +1278,6 @@ class GenericFormModal(QDialog):
             container.unit_combo = unit_combo
             return container
 
-        # ── dimension_pair ────────────────────────────────────────────
         elif field_type == "dimension_pair":
             from PySide6.QtGui import QDoubleValidator, QIntValidator
             from PySide6.QtCore import QLocale
@@ -1180,6 +1419,19 @@ class GenericFormModal(QDialog):
             QLineEdit:focus, QComboBox:focus {{ border-color: {COLORS['link']}; }}
         """)
 
+    def _style_input_str(self) -> str:
+        return f"""
+            QLineEdit {{
+                padding: 8px 12px;
+                border: 1px solid {COLORS['border']};
+                border-radius: 6px;
+                background-color: {COLORS['white']};
+                color: {COLORS['text_primary']};
+                font-size: 13px;
+            }}
+            QLineEdit:focus {{ border-color: {COLORS['link']}; }}
+        """
+
     def _view_line_edit_style(self) -> str:
         return f"""
             QLineEdit {{
@@ -1266,6 +1518,8 @@ class GenericFormModal(QDialog):
                 widget.setPlainText(str(value))
             elif isinstance(widget, QLineEdit):
                 widget.setText(str(value))
+            elif isinstance(widget, _TabSelectWidget):
+                widget.setCurrentText(str(value))
             elif isinstance(widget, AnimatedCombo):
                 if name in self._cascade_map:
                     self._on_cascade_changed(name, str(value))
@@ -1323,6 +1577,9 @@ class GenericFormModal(QDialog):
                         widget._set_error(widget.px_input, widget.px_err, "Must be a positive whole number")
 
             elif isinstance(widget, QTextEdit):
+                # Skip validation for disabled (readonly) textareas
+                if widget.isReadOnly():
+                    continue
                 if is_required and not widget.toPlainText().strip():
                     errors.append(f"{label} is required")
                     widget.setStyleSheet(f"""
@@ -1342,6 +1599,8 @@ class GenericFormModal(QDialog):
                     """)
 
             elif isinstance(widget, QLineEdit):
+                if widget.isReadOnly():
+                    continue
                 if is_required and not widget.text().strip():
                     errors.append(f"{label} is required")
                     widget.setStyleSheet(
@@ -1353,8 +1612,13 @@ class GenericFormModal(QDialog):
                     self._style_input(widget)
 
             elif isinstance(widget, (AnimatedCombo, QComboBox)):
+                if isinstance(widget, AnimatedCombo) and not widget.isEnabled():
+                    continue
                 if is_required and not widget.currentText():
                     errors.append(f"{label} is required")
+
+            elif isinstance(widget, _TabSelectWidget):
+                pass  # always has a value; no required-check needed
 
             elif hasattr(widget, "text_input"):
                 if is_required and not widget.text_input.text().strip():
@@ -1372,6 +1636,8 @@ class GenericFormModal(QDialog):
                 data[name] = widget.toPlainText().strip()
             elif isinstance(widget, QLineEdit):
                 data[name] = widget.text().strip()
+            elif isinstance(widget, _TabSelectWidget):
+                data[name] = widget.currentText()
             elif isinstance(widget, (AnimatedCombo, QComboBox)):
                 data[name] = widget.currentText()
             elif isinstance(widget, _CheckboxListWidget):
