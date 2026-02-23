@@ -28,13 +28,18 @@ def fetch_all_brnd() -> list[dict]:
         WHERE mddlfg <> '1'
         ORDER BY mdrgdt DESC
     """
-
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(sql)
         cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        results = []
+        for row in cur.fetchall():
+            record = dict(zip(cols, row))
+            record["changed_no"] = record.get("changed_no") or 0
+            results.append(record)
+
+        return results
     finally:
         conn.close()
 
@@ -47,11 +52,7 @@ def create_brnd(
     case_name: str | None,
     user: str = "Admin",
 ) -> int:
-    """
-    Insert new mmbrnd row and return its mdbrndiy PK.
-    """
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -59,10 +60,8 @@ def create_brnd(
         # Guard: prevent duplicate code
         cur.execute(
             """
-            SELECT mdbrndiy
-            FROM barcode.mmbrnd
-            WHERE mdcode = %s
-              AND mddlfg <> '1'
+            SELECT mdbrndiy FROM barcode.mmbrnd
+            WHERE mdcode = %s AND mddlfg <> '1'
             LIMIT 1
             """,
             (code,),
@@ -74,33 +73,18 @@ def create_brnd(
         cur.execute(
             """
             INSERT INTO barcode.mmbrnd (
-                mdcode,
-                mdname,
-                mdcase,
-                mdrgid,
-                mdrgdt,
-                mdchid,
-                mdchdt,
-                mdcsdt,
-                mdcsid
+                mdcode, mdname, mdcase,
+                mdrgid, mdrgdt,
+                mdchno
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING mdbrndiy
             """,
-            (
-                code,
-                name,
-                case_name,
-                user, now,
-                user, now,
-                now, user,
-            ),
+            (code, name, case_name, user, now, 0),
         )
-
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
-
     except Exception:
         conn.rollback()
         raise
@@ -121,12 +105,7 @@ def update_brnd(
     old_changed_no: int,
     user: str = "Admin",
 ):
-    """
-    Update mmbrnd row.
-    Flags must be '0' or '1'.
-    """
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -141,25 +120,21 @@ def update_brnd(
                 mdptfg  = %s,
                 mdchid  = %s,
                 mdchdt  = %s,
-                mdchno  = %s
+                mdchno  = %s,
+                mdcsdt  = %s,
+                mdcsid  = %s
             WHERE mdbrndiy = %s
             """,
             (
-                code,
-                name,
-                case_name,
-                display_flag,
-                disable_flag,
-                protect_flag,
-                user,
-                now,
-                old_changed_no + 1,
+                code, name, case_name,
+                display_flag, disable_flag, protect_flag,
+                user, now, old_changed_no + 1,
+                now,    # mdcsdt  ← updated on edit
+                user,   # mdcsid  ← updated on edit
                 pk,
             ),
         )
-
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise
@@ -171,7 +146,6 @@ def update_brnd(
 
 def soft_delete_brnd(pk: int, user: str = "Admin"):
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -186,7 +160,6 @@ def soft_delete_brnd(pk: int, user: str = "Admin"):
             (user, now, pk),
         )
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise

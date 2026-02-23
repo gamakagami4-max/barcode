@@ -32,7 +32,13 @@ def fetch_all_fltr() -> list[dict]:
         cur = conn.cursor()
         cur.execute(sql)
         cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        results = []
+        for row in cur.fetchall():
+            record = dict(zip(cols, row))
+            record["changed_no"] = record.get("changed_no") or 0
+            results.append(record)
+
+        return results
     finally:
         conn.close()
 
@@ -44,11 +50,7 @@ def create_fltr(
     description: str | None,
     user: str = "Admin",
 ) -> int:
-    """
-    Insert new mmfltr row and return its mcfltriy PK.
-    """
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -56,10 +58,8 @@ def create_fltr(
         # Guard: reuse if name already exists and not deleted
         cur.execute(
             """
-            SELECT mcfltriy
-            FROM barcode.mmfltr
-            WHERE mcname = %s
-              AND mcdlfg <> '1'
+            SELECT mcfltriy FROM barcode.mmfltr
+            WHERE mcname = %s AND mcdlfg <> '1'
             LIMIT 1
             """,
             (name,),
@@ -75,27 +75,22 @@ def create_fltr(
                 mcdesc,
                 mcrgid,
                 mcrgdt,
-                mcchid,
-                mcchdt,
-                mccsdt,
-                mccsid
+                mcchno
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING mcfltriy
             """,
             (
                 name,
                 description,
-                user, now,
-                user, now,
-                now, user
+                user,
+                now,
+                0,      # mcchno
             ),
         )
-
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
-
     except Exception:
         conn.rollback()
         raise
@@ -115,12 +110,7 @@ def update_fltr(
     old_changed_no: int,
     user: str = "Admin",
 ):
-    """
-    Update mmfltr row.
-    Flags should be '0' or '1'.
-    """
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -134,23 +124,21 @@ def update_fltr(
                 mcptfg  = %s,
                 mcchid  = %s,
                 mcchdt  = %s,
-                mcchno  = %s
+                mcchno  = %s,
+                mccsdt  = %s,
+                mccsid  = %s
             WHERE mcfltriy = %s
             """,
             (
-                name,
-                description,
-                display_flag,
-                disable_flag,
-                protect_flag,
-                user,
-                now,
-                old_changed_no + 1,
+                name, description,
+                display_flag, disable_flag, protect_flag,
+                user, now, old_changed_no + 1,
+                now,    # mccsdt  ← updated on edit
+                user,   # mccsid  ← updated on edit
                 pk,
             ),
         )
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise
@@ -162,7 +150,6 @@ def update_fltr(
 
 def soft_delete_fltr(pk: int, user: str = "Admin"):
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -177,7 +164,6 @@ def soft_delete_fltr(pk: int, user: str = "Admin"):
             (user, now, pk),
         )
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise

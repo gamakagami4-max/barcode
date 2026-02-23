@@ -44,8 +44,12 @@ def create_mmstkr(
     w_px: int,
     user: str = "Admin",
 ) -> int:
+    """
+    Insert a new mmstkr row.
+    mbchid / mbchdt / mbcsdt / mbcsid are omitted — nullable after ALTER TABLE,
+    they should be NULL until a real edit occurs. mbchno starts at 0.
+    """
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -56,27 +60,16 @@ def create_mmstkr(
                 mbhinc, mbwinc,
                 mbhpix, mbwpix,
                 mbrgid, mbrgdt,
-                mbchid, mbchdt,
-                mbcsdt, mbcsid,
                 mbchno
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING mbstkriy
             """,
-            (
-                name,
-                h_in, w_in,
-                h_px, w_px,
-                user, now,
-                user, now,
-                now, user,
-            ),
+            (name, h_in, w_in, h_px, w_px, user, now, 0),
         )
-
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
-
     except Exception:
         conn.rollback()
         raise
@@ -84,7 +77,7 @@ def create_mmstkr(
         conn.close()
 
 
-# ── Update (Optimistic Locking) ──────────────────────────────────────────────
+# ── Update (Optimistic Locking) ───────────────────────────────────────────────
 
 def update_mmstkr(
     pk: int,
@@ -97,7 +90,6 @@ def update_mmstkr(
     user: str = "Admin",
 ):
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -126,12 +118,9 @@ def update_mmstkr(
                 old_changed_no,
             ),
         )
-
         if cur.rowcount == 0:
             raise Exception("Record was modified by another user.")
-
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise
@@ -143,7 +132,6 @@ def update_mmstkr(
 
 def soft_delete_mmstkr(pk: int, user: str = "Admin"):
     now = datetime.now()
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -159,9 +147,7 @@ def soft_delete_mmstkr(pk: int, user: str = "Admin"):
             """,
             (user, now, pk),
         )
-
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise
