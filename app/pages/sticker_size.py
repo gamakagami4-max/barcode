@@ -464,8 +464,11 @@ class StickerSizePage(QWidget):
         w_in, h_in, w_px, h_px = dims
         old_changed_no = int(row[18]) if str(row[18]).isdigit() else 0
         try:
+            new_name = data.get("name", "").strip()
+
             update_mstckr(
-                pk=row[0],
+                old_pk=row[0],
+                new_name=new_name,
                 h_in=h_in,
                 w_in=w_in,
                 h_px=h_px,

@@ -89,47 +89,71 @@ def create_mstckr(
     w_px: int,
     user: str = "Admin",
 ) -> str:
-    """
-    Insert a new mstckr row.
-    Only the core dimension fields are set by the caller.
-    Flags, remarks, and change tracking columns are left as DB defaults.
-    mschid / mschdt / mschno are intentionally omitted — NULL until a real edit occurs.
-    """
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
+        print("CREATE_MSTCKR PARAMS:")
+        print({
+            "name": name,
+            "h_in": h_in,
+            "w_in": w_in,
+            "h_px": h_px,
+            "w_px": w_px,
+            "user": user,
+            "now": now,
+        })
+
         cur.execute(
             """
             INSERT INTO barcodesap.mstckr (
                 msstnm,
-                msheig, mswidt,
-                mspixh, mspixw,
-                msrgid, msrgdt,
+                msheig,
+                mswidt,
+                mspixh,
+                mspixw,
+                msrgid,
+                msrgdt,
+                mschno,
                 msdlfg
             )
             VALUES (
                 %s,
-                %s, %s,
-                %s, %s,
-                %s, %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
                 '0'
             )
             RETURNING msstnm
             """,
             (
                 name,
-                h_in, w_in,
-                h_px, w_px,
-                user, now,
+                h_in,
+                w_in,
+                h_px,
+                w_px,
+                user,
+                now,
+                0,
             ),
         )
+
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
-    except Exception:
+
+    except Exception as e:
         conn.rollback()
+        print("CREATE_MSTCKR ERROR:")
+        print(e)
         raise
+
     finally:
         conn.close()
 
@@ -137,7 +161,8 @@ def create_mstckr(
 # ── Update (Optimistic Locking) ───────────────────────────────────────────────
 
 def update_mstckr(
-    pk: str,
+    old_pk: str,
+    new_name: str,
     h_in: float,
     w_in: float,
     h_px: int,
@@ -145,26 +170,32 @@ def update_mstckr(
     old_changed_no: int,
     user: str = "Admin",
 ):
-    """
-    Update only the dimension fields on an existing mstckr row.
-    All other columns (flags, remarks, print tracking, source) are
-    preserved as-is — fetched from the DB and written back unchanged.
-    Uses optimistic locking on mschno.
-    Note: msstnm (PK) is intentionally not updatable.
-    """
-    # ── Fetch current row to preserve untouched fields ────────────────
-    existing = fetch_mstckr_by_pk(pk)
+    existing = fetch_mstckr_by_pk(old_pk)
     if existing is None:
-        raise Exception(f"Record '{pk}' not found.")
+        raise Exception(f"Record '{old_pk}' not found.")
 
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
+        print("UPDATE_MSTCKR PARAMS:")
+        print({
+            "old_pk": old_pk,
+            "new_name": new_name,
+            "h_in": h_in,
+            "w_in": w_in,
+            "h_px": h_px,
+            "w_px": w_px,
+            "old_changed_no": old_changed_no,
+        })
+
         cur.execute(
             """
             UPDATE barcodesap.mstckr
             SET
+                msstnm = %s,
                 msheig = %s,
                 mswidt = %s,
                 mspixh = %s,
@@ -182,12 +213,14 @@ def update_mstckr(
                 mschdt = %s,
                 mschno = %s
             WHERE msstnm = %s
-              AND mschno  = %s
+              AND mschno = %s
             """,
             (
-                h_in, w_in,
-                h_px, w_px,
-                # preserved fields
+                new_name,
+                h_in,
+                w_in,
+                h_px,
+                w_px,
                 existing["dp_fg"],
                 existing["ds_fg"],
                 existing["pt_fg"],
@@ -197,20 +230,25 @@ def update_mstckr(
                 existing["source"],
                 existing["user_remark"],
                 existing["item_remark"],
-                # audit
-                user, now,
+                user,
+                now,
                 old_changed_no + 1,
-                # WHERE
-                pk,
+                old_pk,            # ← FIXED
                 old_changed_no,
             ),
         )
+
         if cur.rowcount == 0:
             raise Exception("Record was modified by another user.")
+
         conn.commit()
-    except Exception:
+
+    except Exception as e:
         conn.rollback()
+        print("UPDATE_MSTCKR ERROR:")
+        print(e)
         raise
+
     finally:
         conn.close()
 
@@ -220,8 +258,10 @@ def update_mstckr(
 def soft_delete_mstckr(pk: str, user: str = "Admin"):
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
         cur.execute(
             """
             UPDATE barcodesap.mstckr
@@ -234,9 +274,14 @@ def soft_delete_mstckr(pk: str, user: str = "Admin"):
             """,
             (user, now, pk),
         )
+
         conn.commit()
-    except Exception:
+
+    except Exception as e:
         conn.rollback()
+        print("SOFT_DELETE_MSTCKR ERROR:")
+        print(e)
         raise
+
     finally:
         conn.close()
