@@ -99,17 +99,6 @@ def fetch_tyskra_by_pk(type_name: str) -> dict | None:
 def create_tyskra(
     type_name: str,
     type_desc: str | None = None,
-    dp_flag: str = "1",
-    ds_flag: str = "0",
-    pt_flag: str = "0",
-    pt_count: int = 0,
-    pt_id: str | None = None,
-    source: str | None = None,
-    user_remark: str | None = None,
-    item_remark: str | None = None,
-    cs_id: str | None = None,
-    cs_no: str | None = None,
-    unix_id: str | None = None,
     user: str = "Admin",
 ) -> str:
     now = datetime.now()
@@ -119,49 +108,37 @@ def create_tyskra(
         cur.execute(
             """
             INSERT INTO barcodesap.tyskra (
-                sktynm, sktyds,
-                skadby, skaddt,
-                skchno, skdlfg,
-                skrgid, skrgdt,
-                skdpfg, skdsfg,
-                skptfg, skptct, skptid,
-                sksrce, skusrm, skitrm,
-                skcsdt, skcsid, skcsno,
-                skunix
+                sktynm,
+                sktyds,
+                skadby,
+                skaddt,
+                skchno,
+                skdlfg
             )
             VALUES (
                 %s, %s,
                 %s, %s,
-                0,  0,
-                %s, %s,
-                %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s
+                0, 0
             )
             RETURNING sktynm
             """,
             (
-                type_name, type_desc,
-                user, now,
-                user, now,
-                dp_flag, ds_flag,
-                pt_flag, pt_count, pt_id,
-                source, user_remark, item_remark,
-                now, cs_id, cs_no,
-                unix_id,
+                type_name,
+                type_desc,
+                user,
+                now,
             ),
         )
+
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
+
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-
 
 # ── Update ────────────────────────────────────────────────────────────────────
 
@@ -169,17 +146,6 @@ def update_tyskra(
     type_name: str,
     old_changed_no: int,
     type_desc: str | None = None,
-    dp_flag: str = "1",
-    ds_flag: str = "0",
-    pt_flag: str = "0",
-    pt_count: int = 0,
-    pt_id: str | None = None,
-    source: str | None = None,
-    user_remark: str | None = None,
-    item_remark: str | None = None,
-    cs_id: str | None = None,
-    cs_no: str | None = None,
-    unix_id: str | None = None,
     user: str = "Admin",
 ) -> None:
     now = datetime.now()
@@ -192,37 +158,24 @@ def update_tyskra(
                 sktyds = %s,
                 skchby = %s,
                 skchdt = %s,
-                skchno = %s,
-                skchid = %s,
-                skdpfg = %s,
-                skdsfg = %s,
-                skptfg = %s,
-                skptct = %s,
-                skptid = %s,
-                sksrce = %s,
-                skusrm = %s,
-                skitrm = %s,
-                skcsdt = %s,
-                skcsid = %s,
-                skcsno = %s,
-                skunix = %s
+                skchno = %s
             WHERE sktynm = %s
               AND skdlfg <> 1
             """,
             (
                 type_desc,
-                user, now, old_changed_no + 1, user,
-                dp_flag, ds_flag,
-                pt_flag, pt_count, pt_id,
-                source, user_remark, item_remark,
-                now, cs_id, cs_no,
-                unix_id,
+                user,
+                now,
+                old_changed_no + 1,
                 type_name,
             ),
         )
+
         if cur.rowcount == 0:
             raise Exception(f"Record '{type_name}' not found or already deleted.")
+
         conn.commit()
+
     except Exception:
         conn.rollback()
         raise

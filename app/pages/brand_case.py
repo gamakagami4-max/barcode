@@ -413,9 +413,9 @@ class BrandCasePage(QWidget):
             return
 
         create_barsys(
-            bscode=code,
-            bsname=name,
-            bsdesc=desc,
+            code=code,
+            name=name,
+            description=desc,
             user="Admin",
         )
 
@@ -465,16 +465,15 @@ class BrandCasePage(QWidget):
             return
 
         fields = [
-            ("System Code", row["bscode"]),
-            ("System Name", row["bsname"]),
-            ("Description", row.get("bsdesc", "")),
-            ("Added By", row.get("bsrgid")),
-            ("Added At", row.get("bsrgdt")),
-            ("Changed By", row.get("bschid")),
-            ("Changed At", row.get("bschdt")),
-            ("Changed No", row.get("bschno")),
+            ("System Code", row["code"]),
+            ("System Name", row["name"]),
+            ("Description", row.get("description", "")),
+            ("Added By", row.get("added_by")),
+            ("Added At", row.get("added_at")),
+            ("Changed By", row.get("changed_by")),
+            ("Changed At", row.get("changed_at")),
+            ("Changed No", row.get("changed_no")),
         ]
-
         modal = GenericFormModal(
             title="Brand Case Detail",
             subtitle="Full details for the selected brand case.",
@@ -498,14 +497,14 @@ class BrandCasePage(QWidget):
             return
 
         initial = {
-            "system_code": row["bscode"],
-            "system_name": row["bsname"],
-            "description": row.get("bsdesc", ""),
-            "added_by": row.get("bsrgid"),
-            "added_at": row.get("bsrgdt"),
-            "changed_by": row.get("bschid"),
-            "changed_at": row.get("bschdt"),
-            "changed_no": row.get("bschno"),
+            "system_code": row["code"],
+            "system_name": row["name"],
+            "description": row.get("description", ""),
+            "added_by": row.get("added_by"),
+            "added_at": row.get("added_at"),
+            "changed_by": row.get("changed_by"),
+            "changed_at": row.get("changed_at"),
+            "changed_no": row.get("changed_no"),
         }
 
         modal = GenericFormModal(
@@ -519,23 +518,28 @@ class BrandCasePage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, pk, data):
-        code = data.get("system_code", "").strip()
-        name = data.get("system_name", "").strip()
         desc = data.get("description", "")
 
-        if not code or not name:
-            QMessageBox.warning(self, "Validation Error",
-                                "System Code and System Name are required.")
+        # get original row again (to get changed_no)
+        row = next(
+            (r for r in self.all_data if (r["name"], r["code"]) == pk),
+            None
+        )
+        if not row:
+            QMessageBox.warning(self, "Error", "Record not found.")
             return
 
-        update_barsys(
-            old_bsname=pk[0],
-            old_bscode=pk[1],
-            bscode=code,
-            bsname=name,
-            bsdesc=desc,
-            user="Admin",
-        )
+        try:
+            update_barsys(
+                name=row["name"],                    # PK (NOT editable)
+                code=row["code"],                    # PK (NOT editable)
+                description=desc,
+                old_changed_no=row["changed_no"],    # optimistic lock
+                user="Admin",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Update Failed", str(e))
+            return
 
         self.load_data()
 
@@ -552,7 +556,7 @@ class BrandCasePage(QWidget):
         if not row:
             return
 
-        code = row["bscode"]
+        code = row["code"]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText(f'Are you sure you want to delete "{code}"?')
