@@ -12,11 +12,11 @@ from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
 
-from server.repositories.mmitem_repo import (
-    fetch_all_item,
-    create_item,
-    update_item,
-    delete_item,
+from server.repositories.mtitms_repo import (
+    fetch_all_mtitms,
+    create_mtitms,
+    update_mtitms,
+    soft_delete_mtitms,
 )
 
 # ─────────────────────────────────────────────
@@ -85,31 +85,29 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
 # Helper: DB row dict → display tuple
 # ─────────────────────────────────────────────
 def _row_to_tuple(r: dict) -> tuple:
-    """Convert a DB dict from fetch_all_item() into the display tuple."""
     def _fmt_dt(val):
         if val is None:
             return "-"
-        # val may already be a string or a datetime object
-        return str(val)[:19] if str(val) else "-"
+        return str(val)[:19]
 
     return (
-        r.get("mlcode",  "") or "",           # 0  item code
-        r.get("mlname",  "") or "",           # 1  name
-        r.get("mlbrndiy", "") or "",          # 2  brand (FK id for now)
-        r.get("mlwhse",  "") or "",           # 3  warehouse
-        r.get("mlpnpr",  "") or "",           # 4  part no
-        r.get("mlinc1",  "") or "",           # 5  interchange 1
-        r.get("mlinc2",  "") or "",           # 6  interchange 2
-        r.get("mlinc3",  "") or "",           # 7  interchange 3
-        r.get("mlinc4",  "") or "",           # 8  interchange 4
-        str(r.get("mlqtyn", 0) or 0),        # 9  quantity
-        r.get("mlumit",  "") or "",           # 10 UOM
-        r.get("mlrgid",  "-") or "-",        # 11 added by
-        _fmt_dt(r.get("mlrgdt")),            # 12 added at
-        r.get("mlchid",  "-") or "-",        # 13 changed by
-        _fmt_dt(r.get("mlchdt")),            # 14 changed at
-        str(r.get("mlchno", 0) or 0),       # 15 changed no
-        r.get("mlitemiy"),                   # 16 PK (hidden, for updates/deletes)
+        r.get("pk", ""),                # 0  item code
+        r.get("description", ""),       # 1  name
+        r.get("brand", ""),             # 2  brand
+        r.get("warehouse", ""),         # 3  warehouse
+        r.get("po_no", ""),             # 4  part no
+        r.get("type1", ""),             # 5  interchange 1 (adjust if needed)
+        "",                             # 6  interchange 2
+        "",                             # 7  interchange 3
+        "",                             # 8  interchange 4
+        "0",                            # 9  qty (adjust if mapping mmcont)
+        r.get("uom", ""),               # 10 uom
+        r.get("added_by", "-"),         # 11 added by
+        _fmt_dt(r.get("added_at")),     # 12 added at
+        r.get("changed_by", "-"),       # 13 changed by
+        _fmt_dt(r.get("changed_at")),   # 14 changed at
+        str(r.get("changed_no", 0)),    # 15 changed no
+        r.get("pk"),                    # 16 PK (hidden)
     )
 
 
@@ -344,7 +342,7 @@ class MasterItemPage(QWidget):
 
     def load_data(self):
         try:
-            rows = fetch_all_item()
+            rows = fetch_all_mtitms()
             self.all_data = [_row_to_tuple(r) for r in rows]
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Failed to load items:\n{exc}")
@@ -536,23 +534,11 @@ class MasterItemPage(QWidget):
                 return
 
         try:
-            create_item(
-                code=item_code,
-                name=name,
-                brand_id=None,       # ← wire to dropdown later
-                filter_id=None,
-                prty_id=None,
-                stkr_id=None,
-                sgdr_id=None,
-                warehouse=warehouse or None,
-                pnpr=part_no or None,
-                inc1=interchange_1,
-                inc2=interchange_2,
-                inc3=interchange_3,
-                inc4=interchange_4,
-                inc5=None, inc6=None, inc7=None, inc8=None,
-                quantity=qty,
-                unit=uom,
+            create_mtitms(
+                item_no=item_code,
+                description=name,
+                sap_code=None,
+                type1=None,
                 user=CURRENT_USER,
             )
         except Exception as exc:
@@ -674,24 +660,12 @@ class MasterItemPage(QWidget):
         pk = self.all_data[idx][16]   # hidden PK stored at index 16
 
         try:
-            update_item(
-                item_id=pk,
-                code=item_code,
-                name=name,
-                brand_id=None,       # ← wire to dropdown later
-                filter_id=None,
-                prty_id=None,
-                stkr_id=None,
-                sgdr_id=None,
-                warehouse=warehouse or None,
-                pnpr=part_no or None,
-                inc1=interchange_1,
-                inc2=interchange_2,
-                inc3=interchange_3,
-                inc4=interchange_4,
-                inc5=None, inc6=None, inc7=None, inc8=None,
-                quantity=qty,
-                unit=uom,
+            update_mtitms(
+                pk=pk,
+                description=name,
+                sap_code=None,
+                type1=None,
+                old_changed_no=int(self.all_data[idx][15]),
                 user=CURRENT_USER,
             )
         except Exception as exc:
@@ -719,7 +693,7 @@ class MasterItemPage(QWidget):
 
         if msg.exec() == QMessageBox.Yes:
             try:
-                delete_item(pk, user=CURRENT_USER)
+                soft_delete_mtitms(pk, user=CURRENT_USER)
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Failed to delete item:\n{exc}")
                 return
