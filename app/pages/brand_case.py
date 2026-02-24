@@ -10,11 +10,11 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-from server.repositories.mmbrcs_repo import (
-    fetch_all_mmbrcs,
-    create_mmbrcs,
-    update_mmbrcs,
-    delete_mmbrcs,
+from server.repositories.barsys_repo import (
+    fetch_all_barsys,
+    create_barsys,
+    update_barsys,
+    soft_delete_barsys,
 )
 
 # --- Design Tokens ---
@@ -37,33 +37,31 @@ VIEW_DETAIL_FIELDS = [
 
 
 def _build_form_schema(mode: str = "add") -> list[dict]:
-    """
-    All modes show the same fields for consistency.
-    Audit fields are always readonly — blank in add, populated in edit/view.
-    """
-    schema = [
+    return [
         {
-            "name": "code",
-            "label": "Code",
+            "name": "system_code",
+            "label": "System Code",
             "type": "text",
             "required": True,
-            "placeholder": "Enter brand code",
         },
         {
-            "name": "type_case",
-            "label": "Type Case",
-            "type": "combo",
-            "options": ["TITLE", "UPPER"],
+            "name": "system_name",
+            "label": "System Name",
+            "type": "text",
             "required": True,
         },
-        # Audit fields — always present, always readonly
-        {"name": "added_by",   "label": "Added By",   "type": "readonly"},
-        {"name": "added_at",   "label": "Added At",   "type": "readonly"},
+        {
+            "name": "description",
+            "label": "Description",
+            "type": "textarea",
+            "required": False,
+        },
+        {"name": "added_by", "label": "Added By", "type": "readonly"},
+        {"name": "added_at", "label": "Added At", "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
         {"name": "changed_at", "label": "Changed At", "type": "readonly"},
         {"name": "changed_no", "label": "Changed No", "type": "readonly"},
     ]
-    return schema
 
 
 class BrandCasePage(QWidget):
@@ -81,7 +79,6 @@ class BrandCasePage(QWidget):
         self._active_modal: GenericFormModal | None = None
         self.init_ui()
 
-        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
         self._update_selection_dependent_state(False)
 
         self.load_data()
@@ -111,10 +108,17 @@ class BrandCasePage(QWidget):
 
         # 3. Table
         self.table_comp = StandardTable([
-            "CODE", "TYPE CASE", "ADDED BY", "ADDED AT",
-            "CHANGED BY", "CHANGED AT", "CHANGED NO"
+            "SYSTEM CODE",
+            "SYSTEM NAME",
+            "DESCRIPTION",
+            "ADDED BY",
+            "ADDED AT",
+            "CHANGED BY",
+            "CHANGED AT",
+            "CHANGED NO"
         ])
         self.table = self.table_comp.table
+        self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
 
         h_header = self.table.horizontalHeader()
         h_header.setSectionResizeMode(0, QHeaderView.Fixed)
@@ -238,7 +242,7 @@ class BrandCasePage(QWidget):
     # ------------------------------------------------------------------
 
     def load_data(self):
-        rows = fetch_all_mmbrcs()
+        rows = fetch_all_barsys()
         self.all_data = rows
         self._apply_filter_and_reset_page()
 
@@ -256,20 +260,21 @@ class BrandCasePage(QWidget):
             self.table.insertRow(r)
 
             values = [
-                row["mmcode"],
-                "TITLE" if row["mmtyca"] else "UPPER",
-                row["mmrgid"],
-                row["mmrgdt"].strftime("%Y-%m-%d %H:%M:%S") if row["mmrgdt"] else "",
-                row["mmchid"],
-                row["mmchdt"].strftime("%Y-%m-%d %H:%M:%S") if row["mmchdt"] else "",
-                str(row["mmchno"]),
+                row["code"],
+                row["name"],
+                row.get("description", ""),
+                row.get("added_by"),
+                row["added_at"].strftime("%Y-%m-%d %H:%M:%S") if row.get("added_at") else "",
+                row.get("changed_by"),
+                row["changed_at"].strftime("%Y-%m-%d %H:%M:%S") if row.get("changed_at") else "",
+                str(row.get("changed_no", 0)),
             ]
 
             for c, val in enumerate(values):
                 item = QTableWidgetItem(str(val or ""))
                 if c == 0:
                     item.setForeground(QColor(COLORS["link"]))
-                    item.setData(Qt.UserRole, row["mmbrcsiy"])
+                    item.setData(Qt.UserRole, (row["name"], row["code"]))
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 self.table.setItem(r, c, item)
 
@@ -305,16 +310,17 @@ class BrandCasePage(QWidget):
         query = (self._last_search_text or "").lower().strip()
 
         header_map = {
-            "CODE":       "mmcode",
-            "TYPE CASE":  "mmtyca",
-            "ADDED BY":   "mmrgid",
-            "ADDED AT":   "mmrgdt",
-            "CHANGED BY": "mmchid",
-            "CHANGED AT": "mmchdt",
-            "CHANGED NO": "mmchno",
+            "SYSTEM CODE": "bscode",
+            "SYSTEM NAME": "bsname",
+            "DESCRIPTION": "bsdesc",
+            "ADDED BY": "bsrgid",
+            "ADDED AT": "bsrgdt",
+            "CHANGED BY": "bschid",
+            "CHANGED AT": "bschdt",
+            "CHANGED NO": "bschno",
         }
 
-        key = header_map.get(self._last_filter_type, "mmcode")
+        key = header_map.get(self._last_filter_type, "code")
 
         if not query:
             self.filtered_data = list(self.all_data)
@@ -338,13 +344,14 @@ class BrandCasePage(QWidget):
             return
 
         header_map = {
-            "CODE":       "mmcode",
-            "TYPE CASE":  "mmtyca",
-            "ADDED BY":   "mmrgid",
-            "ADDED AT":   "mmrgdt",
-            "CHANGED BY": "mmchid",
-            "CHANGED AT": "mmchdt",
-            "CHANGED NO": "mmchno",
+            "SYSTEM CODE": "bscode",
+            "SYSTEM NAME": "bsname",
+            "DESCRIPTION": "bsdesc",
+            "ADDED BY": "bsrgid",
+            "ADDED AT": "bsrgdt",
+            "CHANGED BY": "bschid",
+            "CHANGED AT": "bschdt",
+            "CHANGED NO": "bschno",
         }
 
         for field in reversed(self._sort_fields):
@@ -396,22 +403,19 @@ class BrandCasePage(QWidget):
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        code = data.get("code", "").strip()
-        type_case = data.get("type_case", "TITLE")
+        code = data.get("system_code", "").strip()
+        name = data.get("system_name", "").strip()
+        desc = data.get("description", "")
 
-        if not code:
-            QMessageBox.warning(self, "Validation Error", "Code is required.")
+        if not code or not name:
+            QMessageBox.warning(self, "Validation Error",
+                                "System Code and System Name are required.")
             return
 
-        for row in self.all_data:
-            if row["mmcode"].strip().lower() == code.lower():
-                QMessageBox.warning(self, "Duplicate Code",
-                                    f'Code "{code}" already exists.')
-                return
-
-        create_mmbrcs(
-            code=code,
-            type_case=(type_case == "TITLE"),
+        create_barsys(
+            bscode=code,
+            bsname=name,
+            bsdesc=desc,
             user="Admin",
         )
 
@@ -452,18 +456,23 @@ class BrandCasePage(QWidget):
         if pk is None:
             return
 
-        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        row = next(
+            (r for r in self.all_data if
+            (r["name"], r["code"]) == pk),
+            None
+        )
         if not row:
             return
 
         fields = [
-            ("Code",       row["mmcode"]),
-            ("Type Case",  "TITLE" if row["mmtyca"] else "UPPER"),
-            ("Added By",   row["mmrgid"]),
-            ("Added At",   row["mmrgdt"]),
-            ("Changed By", row["mmchid"]),
-            ("Changed At", row["mmchdt"]),
-            ("Changed No", row["mmchno"]),
+            ("System Code", row["bscode"]),
+            ("System Name", row["bsname"]),
+            ("Description", row.get("bsdesc", "")),
+            ("Added By", row.get("bsrgid")),
+            ("Added At", row.get("bsrgdt")),
+            ("Changed By", row.get("bschid")),
+            ("Changed At", row.get("bschdt")),
+            ("Changed No", row.get("bschno")),
         ]
 
         modal = GenericFormModal(
@@ -480,18 +489,23 @@ class BrandCasePage(QWidget):
         if pk is None:
             return
 
-        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        row = next(
+            (r for r in self.all_data if
+            (r["name"], r["code"]) == pk),
+            None
+        )
         if not row:
             return
 
         initial = {
-            "code":       row["mmcode"],
-            "type_case":  "TITLE" if row["mmtyca"] else "UPPER",
-            "added_by":   row["mmrgid"],
-            "added_at":   row["mmrgdt"],
-            "changed_by": row["mmchid"],
-            "changed_at": row["mmchdt"],
-            "changed_no": row["mmchno"],
+            "system_code": row["bscode"],
+            "system_name": row["bsname"],
+            "description": row.get("bsdesc", ""),
+            "added_by": row.get("bsrgid"),
+            "added_at": row.get("bsrgdt"),
+            "changed_by": row.get("bschid"),
+            "changed_at": row.get("bschdt"),
+            "changed_no": row.get("bschno"),
         }
 
         modal = GenericFormModal(
@@ -505,17 +519,21 @@ class BrandCasePage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, pk, data):
-        code = data.get("code", "").strip()
-        type_case = data.get("type_case", "TITLE")
+        code = data.get("system_code", "").strip()
+        name = data.get("system_name", "").strip()
+        desc = data.get("description", "")
 
-        if not code:
-            QMessageBox.warning(self, "Validation Error", "Code is required.")
+        if not code or not name:
+            QMessageBox.warning(self, "Validation Error",
+                                "System Code and System Name are required.")
             return
 
-        update_mmbrcs(
-            mmbrcs_id=pk,
-            code=code,
-            type_case=(type_case == "TITLE"),
+        update_barsys(
+            old_bsname=pk[0],
+            old_bscode=pk[1],
+            bscode=code,
+            bsname=name,
+            bsdesc=desc,
             user="Admin",
         )
 
@@ -526,11 +544,15 @@ class BrandCasePage(QWidget):
         if pk is None:
             return
 
-        row = next((r for r in self.all_data if r["mmbrcsiy"] == pk), None)
+        row = next(
+            (r for r in self.all_data if
+            (r["name"], r["code"]) == pk),
+            None
+        )
         if not row:
             return
 
-        code = row["mmcode"]
+        code = row["bscode"]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText(f'Are you sure you want to delete "{code}"?')
@@ -539,5 +561,9 @@ class BrandCasePage(QWidget):
         msg.setIcon(QMessageBox.Warning)
 
         if msg.exec() == QMessageBox.Yes:
-            delete_mmbrcs(pk, user="Admin")
+            soft_delete_barsys(
+                bsname=pk[0],
+                bscode=pk[1],
+                user="Admin",
+            )
             self.load_data()
