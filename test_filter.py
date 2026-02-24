@@ -1,9 +1,9 @@
-from server.repositories.mmfltr_repo import create_fltr
+from server.repositories.mmfltr_repo import fetch_column_comments
 
-pk = create_fltr(
-    name="Test Filter",
-    description="Sample filter for testing",
-    user="Admin",
-)
+# Fetch column comments from barcode.mmfltr
+comments = fetch_column_comments()
 
-print("Created ID:", pk)
+print("Field Comments for barcode.mmfltr:\n")
+
+for column, comment in comments.items():
+    print(f"{column} -> {comment}")

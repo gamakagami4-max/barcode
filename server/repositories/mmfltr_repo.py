@@ -43,6 +43,38 @@ def fetch_all_fltr() -> list[dict]:
         conn.close()
 
 
+def fetch_column_comments(table: str = "mmfltr", schema: str = "barcode") -> dict[str, str | None]:
+    """
+    Returns a dict mapping physical column name → its COMMENT ON COLUMN text.
+    Columns with no comment set will map to None.
+    """
+    sql = """
+        SELECT
+            col.column_name,
+            pgd.description AS comment
+        FROM information_schema.columns col
+        LEFT JOIN pg_catalog.pg_description pgd
+            ON pgd.objoid = (
+                SELECT cls.oid
+                FROM pg_catalog.pg_class cls
+                JOIN pg_catalog.pg_namespace nsp ON nsp.oid = cls.relnamespace
+                WHERE cls.relname  = col.table_name
+                  AND nsp.nspname  = col.table_schema
+            )
+            AND pgd.objsubid = col.ordinal_position
+        WHERE col.table_schema = %s
+          AND col.table_name   = %s
+        ORDER BY col.ordinal_position
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, (schema, table))
+        return {row[0]: row[1] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 # ── Create ────────────────────────────────────────────────────────────────────
 
 def create_fltr(

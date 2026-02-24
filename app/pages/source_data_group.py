@@ -63,7 +63,7 @@ _COL_HEADER_TO_TUPLE_IDX = {
 # Qt main thread via a queued signal — zero UI blocking.
 
 class _ColsFetcher(QObject):
-    done = Signal(list)   # emitted with the fetched column list
+    done = Signal(list)
 
     def start(self, table_name: str):
         def _run():
@@ -72,7 +72,8 @@ class _ColsFetcher(QObject):
                 cols = fetch_table_columns("barcode", table_name)
             except Exception:
                 cols = []
-            self.done.emit(cols)   # Qt queues this safely to the main thread
+            self.done.emit(cols)
+
         threading.Thread(target=_run, daemon=True).start()
 
 
@@ -686,7 +687,17 @@ class SourceDataPage(QWidget):
                 return
             saved   = getattr(modal, "_saved_fields", None)
             checked = saved if saved else cols
-            modal.update_field_options("fields", cols, checked=checked)
+            # Convert DB metadata to checkbox options
+            options = []
+            for col in cols:
+                value = col["name"]
+                label = col.get("comment") or value
+                options.append({
+                    "value": value,
+                    "label": label
+                })
+
+            modal.update_field_options("fields", options, checked=checked)
             fields_widget = modal.inputs.get("fields")
             if fields_widget:
                 fields_widget.setMinimumHeight(155)

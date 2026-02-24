@@ -287,21 +287,40 @@ def soft_delete_sdgr(pk: int, user: str = "Admin") -> None:
 
 # ── Column introspection ──────────────────────────────────────────────────────
 
-def fetch_table_columns(schema: str, table_name: str) -> list[str]:
-    tbl = table_name.split(".")[-1]
+def fetch_table_columns(schema: str, table: str) -> list[dict]:
+    sql = """
+        SELECT
+            col.column_name,
+            col.data_type,
+            col.is_nullable,
+            col.column_default,
+            col.ordinal_position,
+            col_description(
+                (col.table_schema || '.' || col.table_name)::regclass,
+                col.ordinal_position
+            ) AS comment
+        FROM information_schema.columns col
+        WHERE col.table_schema = %s
+          AND col.table_name   = %s
+        ORDER BY col.ordinal_position
+    """
+
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = %s
-              AND table_name   = %s
-            ORDER BY ordinal_position
-            """,
-            (schema, tbl),
-        )
-        return [row[0] for row in cur.fetchall()]
+        cur.execute(sql, (schema, table))
+
+        results = []
+        for row in cur.fetchall():
+            results.append({
+                "name": row[0],
+                "type": row[1],
+                "nullable": row[2] == "YES",
+                "default": row[3],
+                "position": row[4],
+                "comment": row[5],   # 👈 HERE
+            })
+
+        return results
     finally:
         conn.close()

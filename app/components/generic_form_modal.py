@@ -527,17 +527,49 @@ class _CheckboxListWidget(QWidget):
         outer.addWidget(self._empty_lbl)
         self._scroll.setVisible(bool(options))
 
-    def _build_checkboxes(self, options: list[str], checked_set: set):
+    def _build_checkboxes(self, options, checked_set: set):
+        """
+        options can be:
+            ["col1", "col2"]
+            OR
+            [("col1", "Column 1")]
+            OR
+            [{"value": "col1", "label": "Column 1"}]
+        """
+
+        # Clear layout
         while self._lay.count():
             item = self._lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
         self._checkboxes.clear()
 
+        # Normalize into (value, label)
+        normalized = []
+
         for opt in options:
-            cb = QCheckBox(opt)
-            cb.setChecked(opt in checked_set)
+            if isinstance(opt, dict):
+                value = opt.get("value")
+                label = opt.get("label", value)
+            elif isinstance(opt, tuple):
+                value, label = opt
+            else:
+                value = opt
+                label = opt
+
+            normalized.append((value, label))
+
+        # Build checkboxes
+        for value, label in normalized:
+            display = f"{value} — {label}" if label and label != value else value
+            cb = QCheckBox(display)
+            cb.setChecked(value in checked_set)
             cb.setEnabled(not self._disabled)
+
+            # Store actual value (important!)
+            cb._value = value
+
             cb.setStyleSheet(f"""
                 QCheckBox {{
                     font-size: 13px;
@@ -561,16 +593,57 @@ class _CheckboxListWidget(QWidget):
                     background: {COLORS['readonly_bg']};
                 }}
             """)
+
             self._lay.addWidget(cb)
-            self._checkboxes[opt] = cb
+
+            # Key must be value (NOT label)
+            self._checkboxes[value] = cb
 
     def get_value(self) -> list[str]:
         return [opt for opt, cb in self._checkboxes.items() if cb.isChecked()]
 
-    def set_options(self, options: list[str], checked_options: list[str] | None = None):
-        checked_set = set(checked_options if checked_options is not None else options)
-        self._build_checkboxes(options, checked_set)
-        has_opts = bool(options)
+    def set_options(self, options, checked_options=None):
+        """
+        options:
+            ["col1", "col2"]
+            OR
+            [{"value": "col1", "label": "Column 1"}]
+
+        checked_options:
+            ["col1", "col2"]
+        """
+
+        # Normalize options into (value, label)
+        normalized = []
+        for opt in options:
+            if isinstance(opt, dict):
+                value = opt.get("value")
+                label = opt.get("label", value)
+            else:
+                value = opt
+                label = opt
+            normalized.append((value, label))
+
+        # Only hash values (never dicts) — resolve any dict/non-str items to plain strings
+        if checked_options is not None:
+            resolved = []
+            for opt in checked_options:
+                if isinstance(opt, dict):
+                    val = opt.get("value") or opt.get("name") or opt.get("id")  # try common key names
+                    if val is None:
+                        val = next(iter(opt.values()), None)                    # last resort: first value in dict
+                    if val is not None and not isinstance(val, dict):
+                        resolved.append(val)
+                else:
+                    resolved.append(opt)
+            checked_set = set(resolved)
+        else:
+            checked_set = {value for value, _ in normalized}
+
+        # Rebuild checkboxes
+        self._build_checkboxes(normalized, checked_set)
+
+        has_opts = bool(normalized)
         self._scroll.setVisible(has_opts)
         self._empty_lbl.setVisible(not has_opts)
 
@@ -1028,16 +1101,45 @@ class GenericFormModal(QDialog):
             widget = self._create_form_widget(field)
             self.inputs[field["name"]] = widget
 
-            label = field.get("label", field["name"])
+            label_text = field.get("label", field["name"])
+            comment_text = field.get("comment")
+
             if field.get("required") and self.mode != "view":
-                label += " *"
+                label_text += " *"
+
+            # Main label
+            label_widget = QLabel(label_text)
 
             if field.get("type") == "readonly":
-                lbl = QLabel(label)
-                lbl.setStyleSheet(f"color: {COLORS['readonly_text']}; font-size: 13px;")
-                form_layout.addRow(lbl, widget)
+                label_widget.setStyleSheet(
+                    f"color: {COLORS['readonly_text']}; font-size: 13px;"
+                )
             else:
-                form_layout.addRow(label, widget)
+                label_widget.setStyleSheet("font-size: 13px; font-weight: 500;")
+
+            # If comment exists → stack it under the label
+            if comment_text:
+                comment_label = QLabel(comment_text)
+                comment_label.setWordWrap(True)
+                comment_label.setStyleSheet("""
+                    font-size: 11px;
+                    color: #6B7280;
+                    margin-top: 2px;
+                """)
+
+                label_container = QVBoxLayout()
+                label_container.setSpacing(2)
+                label_container.setContentsMargins(0, 0, 0, 0)
+                label_container.addWidget(label_widget)
+                label_container.addWidget(comment_label)
+
+                label_wrapper = QWidget()
+                label_wrapper.setLayout(label_container)
+
+                form_layout.addRow(label_wrapper, widget)
+
+            else:
+                form_layout.addRow(label_widget, widget)
 
         scroll.setWidget(scroll_content)
         root.addWidget(scroll)
