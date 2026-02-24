@@ -30,13 +30,12 @@ COLORS = {
 #   Tuple layout:
 #       0   pk / nobr
 #       1   name
-#       2   flag
-#       3   case_
-#       4   added_by
-#       5   added_at
-#       6   changed_by
-#       7   changed_at
-#       8   changed_no
+#       2   case_
+#       3   added_by
+#       4   added_at
+#       5   changed_by
+#       6   changed_at
+#       7   changed_no
 
 
 def _build_form_schema() -> list[dict]:
@@ -54,13 +53,6 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter brand name",
             "required":    True,
-        },
-        {
-            "name":        "flag",
-            "label":       "Flag",
-            "type":        "text",
-            "placeholder": "Enter flag",
-            "required":    False,
         },
         {
             "name":     "case_",
@@ -82,13 +74,12 @@ def _row_to_tuple(r: dict) -> tuple:
     return (
         (r.get("pk") or "").strip(),                                    # 0  nobr/pk
         (r.get("name") or "").strip(),                                  # 1  name
-        (r.get("flag") or "").strip(),                                  # 2  flag
-        (r.get("case_") or "").strip(),                                 # 3  case_
-        (r.get("added_by") or "").strip(),                              # 4  added_by
-        str(r["added_at"])[:19] if r.get("added_at") else "",           # 5  added_at
-        (r.get("changed_by") or "").strip(),                            # 6  changed_by
-        str(r["changed_at"])[:19] if r.get("changed_at") else "",       # 7  changed_at
-        str(r.get("changed_no") or 0),                                  # 8  changed_no
+        (r.get("case_") or "").strip(),                                 # 2  case_
+        (r.get("added_by") or "").strip(),                              # 3  added_by
+        str(r["added_at"])[:19] if r.get("added_at") else "",           # 4  added_at
+        (r.get("changed_by") or "").strip(),                            # 5  changed_by
+        str(r["changed_at"])[:19] if r.get("changed_at") else "",       # 6  changed_at
+        str(r.get("changed_no") or 0),                                  # 7  changed_no
     )
 
 
@@ -96,13 +87,12 @@ def _row_to_modal_data(row: tuple) -> dict:
     return {
         "nobr":       row[0],
         "name":       row[1],
-        "flag":       row[2],
-        "case_":      row[3],
-        "added_by":   row[4],
-        "added_at":   row[5],
-        "changed_by": row[6],
-        "changed_at": row[7],
-        "changed_no": row[8],
+        "case_":      row[2],
+        "added_by":   row[3],
+        "added_at":   row[4],
+        "changed_by": row[5],
+        "changed_at": row[6],
+        "changed_no": row[7],
     }
 
 
@@ -146,7 +136,7 @@ class BrandPage(QWidget):
 
         # 3. Table
         self.table_comp = StandardTable([
-            "CODE", "NAME", "FLAG", "CASE", "ADDED BY", "ADDED AT",
+            "CODE", "NAME", "CASE", "ADDED BY", "ADDED AT",
             "CHANGED BY", "CHANGED AT", "CHANGED NO"
         ])
         self.table = self.table_comp.table
@@ -155,13 +145,12 @@ class BrandPage(QWidget):
         h_header.setSectionResizeMode(QHeaderView.Fixed)
         self.table.setColumnWidth(0, 100)
         self.table.setColumnWidth(1, 280)
-        self.table.setColumnWidth(2, 60)   # FLAG
-        self.table.setColumnWidth(3, 120)  # CASE
-        self.table.setColumnWidth(4, 120)  # ADDED BY
-        h_header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # ADDED AT
-        self.table.setColumnWidth(6, 120)  # CHANGED BY
-        h_header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # CHANGED AT
-        self.table.setColumnWidth(8, 90)   # CHANGED NO
+        self.table.setColumnWidth(2, 120)  # CASE
+        self.table.setColumnWidth(3, 120)  # ADDED BY
+        h_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # ADDED AT
+        self.table.setColumnWidth(5, 120)  # CHANGED BY
+        h_header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # CHANGED AT
+        self.table.setColumnWidth(7, 90)   # CHANGED NO
 
         self.sort_bar = SortByWidget(self.table)
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
@@ -294,22 +283,17 @@ class BrandPage(QWidget):
             self.table.setCellWidget(r, 1, name_label)
 
             # CASE
-            case_item = QTableWidgetItem(row_data[3])
+            case_item = QTableWidgetItem(row_data[2])
             case_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            self.table.setItem(r, 3, case_item)
-
-            # FLAG
-            flag_item = QTableWidgetItem(row_data[2])
-            flag_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            self.table.setItem(r, 2, flag_item)
+            self.table.setItem(r, 2, case_item)
 
             # METADATA columns
             for col_idx, data_idx, align in [
+                (3, 3, Qt.AlignLeft),
                 (4, 4, Qt.AlignLeft),
                 (5, 5, Qt.AlignLeft),
                 (6, 6, Qt.AlignLeft),
-                (7, 7, Qt.AlignLeft),
-                (8, 8, Qt.AlignCenter),
+                (7, 7, Qt.AlignCenter),
             ]:
                 item = QTableWidgetItem(str(row_data[data_idx]))
                 item.setTextAlignment(align | Qt.AlignVCenter)
@@ -475,12 +459,11 @@ class BrandPage(QWidget):
             QMessageBox.warning(self, "Validation", "Brand Name is required.")
             return
 
-        old_changed_no = int(row[8]) if str(row[8]).isdigit() else 0
+        old_changed_no = int(row[7]) if str(row[7]).isdigit() else 0
         try:
             update_mmbran(
                 pk=row[0],
                 name=name,
-                flag=data.get("flag", "").strip() or None,
                 case_=data.get("case_", "").strip() or None,
                 old_changed_no=old_changed_no,
             )
@@ -516,7 +499,7 @@ class BrandPage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Brand"
-        ws.append(["CODE", "NAME", "FLAG", "CASE", "ADDED BY", "ADDED AT",
+        ws.append(["CODE", "NAME", "CASE", "ADDED BY", "ADDED AT",
                    "CHANGED BY", "CHANGED AT", "CHANGED NO"])
         for row in self.filtered_data:
             ws.append([str(v) if v is not None else "" for v in row])
