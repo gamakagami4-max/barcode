@@ -11,63 +11,70 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-from server.repositories.mmstkr_repo import (
-    fetch_all_mmstkr,
-    create_mmstkr,
-    update_mmstkr,
-    soft_delete_mmstkr,
+from server.repositories.mstckr_repo import (
+    fetch_all_mstckr,
+    create_mstckr,
+    update_mstckr,
+    soft_delete_mstckr,
 )
 
-DPI = 96  # inch → px: px = round(inches × DPI)
+DPI = 96
 
 
 # ── Column mapping ────────────────────────────────────────────────────────────
 #
 #   Tuple layout:
-#       0   pk
-#       1   name
-#       2   w_in   (float)
-#       3   w_px   (int)
-#       4   h_in   (float)
-#       5   h_px   (int)
-#       6   added_by
-#       7   added_at
-#       8   changed_by
-#       9   changed_at
-#       10  changed_no
+#       0   pk        (msstnm — also the display name)
+#       1   h_in
+#       2   w_in
+#       3   h_px
+#       4   w_px
+#       5   dp_fg
+#       6   ds_fg
+#       7   pt_fg
+#       8   pt_ct
+#       9   pt_id
+#       10  pt_dt
+#       11  source
+#       12  user_remark
+#       13  item_remark
+#       14  added_by
+#       15  added_at
+#       16  changed_by
+#       17  changed_at
+#       18  changed_no
 
 _COL_HEADER_TO_TUPLE_IDX = {
-    "NAME":        1,
-    "WIDTH (INCH)":  2,
-    "WIDTH (PX)":  3,
-    "HEIGHT (INCH)": 4,
-    "HEIGHT (PX)": 5,
-    "ADDED BY":    6,
-    "ADDED AT":    7,
-    "CHANGED BY":  8,
-    "CHANGED AT":  9,
-    "CHANGED NO":  10,
+    "NAME":           0,
+    "WIDTH (INCH)":   2,
+    "WIDTH (PX)":     4,
+    "HEIGHT (INCH)":  1,
+    "HEIGHT (PX)":    3,
+    "ADDED BY":       14,
+    "ADDED AT":       15,
+    "CHANGED BY":     16,
+    "CHANGED AT":     17,
+    "CHANGED NO":     18,
 }
+
+_TABLE_HEADERS = [
+    "NAME",
+    "WIDTH (INCH)", "WIDTH (PX)",
+    "HEIGHT (INCH)", "HEIGHT (PX)",
+    "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+]
 
 
 # ── Form schema ───────────────────────────────────────────────────────────────
 
 def _build_form_schema() -> list[dict]:
-    """
-    Add / Edit schema.
-
-    The 'dimension_pair' type renders two side-by-side inputs (inch + px)
-    that keep each other in sync.  On submit the modal emits:
-        {field_name}_in  →  inch value (str)
-        {field_name}_px  →  pixel value (str)
-    """
     return [
         {
-            "name":     "name",
-            "label":    "Sticker Name",
-            "type":     "text",
-            "placeholder": "Enter sticker name",
-            "required": True,
+            "name":        "name",
+            "label":       "Sticker Name",
+            "type":        "text",
+            "placeholder": "Enter sticker name (max 20 chars)",
+            "required":    True,
         },
         {
             "name":     "width",
@@ -83,7 +90,7 @@ def _build_form_schema() -> list[dict]:
             "dpi":      DPI,
             "required": True,
         },
-        # ── Audit (always readonly) ───────────────────────────────────
+        # ── Audit (always readonly) ────────────────────────────────────
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
@@ -95,32 +102,30 @@ def _build_form_schema() -> list[dict]:
 # ── Data conversion ───────────────────────────────────────────────────────────
 
 def _row_to_tuple(r: dict) -> tuple:
-    h_in = float(r.get("h_in") or 0)
-    w_in = float(r.get("w_in") or 0)
-    h_px = int(r.get("h_px") or 0)
-    w_px = int(r.get("w_px") or 0)
     return (
-        r["pk"],                                                        # 0
-        (r.get("name") or "").strip(),                                  # 1
-        w_in,                                                           # 2
-        w_px,                                                           # 3
-        h_in,                                                           # 4
-        h_px,                                                           # 5
-        (r.get("added_by") or "").strip(),                              # 6
-        str(r["added_at"])[:19] if r.get("added_at") else "",           # 7
-        (r.get("changed_by") or "").strip(),                            # 8
-        str(r["changed_at"])[:19] if r.get("changed_at") else "",       # 9
-        str(r.get("changed_no", 0)),                                    # 10
+        (r.get("pk") or "").strip(),                                    # 0  name/pk
+        float(r.get("h_in") or 0),                                      # 1  h_in
+        float(r.get("w_in") or 0),                                      # 2  w_in
+        int(r.get("h_px") or 0),                                        # 3  h_px
+        int(r.get("w_px") or 0),                                        # 4  w_px
+        (r.get("dp_fg") or "").strip(),                                 # 5  dp_fg
+        (r.get("ds_fg") or "").strip(),                                 # 6  ds_fg
+        (r.get("pt_fg") or "").strip(),                                 # 7  pt_fg
+        int(r.get("pt_ct") or 0),                                       # 8  pt_ct
+        (r.get("pt_id") or "").strip(),                                 # 9  pt_id
+        str(r["pt_dt"])[:19] if r.get("pt_dt") else "",                 # 10 pt_dt
+        (r.get("source") or "").strip(),                                # 11 source
+        (r.get("user_remark") or "").strip(),                           # 12 user_remark
+        (r.get("item_remark") or "").strip(),                           # 13 item_remark
+        (r.get("added_by") or "").strip(),                              # 14 added_by
+        str(r["added_at"])[:19] if r.get("added_at") else "",           # 15 added_at
+        (r.get("changed_by") or "").strip(),                            # 16 changed_by
+        str(r["changed_at"])[:19] if r.get("changed_at") else "",       # 17 changed_at
+        str(r.get("changed_no", 0)),                                    # 18 changed_no
     )
 
 
 def _parse_submitted_dims(data: dict) -> tuple[float, float, int, int] | None:
-    """
-    Extract and validate w_in, h_in, w_px, h_px from a GenericFormModal
-    submission where dimension_pair fields are named 'width' and 'height'.
-
-    Returns (w_in, h_in, w_px, h_px) or None on failure.
-    """
     try:
         w_in = float(data["width_in"])
         w_px = int(data["width_px"])
@@ -174,12 +179,7 @@ class StickerSizePage(QWidget):
         layout.addWidget(self.search_bar)
         layout.addSpacing(5)
 
-        self.table_comp = StandardTable([
-            "NAME",
-            "WIDTH (INCH)", "WIDTH (PX)",
-            "HEIGHT (INCH)", "HEIGHT (PX)",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
-        ])
+        self.table_comp = StandardTable(_TABLE_HEADERS)
         self.table = self.table_comp.table
 
         self.sort_bar = SortByWidget(self.table)
@@ -269,16 +269,16 @@ class StickerSizePage(QWidget):
     def _add_table_row(self, row: tuple):
         r = self.table.rowCount()
         self.table.insertRow(r)
-        self.table.setItem(r, 0, self._make_item(row[1]))          # name
-        self.table.setItem(r, 1, self._make_item(str(row[2])))     # w_in
-        self.table.setItem(r, 2, self._make_item(str(row[3])))     # w_px
-        self.table.setItem(r, 3, self._make_item(str(row[4])))     # h_in
-        self.table.setItem(r, 4, self._make_item(str(row[5])))     # h_px
-        self.table.setItem(r, 5, self._make_item(row[6]))          # added_by
-        self.table.setItem(r, 6, self._make_item(row[7]))          # added_at
-        self.table.setItem(r, 7, self._make_item(row[8]))          # changed_by
-        self.table.setItem(r, 8, self._make_item(row[9]))          # changed_at
-        self.table.setItem(r, 9, self._make_item(row[10]))         # changed_no
+        self.table.setItem(r, 0, self._make_item(row[0]))           # name/pk
+        self.table.setItem(r, 1, self._make_item(str(row[2])))      # w_in
+        self.table.setItem(r, 2, self._make_item(str(row[4])))      # w_px
+        self.table.setItem(r, 3, self._make_item(str(row[1])))      # h_in
+        self.table.setItem(r, 4, self._make_item(str(row[3])))      # h_px
+        self.table.setItem(r, 5, self._make_item(row[14]))          # added_by
+        self.table.setItem(r, 6, self._make_item(row[15]))          # added_at
+        self.table.setItem(r, 7, self._make_item(row[16]))          # changed_by
+        self.table.setItem(r, 8, self._make_item(row[17]))          # changed_at
+        self.table.setItem(r, 9, self._make_item(row[18]))          # changed_no
 
     def render_page(self):
         self.table.setSortingEnabled(False)
@@ -311,7 +311,7 @@ class StickerSizePage(QWidget):
 
     def load_data(self):
         try:
-            self.all_data = [_row_to_tuple(r) for r in fetch_all_mmstkr()]
+            self.all_data = [_row_to_tuple(r) for r in fetch_all_mstckr()]
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Failed to load data:\n\n{exc}")
             self.all_data = []
@@ -326,7 +326,7 @@ class StickerSizePage(QWidget):
 
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
-        col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 1)
+        col_idx = _COL_HEADER_TO_TUPLE_IDX.get(self._last_filter_type, 0)
         self.filtered_data = (
             list(self.all_data) if not query
             else [row for row in self.all_data if query in str(row[col_idx] or "").lower()]
@@ -392,6 +392,22 @@ class StickerSizePage(QWidget):
             if btn:
                 btn.clicked.connect(slot)
 
+    # ── Shared initial_data builder ───────────────────────────────────────────
+
+    def _row_to_modal_data(self, row: tuple) -> dict:
+        return {
+            "name":       row[0],
+            "width_in":   str(row[2]),
+            "width_px":   str(row[4]),
+            "height_in":  str(row[1]),
+            "height_px":  str(row[3]),
+            "added_by":   row[14],
+            "added_at":   row[15],
+            "changed_by": row[16],
+            "changed_at": row[17],
+            "changed_no": row[18],
+        }
+
     # ── Action handlers ───────────────────────────────────────────────────────
 
     def handle_add_action(self):
@@ -409,6 +425,9 @@ class StickerSizePage(QWidget):
         if not name:
             QMessageBox.warning(self, "Validation", "Sticker name is required.")
             return
+        if len(name) > 20:
+            QMessageBox.warning(self, "Validation", "Sticker name must be 20 characters or fewer.")
+            return
         dims = _parse_submitted_dims(data)
         if dims is None:
             QMessageBox.warning(self, "Validation",
@@ -416,7 +435,7 @@ class StickerSizePage(QWidget):
             return
         w_in, h_in, w_px, h_px = dims
         try:
-            create_mmstkr(name=name, h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px)
+            create_mstckr(name=name, h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px)
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
@@ -431,39 +450,22 @@ class StickerSizePage(QWidget):
             fields=_build_form_schema(),
             parent=self,
             mode="edit",
-            initial_data={
-                "name":       row[1],
-                # dimension_pair reads {field}_in and {field}_px from initial_data
-                "width_in":   str(row[2]),
-                "width_px":   str(row[3]),
-                "height_in":  str(row[4]),
-                "height_px":  str(row[5]),
-                "added_by":   row[6],
-                "added_at":   row[7],
-                "changed_by": row[8],
-                "changed_at": row[9],
-                "changed_no": row[10],
-            },
+            initial_data=self._row_to_modal_data(row),
         )
         modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
-        name = data.get("name", "").strip()
-        if not name:
-            QMessageBox.warning(self, "Validation", "Sticker name is required.")
-            return
         dims = _parse_submitted_dims(data)
         if dims is None:
             QMessageBox.warning(self, "Validation",
                                 "Width and height must be valid positive numbers.")
             return
         w_in, h_in, w_px, h_px = dims
-        old_changed_no = int(row[10]) if str(row[10]).isdigit() else 0
+        old_changed_no = int(row[18]) if str(row[18]).isdigit() else 0
         try:
-            update_mmstkr(
+            update_mstckr(
                 pk=row[0],
-                name=name,
                 h_in=h_in,
                 w_in=w_in,
                 h_px=h_px,
@@ -485,18 +487,7 @@ class StickerSizePage(QWidget):
             fields=_build_form_schema(),
             parent=self,
             mode="view",
-            initial_data={
-                "name":       row[1],
-                "width_in":   str(row[2]),
-                "width_px":   str(row[3]),
-                "height_in":  str(row[4]),
-                "height_px":  str(row[5]),
-                "added_by":   row[6],
-                "added_at":   row[7],
-                "changed_by": row[8],
-                "changed_at": row[9],
-                "changed_no": row[10],
-            },
+            initial_data=self._row_to_modal_data(row),
         )
         self._open_modal(modal)
 
@@ -509,18 +500,14 @@ class StickerSizePage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Sticker Size"
-        ws.append([
-            "NAME",
-            "WIDTH (INCH)", "WIDTH (PX)",
-            "HEIGHT (INCH)", "HEIGHT (PX)",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
-        ])
+        ws.append(_TABLE_HEADERS)
         for row in self.filtered_data:
             ws.append([
-                row[1],  row[2],  row[3],   # name, w_in, w_px
-                row[4],  row[5],             # h_in, h_px
-                row[6],  row[7],  row[8],    # added_by/at, changed_by
-                row[9],  row[10],            # changed_at, changed_no
+                row[0],                           # name
+                row[2],  row[4],                  # w_in, w_px
+                row[1],  row[3],                  # h_in, h_px
+                row[14], row[15],                 # added_by, added_at
+                row[16], row[17], row[18],         # changed_by, changed_at, changed_no
             ])
         wb.save(path)
         QMessageBox.information(self, "Export Complete",
@@ -533,13 +520,13 @@ class StickerSizePage(QWidget):
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText("Are you sure you want to delete this record?")
-        msg.setInformativeText(f"Name: {row[1]}")
+        msg.setInformativeText(f"Name: {row[0]}")
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
             try:
-                soft_delete_mmstkr(row[0])
+                soft_delete_mstckr(row[0])
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
                 return

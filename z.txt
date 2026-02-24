@@ -1,0 +1,18 @@
+ALTER TABLE barcodesap.barsys
+ADD COLUMN bsrgid  bpchar(50),
+ADD COLUMN bsrgdt  timestamp(3) DEFAULT NOW() NOT NULL,
+ADD COLUMN bschid  bpchar(50),
+ADD COLUMN bsdlfg  bpchar(1) DEFAULT '0' NOT NULL,
+ADD COLUMN bsdpfg  bpchar(1) DEFAULT '1' NOT NULL,
+ADD COLUMN bsdsfg  bpchar(1) DEFAULT '0',
+ADD COLUMN bsptfg  bpchar(1) DEFAULT '0',
+ADD COLUMN bsptct  int4 DEFAULT 0,
+ADD COLUMN bsptid  bpchar(50),
+ADD COLUMN bsptdt  timestamp(3),
+ADD COLUMN bssrce  bpchar(50),
+ADD COLUMN bsusrm  text,
+ADD COLUMN bsitrm  text,
+ADD COLUMN bscsdt  timestamp(3) DEFAULT NOW(),
+ADD COLUMN bscsid  bpchar(50),
+ADD COLUMN bscsno  bpchar(50),
+ADD COLUMN bsunix  bpchar(50);
