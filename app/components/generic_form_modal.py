@@ -1420,17 +1420,14 @@ class GenericFormModal(QDialog):
             def _labeled_input(label_text, placeholder):
                 cell = QWidget()
                 cell.setStyleSheet("background: transparent;")
-                vl = QVBoxLayout(cell)
-                vl.setContentsMargins(0, 0, 0, 0)
-                vl.setSpacing(3)
+                hl = QHBoxLayout(cell)
+                hl.setContentsMargins(0, 0, 0, 0)
+                hl.setSpacing(6)
 
-                header_lbl = QLabel(label_text)
-                header_lbl.setStyleSheet(
-                    f"font-size: 11px; font-weight: 600; color: {COLORS['text_muted']};"
-                    " letter-spacing: 0.04em; background: transparent;"
-                )
                 inp = QLineEdit()
                 inp.setMinimumHeight(36)
+                inp.setFixedWidth(120)  # optional: keeps both sides balanced
+
                 if editable:
                     inp.setPlaceholderText(placeholder)
                     self._style_input(inp)
@@ -1438,13 +1435,35 @@ class GenericFormModal(QDialog):
                     inp.setReadOnly(True)
                     inp.setStyleSheet(self._view_line_edit_style())
 
+                header_lbl = QLabel(label_text)
+                header_lbl.setFixedWidth(40)
+                header_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                header_lbl.setStyleSheet(
+                    f"""
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: {COLORS['text_muted']};
+                    letter-spacing: 0.04em;
+                    background: transparent;
+                    """
+                )
+
                 err_lbl = QLabel("")
                 err_lbl.setStyleSheet("font-size: 11px; color: #EF4444; background: transparent;")
                 err_lbl.setVisible(False)
 
-                vl.addWidget(header_lbl)
+                # input + error stacked
+                input_container = QWidget()
+                vl = QVBoxLayout(input_container)
+                vl.setContentsMargins(0, 0, 0, 0)
+                vl.setSpacing(2)
                 vl.addWidget(inp)
                 vl.addWidget(err_lbl)
+
+                # 🔁 Reversed order (box first, label second)
+                hl.addWidget(input_container)
+                hl.addWidget(header_lbl)
+
                 return cell, inp, err_lbl
 
             inch_cell, inch_input, inch_err = _labeled_input("INCH", "e.g. 2.5")
