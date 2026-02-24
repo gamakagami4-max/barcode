@@ -45,11 +45,11 @@ VIEW_DETAIL_FIELDS = [
 ]
 
 _COL_HEADER_TO_TUPLE_IDX = {
+    "ENGINE":            1,
     "CONNECTION":        2,
     "TABLE NAME":        3,
-    "QUERY LINK SERVER": 4,
     "FIELDS":            12,
-    "ENGINE":            1,
+    "QUERY LINK SERVER": 4,
     "ADDED BY":          5,
     "ADDED AT":          6,
     "CHANGED BY":        7,
@@ -287,10 +287,16 @@ class SourceDataPage(QWidget):
         layout.addSpacing(5)
 
         self.table_comp = StandardTable([
-            "CONNECTION", "TABLE NAME", "QUERY LINK SERVER",
-            "FIELDS",
             "ENGINE",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+            "CONNECTION",
+            "TABLE NAME",
+            "FIELDS",
+            "QUERY LINK SERVER",
+            "ADDED BY",
+            "ADDED AT",
+            "CHANGED BY",
+            "CHANGED AT",
+            "CHANGED NO",
         ])
         self.table = self.table_comp.table
         self.table.setWordWrap(True)
@@ -317,17 +323,15 @@ class SourceDataPage(QWidget):
 
     def _configure_table_columns(self):
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
-        hdr.resizeSection(2, QUERY_COL_FIXED_WIDTH)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(8, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ENGINE
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # CONNECTION
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # TABLE NAME
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # FIELDS
+        hdr.setSectionResizeMode(4, QHeaderView.Fixed)             # QUERY
+        hdr.resizeSection(4, QUERY_COL_FIXED_WIDTH)
+
+        for i in range(5, 10):
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
 
@@ -404,12 +408,18 @@ class SourceDataPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
 
+        # ENGINE
+        self.table.setItem(r, 0, self._make_item(row[1]))
+
+        # CONNECTION
         item_conn = self._make_item(row[2])
         item_conn.setData(Qt.UserRole, ROW_STANDARD)
-        self.table.setItem(r, 0, item_conn)
-        self.table.setItem(r, 1, self._make_item(row[3]))
-        self.table.setItem(r, 2, self._make_item(wrap_query_text(row[4])))
+        self.table.setItem(r, 1, item_conn)
 
+        # TABLE NAME
+        self.table.setItem(r, 2, self._make_item(row[3]))
+
+        # FIELDS
         fields_text = row[12] if len(row) > 12 else ""
         if fields_text and len(fields_text) > 60:
             _flds = [f.strip() for f in fields_text.split(",") if f.strip()]
@@ -422,13 +432,15 @@ class SourceDataPage(QWidget):
             fields_display = fields_text
         self.table.setItem(r, 3, self._make_item(fields_display))
 
-        self.table.setItem(r, 4, self._make_item(row[1]))
+        # QUERY
+        self.table.setItem(r, 4, self._make_item(wrap_query_text(row[4])))
+
+        # META
         self.table.setItem(r, 5, self._make_item(row[5]))
         self.table.setItem(r, 6, self._make_item(row[6]))
         self.table.setItem(r, 7, self._make_item(row[7]))
         self.table.setItem(r, 8, self._make_item(row[8]))
         self.table.setItem(r, 9, self._make_item(row[9]))
-
     def render_page(self):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
@@ -783,22 +795,30 @@ class SourceDataPage(QWidget):
         ws = wb.active
         ws.title = "Master Source Group"
         ws.append([
-            "CONNECTION", "TABLE NAME", "QUERY / LINK SERVER", "FIELDS", "ENGINE",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+            "ENGINE",
+            "CONNECTION",
+            "TABLE NAME",
+            "FIELDS",
+            "QUERY / LINK SERVER",
+            "ADDED BY",
+            "ADDED AT",
+            "CHANGED BY",
+            "CHANGED AT",
+            "CHANGED NO",
         ])
         for row in self.filtered_data:
             fields_val = row[12] if len(row) > 12 else ""
             ws.append([
-                str(row[2]) if row[2] is not None else "",
-                str(row[3]) if row[3] is not None else "",
-                str(row[4]) if row[4] is not None else "",
+                str(row[1]) if row[1] else "",
+                str(row[2]) if row[2] else "",
+                str(row[3]) if row[3] else "",
                 fields_val,
-                str(row[1]) if row[1] is not None else "",
-                str(row[5]) if row[5] is not None else "",
-                str(row[6]) if row[6] is not None else "",
-                str(row[7]) if row[7] is not None else "",
-                str(row[8]) if row[8] is not None else "",
-                str(row[9]) if row[9] is not None else "",
+                str(row[4]) if row[4] else "",
+                str(row[5]) if row[5] else "",
+                str(row[6]) if row[6] else "",
+                str(row[7]) if row[7] else "",
+                str(row[8]) if row[8] else "",
+                str(row[9]) if row[9] else "",
             ])
         wb.save(path)
         QMessageBox.information(
