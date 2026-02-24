@@ -9,12 +9,12 @@ from components.standard_page_header import StandardPageHeader
 from components.standard_table import StandardTable
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
-import re
-from server.repositories.mmprty_repo import (
-    fetch_all_prty,
-    create_prty,
-    update_prty,
-    delete_prty,
+from server.repositories.tyfltr_repo import (
+    fetch_all_tyfltr,
+    fetch_tyfltr_by_pk,
+    create_tyfltr,
+    update_tyfltr,
+    soft_delete_tyfltr,
 )
 
 # --- Design Tokens ---
@@ -23,91 +23,107 @@ COLORS = {
     "link":    "#6366F1",
 }
 
-# Row tuple shape: (INGGRIS, SPANYOL, PRANCIS, JERMAN, ADDED_BY, ADDED_AT, CHANGED_BY, CHANGED_AT, CHANGED_NO)
+# Header → repo dict key
+_HEADER_MAP = {
+    "ENGLISH":    "pk",
+    "SPANISH":    "span",
+    "FRENCH":     "fren",
+    "GERMAN":     "germ",
+    "ADDED BY":   "added_by",
+    "ADDED AT":   "added_at",
+    "CHANGED BY": "changed_by",
+    "CHANGED AT": "ch_dt",
+    "CHANGED NO": "changed_no",
+}
+
 VIEW_DETAIL_FIELDS = [
-    ("English (Inggris)", 0),
-    ("Spanish (Spanyol)", 1),
-    ("French (Prancis)",  2),
-    ("German (Jerman)",   3),
-    ("Added By",          4),
-    ("Added At",          5),
-    ("Changed By",        6),
-    ("Changed At",        7),
-    ("Changed No",        8),
+    ("English", "pk"),
+    ("Spanish", "span"),
+    ("French",  "fren"),
+    ("German",  "germ"),
+    ("Added By",    "added_by"),
+    ("Added At",    "added_at"),
+    ("Changed By",  "changed_by"),
+    ("Changed At",  "ch_dt"),
+    ("Changed No",  "changed_no"),
 ]
 
 
-def _build_form_schema(mode: str = "add") -> list[dict]:
-    """
-    All modes show the same fields for consistency.
-    Audit fields are always readonly — blank in add, populated in edit/view.
-    """
-    schema = [
+def _build_form_schema() -> list[dict]:
+    return [
         {
-            "name": "inggris",
-            "label": "English (Inggris)",
-            "type": "text",
-            "placeholder": "Enter English translation",
-            "required": True,
+            "name":        "engl",
+            "label":       "English",
+            "type":        "text",
+            "placeholder": "Enter English value",
+            "required":    True,
         },
         {
-            "name": "spanyol",
-            "label": "Spanish (Spanyol)",
-            "type": "text",
+            "name":        "span",
+            "label":       "Spanish",
+            "type":        "text",
             "placeholder": "Enter Spanish translation",
-            "required": False,
+            "required":    False,
         },
         {
-            "name": "prancis",
-            "label": "French (Prancis)",
-            "type": "text",
+            "name":        "fren",
+            "label":       "French",
+            "type":        "text",
             "placeholder": "Enter French translation",
-            "required": False,
+            "required":    False,
         },
         {
-            "name": "jerman",
-            "label": "German (Jerman)",
-            "type": "text",
+            "name":        "germ",
+            "label":       "German",
+            "type":        "text",
             "placeholder": "Enter German translation",
-            "required": False,
+            "required":    False,
         },
-        # Audit fields — always present, always readonly
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},
         {"name": "changed_by", "label": "Changed By", "type": "readonly"},
         {"name": "changed_at", "label": "Changed At", "type": "readonly"},
         {"name": "changed_no", "label": "Changed No", "type": "readonly"},
     ]
-    return schema
+
+
+def _fmt_dt(val) -> str:
+    if val is None:
+        return ""
+    try:
+        return val.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(val)
 
 
 class ProductTypePage(QWidget):
     def __init__(self):
         super().__init__()
-        self.all_data = []
-        self.filtered_data = []
-        self.current_page = 0
-        self.page_size = 25
+        self.all_data:            list[dict]       = []
+        self.filtered_data:       list[dict]       = []
+        self.current_page         = 0
+        self.page_size            = 25
         self.available_page_sizes = [25, 50, 100]
-        self._last_filter_type = "INGGRIS"
-        self._last_search_text = ""
-        self._sort_fields = []
-        self._sort_directions = {}
+        self._last_filter_type    = "ENGLISH"
+        self._last_search_text    = ""
+        self._sort_fields:        list[str]        = []
+        self._sort_directions:    dict[str, str]   = {}
         self._active_modal: GenericFormModal | None = None
         self.init_ui()
-        self.load_translations()
+        self.load_data()
+
+    # ── UI setup ──────────────────────────────────────────────────────────────
 
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(40, 20, 40, 12)
         self.main_layout.setSpacing(0)
-        enabled = ["Add", "Excel", "Refresh", "View Detail"]
 
         self.header = StandardPageHeader(
             title="Product Type",
-            subtitle="Description",
-            enabled_actions=enabled
+            subtitle="Manage product type translations",
+            enabled_actions=["Add", "Excel", "Refresh", "View Detail"],
         )
         self.main_layout.addWidget(self.header)
         self.main_layout.addSpacing(12)
@@ -119,10 +135,11 @@ class ProductTypePage(QWidget):
         self.main_layout.addSpacing(5)
 
         self.table_comp = StandardTable([
-            "INGGRIS", "SPANYOL", "PRANCIS", "JERMAN",
-            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
+            "ENGLISH", "SPANISH", "FRENCH", "GERMAN",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         self.table = self.table_comp.table
+
         self.sort_bar = SortByWidget(self.table)
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
         self.main_layout.addWidget(self.sort_bar)
@@ -135,19 +152,15 @@ class ProductTypePage(QWidget):
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
         self.sort_bar.initialize_default_sort()
-
         self.table.itemSelectionChanged.connect(self._on_row_selection_changed)
         self._update_selection_dependent_state(False)
 
-    # ------------------------------------------------------------------
-    # Selection helpers
-    # ------------------------------------------------------------------
+    # ── Selection helpers ─────────────────────────────────────────────────────
 
     def _on_row_selection_changed(self):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
     def _update_selection_dependent_state(self, enabled: bool):
-        # Don't re-enable selection buttons while a modal is open
         if self._active_modal is not None:
             return
         for label in ("Edit", "Delete", "View Detail"):
@@ -155,54 +168,47 @@ class ProductTypePage(QWidget):
             if btn:
                 btn.setEnabled(enabled)
 
-    def _get_selected_pk(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        if not selected_rows:
+    def _get_selected_pk(self) -> str | None:
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
             return None
-        table_row = selected_rows[0].row()
-        item = self.table.item(table_row, 0)
-        if not item:
-            return None
-        return item.data(Qt.UserRole)
+        item = self.table.item(rows[0].row(), 0)
+        return item.data(Qt.UserRole) if item else None
 
-    # ------------------------------------------------------------------
-    # Modal lock helpers
-    # ------------------------------------------------------------------
+    def _get_selected_row(self) -> dict | None:
+        pk = self._get_selected_pk()
+        if pk is None:
+            return None
+        return next((r for r in self.filtered_data if r["pk"] == pk), None)
+
+    # ── Modal lock helpers ────────────────────────────────────────────────────
 
     _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
 
     def _lock_header(self):
-        """Disable every header button while a modal is open."""
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
             if btn:
                 btn.setEnabled(False)
 
     def _unlock_header(self):
-        """Re-enable header buttons when the modal closes."""
         has_selection = bool(self.table.selectedItems())
         for label in self._ALL_HEADER_ACTIONS:
             btn = self.header.get_action_button(label)
             if btn:
-                if label in ("Edit", "Delete", "View Detail"):
-                    btn.setEnabled(has_selection)
-                else:
-                    btn.setEnabled(True)
+                btn.setEnabled(has_selection if label in ("Edit", "Delete", "View Detail") else True)
 
     def _clear_active_modal(self):
         self._active_modal = None
 
     def _open_modal(self, modal: GenericFormModal):
-        """Wire lock/unlock signals, track the active modal, and open it."""
         modal.opened.connect(self._lock_header)
         modal.closed.connect(self._unlock_header)
         modal.closed.connect(self._clear_active_modal)
         self._active_modal = modal
         modal.exec()
 
-    # ------------------------------------------------------------------
-    # Page visibility — hide/restore modal on page switch
-    # ------------------------------------------------------------------
+    # ── Page visibility ───────────────────────────────────────────────────────
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -214,152 +220,106 @@ class ProductTypePage(QWidget):
         if self._active_modal is not None and self._active_modal.isVisible():
             self._active_modal.hide()
 
-    # ------------------------------------------------------------------
-    # Data
-    # ------------------------------------------------------------------
+    # ── Data loading ──────────────────────────────────────────────────────────
 
-    def load_translations(self):
-        rows = fetch_all_prty()
-        self.all_data = rows
+    def load_data(self):
+        try:
+            self.all_data = fetch_all_tyfltr()
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Failed to load data:\n\n{exc}")
+            self.all_data = []
         self._apply_filter_and_reset_page()
+
+    # ── Rendering ─────────────────────────────────────────────────────────────
 
     def render_page(self):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
-        data = self.filtered_data or []
 
+        data  = self.filtered_data or []
         total = len(data)
-        start_idx = self.current_page * self.page_size
-        end_idx = min(start_idx + self.page_size, total)
-        page_data = data[start_idx:end_idx]
+        start = self.current_page * self.page_size
+        end   = min(start + self.page_size, total)
 
-        for r, row_data in enumerate(page_data):
+        for r, row in enumerate(data[start:end]):
             self.table.insertRow(r)
             self.table.setRowHeight(r, 28)
 
             values = [
-                row_data["mkingr"],
-                row_data["mkspan"],
-                row_data["mkprnc"],
-                row_data["mkjerm"],
-                row_data["mkrgid"],
-                row_data["mkrgdt"].strftime("%Y-%m-%d %H:%M:%S") if row_data["mkrgdt"] else "",
-                row_data["mkchid"],
-                row_data["mkchdt"].strftime("%Y-%m-%d %H:%M:%S") if row_data["mkchdt"] else "",
-                str(row_data["mkchno"]),
+                str(row.get("pk")         or ""),
+                str(row.get("span")       or ""),
+                str(row.get("fren")       or ""),
+                str(row.get("germ")       or ""),
+                str(row.get("added_by")   or ""),
+                _fmt_dt(row.get("added_at")),
+                str(row.get("changed_by") or ""),
+                _fmt_dt(row.get("ch_dt")),
+                str(row.get("changed_no") or 0),
             ]
 
             for c, val in enumerate(values):
-                item = QTableWidgetItem(str(val or ""))
+                item = QTableWidgetItem(val)
                 if c == 0:
                     item.setForeground(QColor(COLORS["link"]))
-                    item.setData(Qt.UserRole, row_data["mkprtyiy"])
+                    item.setData(Qt.UserRole, row["pk"])
                 self.table.setItem(r, c, item)
 
-        for r in range(len(page_data)):
-            self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start_idx + r + 1)))
+        for r in range(end - start):
+            self.table.setVerticalHeaderItem(r, QTableWidgetItem(str(start + r + 1)))
 
-        has_prev = self.current_page > 0
-        has_next = end_idx < total
         self.pagination.update(
-            start=0 if total == 0 else start_idx + 1,
-            end=0 if total == 0 else end_idx,
+            start=0 if total == 0 else start + 1,
+            end=0 if total == 0 else end,
             total=total,
-            has_prev=has_prev,
-            has_next=has_next,
+            has_prev=self.current_page > 0,
+            has_next=end < total,
             current_page=self.current_page,
             page_size=self.page_size,
             available_page_sizes=self.available_page_sizes,
         )
 
-    # ------------------------------------------------------------------
-    # Filter / sort
-    # ------------------------------------------------------------------
+    # ── Filter / sort ─────────────────────────────────────────────────────────
 
-    def filter_table(self, filter_type, search_text):
+    def filter_table(self, filter_type: str, search_text: str):
         self._last_filter_type = filter_type
         self._last_search_text = search_text
         self._apply_filter_and_reset_page()
 
     def _apply_filter_and_reset_page(self):
         query = (self._last_search_text or "").lower().strip()
+        key   = _HEADER_MAP.get(self._last_filter_type, "pk")
 
-        header_map = {
-            "INGGRIS":    "mkingr",
-            "SPANYOL":    "mkspan",
-            "PRANCIS":    "mkprnc",
-            "JERMAN":     "mkjerm",
-            "ADDED BY":   "mkrgid",
-            "ADDED AT":   "mkrgdt",
-            "CHANGED BY": "mkchid",
-            "CHANGED AT": "mkchdt",
-            "CHANGED NO": "mkchno",
-        }
-
-        key = header_map.get(self._last_filter_type, "mkingr")
-
-        if not query:
-            self.filtered_data = list(self.all_data)
-        else:
-            self.filtered_data = [
-                row for row in self.all_data
-                if query in str(row.get(key, "")).lower()
-            ]
-
+        self.filtered_data = (
+            list(self.all_data)
+            if not query
+            else [r for r in self.all_data if query in str(r.get(key) or "").lower()]
+        )
         self._apply_sort()
         self.current_page = 0
         self.render_page()
 
     def on_sort_changed(self, fields: list[str], field_directions: dict):
-        self._sort_fields = fields or []
+        self._sort_fields     = fields or []
         self._sort_directions = field_directions or {}
         self._apply_filter_and_reset_page()
 
     def _apply_sort(self):
         if not self._sort_fields or not self.filtered_data:
             return
-
-        header_map = {
-            "INGGRIS":    "mkingr",
-            "SPANYOL":    "mkspan",
-            "PRANCIS":    "mkprnc",
-            "JERMAN":     "mkjerm",
-            "ADDED BY":   "mkrgid",
-            "ADDED AT":   "mkrgdt",
-            "CHANGED BY": "mkchid",
-            "CHANGED AT": "mkchdt",
-            "CHANGED NO": "mkchno",
-        }
-
         for field in reversed(self._sort_fields):
-            direction = self._sort_directions.get(field, "asc")
-            key = header_map.get(field)
+            key = _HEADER_MAP.get(field)
             if not key:
                 continue
             self.filtered_data.sort(
-                key=lambda row: row.get(key) or "",
-                reverse=(direction == "desc"),
+                key=lambda row, k=key: str(row.get(k) or "").lower(),
+                reverse=(self._sort_directions.get(field, "asc") == "desc"),
             )
 
-    def _get_sort_value(self, row, idx):
-        val = row[idx] if idx < len(row) else ""
-        str_val = "" if val is None else str(val).strip()
-        try:
-            return (0, float(str_val))
-        except (ValueError, AttributeError):
-            return (1, str_val.lower())
-
-    # ------------------------------------------------------------------
-    # Pagination
-    # ------------------------------------------------------------------
+    # ── Pagination ────────────────────────────────────────────────────────────
 
     def on_page_changed(self, page_action: int):
-        total = len(self.filtered_data)
-        total_pages = (total + self.page_size - 1) // self.page_size
-        if total_pages <= 0:
-            self.current_page = 0
-            self.render_page()
-            return
+        total       = len(self.filtered_data or [])
+        total_pages = max(1, (total + self.page_size - 1) // self.page_size)
         if page_action == -1:
             self.current_page = max(0, self.current_page - 1)
         elif page_action == 1:
@@ -369,60 +329,31 @@ class ProductTypePage(QWidget):
         self.render_page()
 
     def on_page_size_changed(self, new_size: int):
-        self.page_size = new_size
+        self.page_size    = new_size
         self.current_page = 0
         self.render_page()
 
-    # ------------------------------------------------------------------
-    # Header action wiring
-    # ------------------------------------------------------------------
+    # ── Header button wiring ──────────────────────────────────────────────────
 
     def _connect_header_actions(self):
-        for action in ["Refresh", "Add", "Excel", "Edit", "Delete", "View Detail"]:
-            btn = self.header.get_action_button(action)
+        for label, slot in {
+            "Refresh":     self.load_data,
+            "Add":         self.handle_add_action,
+            "Excel":       self.handle_export_action,
+            "Edit":        self.handle_edit_action,
+            "Delete":      self.handle_delete_action,
+            "View Detail": self.handle_view_detail_action,
+        }.items():
+            btn = self.header.get_action_button(label)
             if btn:
-                mapping = {
-                    "Refresh":     self.load_translations,
-                    "Add":         self.handle_add_action,
-                    "Excel":       self.handle_export_action,
-                    "Edit":        self.handle_edit_action,
-                    "Delete":      self.handle_delete_action,
-                    "View Detail": self.handle_view_detail_action,
-                }
-                if action in mapping:
-                    btn.clicked.connect(mapping[action])
+                btn.clicked.connect(slot)
 
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
-
-    def _validate_translation_input(self, value: str, field_label: str) -> bool:
-        """Allows only letters, spaces, hyphen and apostrophe."""
-        if not value:
-            QMessageBox.warning(self, "Validation Error",
-                                f"{field_label} cannot be empty.")
-            return False
-
-        pattern = r"^[A-Za-zÀ-ÿ\s'-]+$"
-        if not re.fullmatch(pattern, value):
-            QMessageBox.warning(
-                self,
-                "Invalid Input",
-                f"{field_label} must contain only letters.\n"
-                "Numbers and special characters are not allowed."
-            )
-            return False
-
-        return True
-
-    # ------------------------------------------------------------------
-    # Action handlers
-    # ------------------------------------------------------------------
+    # ── Add ───────────────────────────────────────────────────────────────────
 
     def handle_add_action(self):
         modal = GenericFormModal(
-            title="Add Product Type Translation",
-            fields=_build_form_schema(mode="add"),
+            title="Add Product Type",
+            fields=_build_form_schema(),
             parent=self,
             mode="add",
         )
@@ -430,43 +361,33 @@ class ProductTypePage(QWidget):
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        import datetime
+        engl = data.get("engl", "").strip()
+        span = data.get("span", "").strip()
+        fren = data.get("fren", "").strip()
+        germ = data.get("germ", "").strip()
 
-        inggris = data.get("inggris", "").strip()
-        spanyol = data.get("spanyol", "").strip()
-        prancis = data.get("prancis", "").strip()
-        jerman  = data.get("jerman", "").strip()
-
-        if not self._validate_translation_input(inggris, "English (Inggris)"):
+        if not engl:
+            QMessageBox.warning(self, "Validation Error", "English value is required.")
             return
 
-        for value, label in [
-            (spanyol, "Spanish (Spanyol)"),
-            (prancis, "French (Prancis)"),
-            (jerman,  "German (Jerman)"),
-        ]:
-            if value and not self._validate_translation_input(value, label):
-                return
+        # Duplicate check
+        if any(r["pk"].strip().lower() == engl.lower() for r in self.all_data):
+            QMessageBox.warning(self, "Duplicate Entry",
+                                f'English value "{engl}" already exists.')
+            return
 
-        for row in self.all_data:
-            if row["mkingr"].strip().lower() == inggris.lower():
-                QMessageBox.warning(
-                    self,
-                    "Duplicate Entry",
-                    f'English "{inggris}" already exists.'
-                )
-                return
+        try:
+            create_tyfltr(
+                engl=engl,
+                span=span or engl,
+                fren=fren or engl,
+                germ=germ or engl,
+            )
+            self.load_data()
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
 
-        create_prty(
-            ingredient=inggris,
-            spanish=spanyol,
-            pronunciation=prancis,
-            german=jerman,
-            user="Admin",
-        )
-
-        self.load_translations()
-        self._apply_filter_and_reset_page()
+    # ── Export ────────────────────────────────────────────────────────────────
 
     def handle_export_action(self):
         import openpyxl
@@ -481,123 +402,117 @@ class ProductTypePage(QWidget):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Product Type"
-        ws.append(["INGGRIS", "SPANYOL", "PRANCIS", "JERMAN",
-                   "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"])
+        ws.append([
+            "ENGLISH", "SPANISH", "FRENCH", "GERMAN",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+        ])
         for row in self.filtered_data:
-            ws.append([str(v) if v is not None else "" for v in row])
+            ws.append([
+                str(row.get("pk")         or ""),
+                str(row.get("span")       or ""),
+                str(row.get("fren")       or ""),
+                str(row.get("germ")       or ""),
+                str(row.get("added_by")   or ""),
+                _fmt_dt(row.get("added_at")),
+                str(row.get("changed_by") or ""),
+                _fmt_dt(row.get("ch_dt")),
+                str(row.get("changed_no") or 0),
+            ])
         wb.save(path)
-        QMessageBox.information(self, "Export Complete",
-                                f"Exported {len(self.filtered_data)} records to:\n{path}")
+        QMessageBox.information(
+            self, "Export Complete",
+            f"Exported {len(self.filtered_data)} records to:\n{path}",
+        )
+
+    # ── View Detail ───────────────────────────────────────────────────────────
 
     def handle_view_detail_action(self):
-        pk = self._get_selected_pk()
-        if pk is None:
+        row = self._get_selected_row()
+        if row is None:
             return
-
-        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
-        if not row:
-            return
-
         fields = [
-            ("English (Inggris)", row["mkingr"]),
-            ("Spanish (Spanyol)", row["mkspan"]),
-            ("French (Prancis)",  row["mkprnc"]),
-            ("German (Jerman)",   row["mkjerm"]),
-            ("Added By",          row["mkrgid"]),
-            ("Added At",          row["mkrgdt"]),
-            ("Changed By",        row["mkchid"]),
-            ("Changed At",        row["mkchdt"]),
-            ("Changed No",        row["mkchno"]),
+            (label, _fmt_dt(row.get(key)) if "at" in key else str(row.get(key) or ""))
+            for label, key in VIEW_DETAIL_FIELDS
         ]
-
         modal = GenericFormModal(
             title="Product Type Detail",
-            subtitle="Full details for the selected product type.",
+            subtitle="Full details for the selected record.",
             fields=fields,
             parent=self,
             mode="view",
         )
         self._open_modal(modal)
 
-    def handle_edit_action(self):
-        pk = self._get_selected_pk()
-        if pk is None:
-            return
+    # ── Edit ──────────────────────────────────────────────────────────────────
 
-        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
-        if not row:
+    def handle_edit_action(self):
+        row = self._get_selected_row()
+        if row is None:
             return
 
         initial = {
-            "inggris":    row["mkingr"],
-            "spanyol":    row["mkspan"],
-            "prancis":    row["mkprnc"],
-            "jerman":     row["mkjerm"],
-            "added_by":   row["mkrgid"],
-            "added_at":   row["mkrgdt"],
-            "changed_by": row["mkchid"],
-            "changed_at": row["mkchdt"],
-            "changed_no": row["mkchno"],
+            "engl":       row.get("pk",         ""),
+            "span":       row.get("span",        ""),
+            "fren":       row.get("fren",        ""),
+            "germ":       row.get("germ",        ""),
+            "added_by":   row.get("added_by",    ""),
+            "added_at":   _fmt_dt(row.get("added_at")),
+            "changed_by": row.get("changed_by",  ""),
+            "changed_at": _fmt_dt(row.get("ch_dt")),
+            "changed_no": str(row.get("changed_no") or 0),
         }
-
         modal = GenericFormModal(
-            title="Edit Product Type Translation",
-            fields=_build_form_schema(mode="edit"),
+            title="Edit Product Type",
+            fields=_build_form_schema(),
             parent=self,
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data: self._on_edit_submitted(pk, data))
+        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
         self._open_modal(modal)
 
-    def _on_edit_submitted(self, pk, data):
-        inggris = data.get("inggris", "").strip()
-        spanyol = data.get("spanyol", "").strip()
-        prancis = data.get("prancis", "").strip()
-        jerman  = data.get("jerman", "").strip()
+    def _on_edit_submitted(self, row: dict, data: dict):
+        engl = data.get("engl", "").strip()
+        span = data.get("span", "").strip()
+        fren = data.get("fren", "").strip()
+        germ = data.get("germ", "").strip()
 
-        if not self._validate_translation_input(inggris, "English (Inggris)"):
+        if not engl:
+            QMessageBox.warning(self, "Validation Error", "English value is required.")
             return
 
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Update",
-            f'Are you sure you want to update "{inggris}"?',
-            QMessageBox.Yes | QMessageBox.Cancel,
-            QMessageBox.Cancel
-        )
+        old_changed_no = int(row.get("changed_no") or 0)
 
-        if confirm != QMessageBox.Yes:
-            return
+        try:
+            update_tyfltr(
+                pk=row["pk"],
+                span=span or engl,
+                fren=fren or engl,
+                germ=germ or engl,
+                old_changed_no=old_changed_no,
+            )
+            self.load_data()
+        except Exception as exc:
+            QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
 
-        update_prty(
-            prty_id=pk,
-            ingredient=inggris,
-            spanish=spanyol,
-            pronunciation=prancis,
-            german=jerman,
-            user="Admin",
-        )
-
-        self.load_translations()
+    # ── Delete ────────────────────────────────────────────────────────────────
 
     def handle_delete_action(self):
-        pk = self._get_selected_pk()
-        if pk is None:
+        row = self._get_selected_row()
+        if row is None:
             return
 
-        row = next((r for r in self.all_data if r["mkprtyiy"] == pk), None)
-        if not row:
-            return
-
-        name = row["mkingr"]
+        pk = row["pk"]
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
-        msg.setText(f'Are you sure you want to delete "{name}"?')
+        msg.setText(f'Are you sure you want to delete "{pk}"?')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
 
         if msg.exec() == QMessageBox.Yes:
-            delete_prty(pk, user="Admin")
-            self.load_translations()
+            try:
+                soft_delete_tyfltr(pk=pk)
+                self.load_data()
+            except Exception as exc:
+                QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
