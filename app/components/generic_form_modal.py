@@ -562,7 +562,7 @@ class _CheckboxListWidget(QWidget):
 
         # Build checkboxes
         for value, label in normalized:
-            display = f"{value} — {label}" if label and label != value else value
+            display = f"{value} AS {label}" if label and label != value else value
             cb = QCheckBox(display)
             cb.setChecked(value in checked_set)
             cb.setEnabled(not self._disabled)
