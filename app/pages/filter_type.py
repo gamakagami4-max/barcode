@@ -430,23 +430,29 @@ class FilterTypePage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, idx: int, data: dict):
-        type_name = data.get("type_name", "").strip()
-        type_desc = data.get("type_desc", "").strip() or None
+        # New values from form
+        new_type_name = data.get("type_name", "").strip()
+        type_desc     = data.get("type_desc", "").strip() or None
 
-        if not type_name:
+        if not new_type_name:
             QMessageBox.warning(self, "Validation Error", "Type Name is required.")
             return
 
-        row            = self.all_data[idx]
-        old_changed_no = int(row[6]) if str(row[6]).isdigit() else 0
+        # Old values from selected row
+        row              = self.all_data[idx]
+        old_type_name    = row[0]
+        old_changed_no   = int(row[6]) if str(row[6]).isdigit() else 0
 
         try:
             update_tyskra(
-                type_name=type_name,
-                type_desc=type_desc,
+                old_type_name=old_type_name,
+                new_type_name=new_type_name,
                 old_changed_no=old_changed_no,
+                type_desc=type_desc,
+                user="Admin",
             )
             self.load_data()
+
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
 
@@ -456,7 +462,10 @@ class FilterTypePage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
-        type_name = self.all_data[idx][0]
+
+        row           = self.all_data[idx]
+        type_name     = row[0]
+        old_changed_no = int(row[6]) if str(row[6]).isdigit() else 0
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
@@ -467,7 +476,11 @@ class FilterTypePage(QWidget):
 
         if msg.exec() == QMessageBox.Yes:
             try:
-                soft_delete_tyskra(type_name=type_name)
+                soft_delete_tyskra(
+                    type_name=type_name,
+                    old_changed_no=old_changed_no,
+                    user="Admin",
+                )
                 self.load_data()
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")

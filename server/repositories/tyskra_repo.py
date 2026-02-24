@@ -1,110 +1,21 @@
-# server/repositories/tyskra_repo.py
-
 from datetime import datetime
 from server.db import get_connection
 
 
-# ── Read ──────────────────────────────────────────────────────────────────────
-
-def fetch_all_tyskra() -> list[dict]:
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT
-                sktynm  AS type_name,
-                sktyds  AS type_desc,
-                skadby  AS added_by,
-                skaddt  AS added_at,
-                skchby  AS changed_by,
-                skchdt  AS changed_at,
-                skchno  AS changed_no,
-                skdlfg  AS deleted_flag,
-                skrgid  AS reg_id,
-                skrgdt  AS reg_at,
-                skchid  AS changed_id,
-                skdpfg  AS dp_flag,
-                skdsfg  AS ds_flag,
-                skptfg  AS pt_flag,
-                skptct  AS pt_count,
-                skptid  AS pt_id,
-                skptdt  AS pt_at,
-                sksrce  AS source,
-                skusrm  AS user_remark,
-                skitrm  AS item_remark,
-                skcsdt  AS cs_at,
-                skcsid  AS cs_id,
-                skcsno  AS cs_no,
-                skunix  AS unix_id
-            FROM barcodesap.tyskra
-            WHERE skdlfg <> 1
-            ORDER BY sktynm
-            """
-        )
-        cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def fetch_tyskra_by_pk(type_name: str) -> dict | None:
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT
-                sktynm  AS type_name,
-                sktyds  AS type_desc,
-                skadby  AS added_by,
-                skaddt  AS added_at,
-                skchby  AS changed_by,
-                skchdt  AS changed_at,
-                skchno  AS changed_no,
-                skdlfg  AS deleted_flag,
-                skrgid  AS reg_id,
-                skrgdt  AS reg_at,
-                skchid  AS changed_id,
-                skdpfg  AS dp_flag,
-                skdsfg  AS ds_flag,
-                skptfg  AS pt_flag,
-                skptct  AS pt_count,
-                skptid  AS pt_id,
-                skptdt  AS pt_at,
-                sksrce  AS source,
-                skusrm  AS user_remark,
-                skitrm  AS item_remark,
-                skcsdt  AS cs_at,
-                skcsid  AS cs_id,
-                skcsno  AS cs_no,
-                skunix  AS unix_id
-            FROM barcodesap.tyskra
-            WHERE sktynm = %s
-              AND skdlfg <> 1
-            """,
-            (type_name,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [desc[0] for desc in cur.description]
-        return dict(zip(cols, row))
-    finally:
-        conn.close()
-
-
-# ── Create ────────────────────────────────────────────────────────────────────
-
+# =========================
+# CREATE
+# =========================
 def create_tyskra(
     type_name: str,
     type_desc: str | None = None,
     user: str = "Admin",
-) -> str:
+) -> None:
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
         cur.execute(
             """
             INSERT INTO barcodesap.tyskra (
@@ -112,98 +23,180 @@ def create_tyskra(
                 sktyds,
                 skadby,
                 skaddt,
+                skchby,
+                skchdt,
                 skchno,
                 skdlfg
             )
-            VALUES (
-                %s, %s,
-                %s, %s,
-                0, 0
-            )
-            RETURNING sktynm
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 type_name,
                 type_desc,
                 user,
                 now,
+                user,
+                now,
+                1,
+                0,
             ),
         )
 
-        pk = cur.fetchone()[0]
         conn.commit()
-        return pk
 
-    except Exception:
+    except Exception as e:
         conn.rollback()
+        print("CREATE_TYSKRA ERROR:", e)
         raise
+
     finally:
         conn.close()
 
-# ── Update ────────────────────────────────────────────────────────────────────
 
+# =========================
+# UPDATE (ALLOW RENAME + LOCKING)
+# =========================
 def update_tyskra(
-    type_name: str,
+    old_type_name: str,
+    new_type_name: str,
     old_changed_no: int,
     type_desc: str | None = None,
     user: str = "Admin",
 ) -> None:
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
         cur.execute(
             """
             UPDATE barcodesap.tyskra SET
+                sktynm = %s,
                 sktyds = %s,
                 skchby = %s,
                 skchdt = %s,
                 skchno = %s
             WHERE sktynm = %s
               AND skdlfg <> 1
+              AND skchno = %s
             """,
             (
+                new_type_name,
                 type_desc,
                 user,
                 now,
                 old_changed_no + 1,
-                type_name,
+                old_type_name,
+                old_changed_no,
             ),
         )
 
         if cur.rowcount == 0:
-            raise Exception(f"Record '{type_name}' not found or already deleted.")
+            raise Exception(
+                f"Record '{old_type_name}' was modified or does not exist."
+            )
 
         conn.commit()
 
-    except Exception:
+    except Exception as e:
         conn.rollback()
+        print("UPDATE_TYSKRA ERROR:", e)
         raise
+
     finally:
         conn.close()
 
 
-# ── Delete (soft) ─────────────────────────────────────────────────────────────
-
-def soft_delete_tyskra(type_name: str, user: str = "Admin") -> None:
+# =========================
+# SOFT DELETE
+# =========================
+def soft_delete_tyskra(
+    type_name: str,
+    old_changed_no: int,
+    user: str = "Admin",
+) -> None:
     now = datetime.now()
     conn = get_connection()
+
     try:
         cur = conn.cursor()
+
         cur.execute(
             """
             UPDATE barcodesap.tyskra SET
                 skdlfg = 1,
                 skchby = %s,
                 skchdt = %s,
-                skchid = %s
+                skchno = %s
             WHERE sktynm = %s
+              AND skchno = %s
             """,
-            (user, now, user, type_name),
+            (
+                user,
+                now,
+                old_changed_no + 1,
+                type_name,
+                old_changed_no,
+            ),
         )
+
+        if cur.rowcount == 0:
+            raise Exception(
+                f"Record '{type_name}' was modified or does not exist."
+            )
+
         conn.commit()
-    except Exception:
+
+    except Exception as e:
         conn.rollback()
+        print("DELETE_TYSKRA ERROR:", e)
         raise
+
+    finally:
+        conn.close()
+
+
+# =========================
+# FETCH ALL
+# =========================
+def fetch_all_tyskra():
+    conn = get_connection()
+
+    try:
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            SELECT
+                sktynm,
+                sktyds,
+                skadby,
+                skaddt,
+                skchby,
+                skchdt,
+                skchno
+            FROM barcodesap.tyskra
+            WHERE skdlfg <> 1
+            ORDER BY sktynm
+            """
+        )
+
+        rows = cur.fetchall()
+
+        result = []
+        for r in rows:
+            result.append({
+                "type_name": r[0],
+                "type_desc": r[1],
+                "added_by": r[2],
+                "added_at": r[3],
+                "changed_by": r[4],
+                "changed_at": r[5],
+                "changed_no": r[6],
+            })
+
+        return result
+
     finally:
         conn.close()
