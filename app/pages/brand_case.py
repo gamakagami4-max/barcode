@@ -37,17 +37,19 @@ VIEW_DETAIL_FIELDS = [
 
 
 def _build_form_schema(mode: str = "add") -> list[dict]:
+    readonly_pk = (mode == "edit")
+
     return [
         {
             "name": "system_code",
             "label": "System Code",
-            "type": "text",
+            "type": "readonly" if readonly_pk else "text",
             "required": True,
         },
         {
             "name": "system_name",
             "label": "System Name",
-            "type": "text",
+            "type": "readonly" if readonly_pk else "text",
             "required": True,
         },
         {
@@ -310,14 +312,14 @@ class BrandCasePage(QWidget):
         query = (self._last_search_text or "").lower().strip()
 
         header_map = {
-            "SYSTEM CODE": "bscode",
-            "SYSTEM NAME": "bsname",
-            "DESCRIPTION": "bsdesc",
-            "ADDED BY": "bsrgid",
-            "ADDED AT": "bsrgdt",
-            "CHANGED BY": "bschid",
-            "CHANGED AT": "bschdt",
-            "CHANGED NO": "bschno",
+            "SYSTEM CODE": "code",
+            "SYSTEM NAME": "name",
+            "DESCRIPTION": "description",
+            "ADDED BY": "added_by",
+            "ADDED AT": "added_at",
+            "CHANGED BY": "changed_by",
+            "CHANGED AT": "changed_at",
+            "CHANGED NO": "changed_no",
         }
 
         key = header_map.get(self._last_filter_type, "code")
@@ -344,14 +346,14 @@ class BrandCasePage(QWidget):
             return
 
         header_map = {
-            "SYSTEM CODE": "bscode",
-            "SYSTEM NAME": "bsname",
-            "DESCRIPTION": "bsdesc",
-            "ADDED BY": "bsrgid",
-            "ADDED AT": "bsrgdt",
-            "CHANGED BY": "bschid",
-            "CHANGED AT": "bschdt",
-            "CHANGED NO": "bschno",
+            "SYSTEM CODE": "code",
+            "SYSTEM NAME": "name",
+            "DESCRIPTION": "description",
+            "ADDED BY": "added_by",
+            "ADDED AT": "added_at",
+            "CHANGED BY": "changed_by",
+            "CHANGED AT": "changed_at",
+            "CHANGED NO": "changed_no",
         }
 
         for field in reversed(self._sort_fields):
@@ -408,18 +410,29 @@ class BrandCasePage(QWidget):
         desc = data.get("description", "")
 
         if not code or not name:
-            QMessageBox.warning(self, "Validation Error",
-                                "System Code and System Name are required.")
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                "System Code and System Name are required."
+            )
             return
 
-        create_barsys(
-            code=code,
-            name=name,
-            description=desc,
-            user="Admin",
-        )
+        try:
+            create_barsys(
+                code=code,
+                name=name,
+                description=desc,
+                user="Admin",
+            )
 
-        self.load_data()
+            self.load_data()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                str(e)
+            )
 
     def handle_export_action(self):
         import openpyxl
@@ -566,8 +579,8 @@ class BrandCasePage(QWidget):
 
         if msg.exec() == QMessageBox.Yes:
             soft_delete_barsys(
-                bsname=pk[0],
-                bscode=pk[1],
+                name=pk[0],
+                code=pk[1],
                 user="Admin",
             )
             self.load_data()

@@ -1,6 +1,6 @@
 from datetime import datetime
 from server.db import get_connection
-
+import psycopg2
 
 # ── Read ──────────────────────────────────────────────────────────────────────
 
@@ -61,8 +61,8 @@ def fetch_barsys_by_pk(name: str, code: str) -> dict | None:
 # ── Create ────────────────────────────────────────────────────────────────────
 
 def create_barsys(
-    name: str,
     code: str,
+    name: str,
     description: str | None,
     user: str = "Admin",
 ) -> tuple[str, str]:
@@ -79,8 +79,8 @@ def create_barsys(
         cur.execute(
             """
             INSERT INTO barcodesap.barsys (
-                bsname,
                 bscode,
+                bsname,
                 bsdesc,
                 bsrgid,
                 bsrgdt,
@@ -89,33 +89,19 @@ def create_barsys(
                 bschno,
                 bsdlfg
             )
-            VALUES (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                0,
-                '0'
-            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,0,'0')
             RETURNING bsname, bscode
             """,
-            (
-                name,
-                code,
-                description,
-                user,
-                now,
-                now,
-                now,
-            ),
+            (code, name, description, user, now, now, now),
         )
 
         pk = cur.fetchone()
         conn.commit()
         return pk
+
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise Exception("System Code and Name already exist.")
 
     except Exception:
         conn.rollback()
