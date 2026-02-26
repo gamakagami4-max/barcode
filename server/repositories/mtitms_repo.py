@@ -16,11 +16,12 @@ def fetch_all_mtitms() -> list[dict]:
             mmtyp1   AS type1,
             mmtyp2   AS type2,
             mmweig   AS weight,
+            mmcont AS qty,
             mmumcd   AS uom,
             mmbupc   AS upc,
             mmrgid   AS added_by,
             mmrgdt   AS added_at,
-            mmchid   AS changed_by,
+            mmchby   AS changed_by,
             mmchdt   AS changed_at,
             mmchno   AS changed_no
         FROM barcodesap.mtitms
@@ -49,11 +50,12 @@ def fetch_mtitms_by_pk(pk: str) -> dict | None:
             mmtyp1   AS type1,
             mmtyp2   AS type2,
             mmweig   AS weight,
+            mmcont AS qty,
             mmumcd   AS uom,
             mmbupc   AS upc,
             mmrgid   AS added_by,
             mmrgdt   AS added_at,
-            mmchid   AS changed_by,
+            mmchby   AS changed_by,
             mmchdt   AS changed_at,
             mmchno   AS changed_no
         FROM barcodesap.mtitms
@@ -78,12 +80,13 @@ def create_mtitms(
     description: str | None,
     sap_code: str | None,
     type1: str | None,
+    warehouse: str | None,
+    part_no: str | None,
+    qty: int,
+    uom: str,
     user: str = "Admin",
 ) -> str:
-    """
-    Insert a new mtitms row.
-    Satisfies all NOT NULL constraints explicitly.
-    """
+
     now = datetime.now()
 
     conn = get_connection()
@@ -96,30 +99,26 @@ def create_mtitms(
                 mmitds,
                 mmisap,
                 mmtyp1,
+                mmwho,
+                mmpono,
+                mmcont,
+                mmumcd,
                 mmtbfg,
                 mmrgid,
                 mmrgdt,
                 mmadby,
                 mmaddt,
-                mmchid,
-                mmchdt,
                 mmchno,
                 mmdlfg
             )
             VALUES (
-                %s,  -- mmitno
-                %s,  -- mmitds
-                %s,  -- mmisap
-                %s,  -- mmtyp1
-                %s,  -- mmtbfg (required)
-                %s,  -- mmrgid
-                %s,  -- mmrgdt
-                %s,  -- mmadby
-                %s,  -- mmaddt
-                %s,  -- mmchid
-                %s,  -- mmchdt
-                0,   -- mmchno
-                '0'  -- mmdlfg
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                '0',
+                %s, %s,
+                %s, %s,
+                0,
+                '0'
             )
             RETURNING mmitno
             """,
@@ -128,9 +127,10 @@ def create_mtitms(
                 description,
                 sap_code,
                 type1,
-                "0",     # mmtbfg default flag
-                user,
-                now,
+                warehouse,
+                part_no,
+                qty,
+                uom,
                 user,
                 now,
                 user,
@@ -153,21 +153,20 @@ def create_mtitms(
 def update_mtitms(
     pk: str,
     description: str | None,
-    sap_code: str | None,
     type1: str | None,
+    warehouse: str | None,
+    part_no: str | None,
+    qty: int,
+    uom: str,
     old_changed_no: int,
     user: str = "Admin",
 ):
     """
-    Update selected business fields only.
+    Update editable business fields.
     Uses optimistic locking on mmchno.
-    PK (mmitno) is not updatable.
     """
-    existing = fetch_mtitms_by_pk(pk)
-    if existing is None:
-        raise Exception(f"Record '{pk}' not found.")
-
     now = datetime.now()
+
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -176,9 +175,12 @@ def update_mtitms(
             UPDATE barcodesap.mtitms
             SET
                 mmitds = %s,
-                mmisap = %s,
                 mmtyp1 = %s,
-                mmchid = %s,
+                mmwho  = %s,
+                mmpono = %s,
+                mmcont = %s,
+                mmumcd = %s,
+                mmchby = %s,
                 mmchdt = %s,
                 mmchno = %s
             WHERE mmitno = %s
@@ -186,8 +188,11 @@ def update_mtitms(
             """,
             (
                 description,
-                sap_code,
                 type1,
+                warehouse,
+                part_no,
+                qty,
+                uom,
                 user,
                 now,
                 old_changed_no + 1,
@@ -200,12 +205,12 @@ def update_mtitms(
             raise Exception("Record was modified by another user.")
 
         conn.commit()
+
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-
 
 # ── Soft Delete ───────────────────────────────────────────────────────────────
 
@@ -219,7 +224,7 @@ def soft_delete_mtitms(pk: str, user: str = "Admin"):
             UPDATE barcodesap.mtitms
             SET
                 mmdlfg = '1',
-                mmchid = %s,
+                mmchby = %s,
                 mmchdt = %s,
                 mmchno = mmchno + 1
             WHERE mmitno = %s

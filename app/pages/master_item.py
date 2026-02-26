@@ -97,23 +97,23 @@ def _row_to_tuple(r: dict) -> tuple:
         return str(val)[:19]
 
     return (
-        r.get("pk", ""),                # 0  item code
-        r.get("description", ""),       # 1  name
-        r.get("brand", ""),             # 2  brand
-        r.get("warehouse", ""),         # 3  warehouse
-        r.get("po_no", ""),             # 4  part no
-        r.get("type1", ""),             # 5  interchange 1 (adjust if needed)
-        "",                             # 6  interchange 2
-        "",                             # 7  interchange 3
-        "",                             # 8  interchange 4
-        "0",                            # 9  qty (adjust if mapping mmcont)
-        r.get("uom", ""),               # 10 uom
-        r.get("added_by", "-"),         # 11 added by
-        _fmt_dt(r.get("added_at")),     # 12 added at
-        r.get("changed_by", "-"),       # 13 changed by
-        _fmt_dt(r.get("changed_at")),   # 14 changed at
-        str(r.get("changed_no", 0)),    # 15 changed no
-        r.get("pk"),                    # 16 PK (hidden)
+        r.get("pk", ""),                # 0
+        r.get("description", ""),       # 1
+        r.get("brand", ""),             # 2
+        r.get("warehouse", ""),         # 3
+        r.get("po_no", ""),             # 4
+        r.get("type1", ""),             # 5
+        "",                             # 6
+        "",                             # 7
+        "",                             # 8
+        str(r.get("qty", 0)),           # 9
+        r.get("uom", ""),               # 10
+        r.get("added_by", "-"),         # 11
+        _fmt_dt(r.get("added_at")),     # 12
+        r.get("changed_by") or "-",     # 13
+        _fmt_dt(r.get("changed_at")),   # 14
+        str(r.get("changed_no", 0)),    # 15
+        r.get("pk"),                    # 16
     )
 
 
@@ -544,7 +544,11 @@ class MasterItemPage(QWidget):
                 item_no=item_code,
                 description=name,
                 sap_code=None,
-                type1=None,
+                type1=interchange_1,
+                warehouse=warehouse,
+                part_no=part_no,
+                qty=qty,
+                uom=uom,
                 user=CURRENT_USER,
             )
         except Exception as exc:
@@ -669,8 +673,11 @@ class MasterItemPage(QWidget):
             update_mtitms(
                 pk=pk,
                 description=name,
-                sap_code=None,
-                type1=None,
+                type1=interchange_1,
+                warehouse=warehouse,
+                part_no=part_no,
+                qty=qty,
+                uom=uom,
                 old_changed_no=int(self.all_data[idx][15]),
                 user=CURRENT_USER,
             )
