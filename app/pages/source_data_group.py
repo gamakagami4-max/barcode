@@ -654,11 +654,6 @@ class SourceDataPage(QWidget):
             modal.update_field_options("table_name", tables)
             modal.update_field_options("fields", [])
 
-            # ✅ AUTO SELECT FIRST TABLE
-            if tables:
-                first_table = tables[0]
-                modal.set_field_value("table_name", first_table)
-                self._fetch_and_populate_fields(modal, first_table)
             fields_widget = modal.inputs.get("fields")
             if fields_widget and hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(False)
@@ -770,6 +765,10 @@ class SourceDataPage(QWidget):
         # Trigger engine + connection cascade immediately
         self._on_field_changed(modal, "engine", default_engine)
         self._on_field_changed(modal, "conn", default_conn)
+
+        # 🔥 Disable Query initially (since default is TABLE mode)
+        self._apply_source_type_state(modal, SOURCE_TYPE_TABLE)
+
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
