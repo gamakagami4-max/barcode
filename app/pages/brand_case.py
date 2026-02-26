@@ -451,13 +451,13 @@ class BrandCasePage(QWidget):
                    "CHANGED BY", "CHANGED AT", "CHANGED NO"])
         for row in self.filtered_data:
             ws.append([
-                row["mmcode"],
-                "TITLE" if row["mmtyca"] else "UPPER",
-                row["mmrgid"],
-                row["mmrgdt"],
-                row["mmchid"],
-                row["mmchdt"],
-                row["mmchno"],
+                row["code"],
+                row["name"],
+                row["added_by"],
+                row["added_at"],
+                row["changed_by"],
+                row["changed_at"],
+                row["changed_no"],
             ])
 
         wb.save(path)

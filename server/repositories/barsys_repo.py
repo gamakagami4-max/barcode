@@ -2,7 +2,8 @@ from datetime import datetime
 from server.db import get_connection
 import psycopg2
 
-# ── Read ──────────────────────────────────────────────────────────────────────
+
+# ── Read ──────────────────────────────────────────────
 
 def fetch_all_barsys() -> list[dict]:
     sql = """
@@ -10,14 +11,14 @@ def fetch_all_barsys() -> list[dict]:
             bscode   AS code,
             bsname   AS name,
             bsdesc   AS description,
-            bsrgid   AS added_by,
-            bsrgdt   AS added_at,
-            bschid   AS changed_by,
+            bsadby   AS added_by,
+            bsaddt   AS added_at,
+            bschby   AS changed_by,
             bschdt   AS changed_at,
             bschno   AS changed_no
         FROM barcodesap.barsys
         WHERE bsdlfg <> '1'
-        ORDER BY bsrgdt DESC
+        ORDER BY bsaddt DESC
     """
     conn = get_connection()
     try:
@@ -35,9 +36,9 @@ def fetch_barsys_by_pk(name: str, code: str) -> dict | None:
             bscode   AS code,
             bsname   AS name,
             bsdesc   AS description,
-            bsrgid   AS added_by,
-            bsrgdt   AS added_at,
-            bschid   AS changed_by,
+            bsadby   AS added_by,
+            bsaddt   AS added_at,
+            bschby   AS changed_by,
             bschdt   AS changed_at,
             bschno   AS changed_no
         FROM barcodesap.barsys
@@ -58,7 +59,7 @@ def fetch_barsys_by_pk(name: str, code: str) -> dict | None:
         conn.close()
 
 
-# ── Create ────────────────────────────────────────────────────────────────────
+# ── Create ────────────────────────────────────────────
 
 def create_barsys(
     code: str,
@@ -66,10 +67,7 @@ def create_barsys(
     description: str | None,
     user: str = "Admin",
 ) -> tuple[str, str]:
-    """
-    Insert a new barsys record.
-    Composite PK: (bsname, bscode)
-    """
+
     now = datetime.now()
 
     conn = get_connection()
@@ -82,17 +80,25 @@ def create_barsys(
                 bscode,
                 bsname,
                 bsdesc,
+                bsadby,
+                bsaddt,
+                bschno,
                 bsrgid,
                 bsrgdt,
-                bsaddt,
-                bschdt,
-                bschno,
                 bsdlfg
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,0,'0')
+            VALUES (%s,%s,%s,%s,%s,0,%s,%s,'0')
             RETURNING bsname, bscode
             """,
-            (code, name, description, user, now, now, now),
+            (
+                code,
+                name,
+                description,
+                user,      # bsadby
+                now,       # bsaddt
+                user,      # bsrgid
+                now        # bsrgdt
+            ),
         )
 
         pk = cur.fetchone()
@@ -102,7 +108,6 @@ def create_barsys(
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
         raise Exception("System Code and Name already exist.")
-
     except Exception:
         conn.rollback()
         raise
@@ -110,7 +115,7 @@ def create_barsys(
         conn.close()
 
 
-# ── Update (Optimistic Locking) ───────────────────────────────────────────────
+# ── Update (Optimistic Locking) ───────────────────────
 
 def update_barsys(
     name: str,
@@ -119,11 +124,7 @@ def update_barsys(
     old_changed_no: int,
     user: str = "Admin",
 ):
-    """
-    Update description only.
-    Uses optimistic locking via bschno.
-    PK (bsname, bscode) is NOT updatable.
-    """
+
     now = datetime.now()
 
     conn = get_connection()
@@ -134,10 +135,10 @@ def update_barsys(
             """
             UPDATE barcodesap.barsys
             SET
-                bsdesc  = %s,
-                bschid  = %s,
-                bschdt  = %s,
-                bschno  = %s
+                bsdesc = %s,
+                bschby = %s,
+                bschdt = %s,
+                bschno = %s
             WHERE bsname = %s
               AND bscode = %s
               AND bschno = %s
@@ -165,7 +166,7 @@ def update_barsys(
         conn.close()
 
 
-# ── Soft Delete ───────────────────────────────────────────────────────────────
+# ── Soft Delete ───────────────────────────────────────
 
 def soft_delete_barsys(
     name: str,
@@ -183,7 +184,7 @@ def soft_delete_barsys(
             UPDATE barcodesap.barsys
             SET
                 bsdlfg = '1',
-                bschid = %s,
+                bschby = %s,
                 bschdt = %s,
                 bschno = bschno + 1
             WHERE bsname = %s
