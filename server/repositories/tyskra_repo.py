@@ -69,10 +69,10 @@ def update_tyskra(
     try:
         cur = conn.cursor()
 
+        # ❌ DO NOT UPDATE sktynm
         cur.execute(
             """
             UPDATE barcodesap.tyskra SET
-                sktynm = %s,
                 sktyds = %s,
                 skchby = %s,
                 skchdt = %s,
@@ -82,7 +82,6 @@ def update_tyskra(
               AND skchno = %s
             """,
             (
-                new_type_name,
                 type_desc,
                 user,
                 now,
@@ -101,7 +100,6 @@ def update_tyskra(
 
     except Exception as e:
         conn.rollback()
-        print("UPDATE_TYSKRA ERROR:", e)
         raise
 
     finally:

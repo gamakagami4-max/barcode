@@ -408,6 +408,7 @@ class FilterTypePage(QWidget):
         idx = self._get_selected_global_index()
         if idx is None:
             return
+
         row = self.all_data[idx]
 
         initial = {
@@ -419,43 +420,48 @@ class FilterTypePage(QWidget):
             "changed_at": row[5],
             "changed_no": row[6],
         }
+
+        # 🔥 Build schema and lock primary key
+        schema = _build_form_schema()
+        for field in schema:
+            if field["name"] == "type_name":
+                field["type"] = "readonly"
+                break
+
         modal = GenericFormModal(
             title="Edit Source Type",
-            fields=_build_form_schema(),
+            fields=schema,  # use modified schema
             parent=self,
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data, i=idx: self._on_edit_submitted(i, data))
+
+        modal.formSubmitted.connect(
+            lambda data, i=idx: self._on_edit_submitted(i, data)
+        )
+
         self._open_modal(modal)
 
     def _on_edit_submitted(self, idx: int, data: dict):
-        # New values from form
-        new_type_name = data.get("type_name", "").strip()
-        type_desc     = data.get("type_desc", "").strip() or None
+        type_desc = data.get("type_desc", "").strip() or None
 
-        if not new_type_name:
-            QMessageBox.warning(self, "Validation Error", "Type Name is required.")
-            return
-
-        # Old values from selected row
-        row              = self.all_data[idx]
-        old_type_name    = row[0]
-        old_changed_no   = int(row[6]) if str(row[6]).isdigit() else 0
+        row = self.all_data[idx]
+        type_name = row[0]
+        old_changed_no = int(row[6]) if str(row[6]).isdigit() else 0
 
         try:
             update_tyskra(
-                old_type_name=old_type_name,
-                new_type_name=new_type_name,
+                old_type_name=type_name,
+                new_type_name=type_name,  # 🔥 no rename
                 old_changed_no=old_changed_no,
                 type_desc=type_desc,
                 user="Admin",
             )
+
             self.load_data()
 
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
-
     # ── Delete ────────────────────────────────────────────────────────────────
 
     def handle_delete_action(self):
