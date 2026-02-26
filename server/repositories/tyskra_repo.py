@@ -1,5 +1,6 @@
 from datetime import datetime
 from server.db import get_connection
+import psycopg2
 
 
 # =========================
@@ -28,25 +29,33 @@ def create_tyskra(
                 skchno,
                 skdlfg
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s,     -- type name
+                %s,     -- description
+                %s,     -- added by
+                %s,     -- added at
+                NULL,   -- changed by (NULL on create)
+                NULL,   -- changed at (NULL on create)
+                0,      -- changed no starts at 0
+                0       -- not deleted
+            )
             """,
             (
                 type_name,
                 type_desc,
                 user,
                 now,
-                user,
-                now,
-                1,
-                0,
             ),
         )
 
         conn.commit()
 
-    except Exception as e:
+    except psycopg2.errors.UniqueViolation:
         conn.rollback()
-        print("CREATE_TYSKRA ERROR:", e)
+        raise Exception("Type name already exists.")
+
+    except Exception:
+        conn.rollback()
         raise
 
     finally:
@@ -54,11 +63,10 @@ def create_tyskra(
 
 
 # =========================
-# UPDATE (ALLOW RENAME + LOCKING)
+# UPDATE (LOCKING, NO RENAME)
 # =========================
 def update_tyskra(
-    old_type_name: str,
-    new_type_name: str,
+    type_name: str,
     old_changed_no: int,
     type_desc: str | None = None,
     user: str = "Admin",
@@ -69,10 +77,10 @@ def update_tyskra(
     try:
         cur = conn.cursor()
 
-        # ❌ DO NOT UPDATE sktynm
         cur.execute(
             """
-            UPDATE barcodesap.tyskra SET
+            UPDATE barcodesap.tyskra
+            SET
                 sktyds = %s,
                 skchby = %s,
                 skchdt = %s,
@@ -86,19 +94,17 @@ def update_tyskra(
                 user,
                 now,
                 old_changed_no + 1,
-                old_type_name,
+                type_name,
                 old_changed_no,
             ),
         )
 
         if cur.rowcount == 0:
-            raise Exception(
-                f"Record '{old_type_name}' was modified or does not exist."
-            )
+            raise Exception("Record was modified by another user.")
 
         conn.commit()
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
         raise
 
@@ -122,7 +128,8 @@ def soft_delete_tyskra(
 
         cur.execute(
             """
-            UPDATE barcodesap.tyskra SET
+            UPDATE barcodesap.tyskra
+            SET
                 skdlfg = 1,
                 skchby = %s,
                 skchdt = %s,
@@ -140,15 +147,12 @@ def soft_delete_tyskra(
         )
 
         if cur.rowcount == 0:
-            raise Exception(
-                f"Record '{type_name}' was modified or does not exist."
-            )
+            raise Exception("Record was modified by another user.")
 
         conn.commit()
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        print("DELETE_TYSKRA ERROR:", e)
         raise
 
     finally:

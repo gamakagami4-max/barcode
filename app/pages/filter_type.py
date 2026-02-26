@@ -451,9 +451,8 @@ class FilterTypePage(QWidget):
 
         try:
             update_tyskra(
-                old_type_name=type_name,
-                new_type_name=type_name,  # 🔥 no rename
-                old_changed_no=old_changed_no,
+                type_name=type_name,              # ✅ correct param
+                old_changed_no=old_changed_no,    # ✅ correct param
                 type_desc=type_desc,
                 user="Admin",
             )
@@ -461,7 +460,11 @@ class FilterTypePage(QWidget):
             self.load_data()
 
         except Exception as exc:
-            QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                f"Update failed:\n\n{exc}",
+            )
     # ── Delete ────────────────────────────────────────────────────────────────
 
     def handle_delete_action(self):
