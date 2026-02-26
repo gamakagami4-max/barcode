@@ -450,6 +450,12 @@ class ProductTypePage(QWidget):
         if row is None:
             return
 
+        # Build schema and make PK readonly
+        fields = _build_form_schema()
+        for field in fields:
+            if field["name"] == "engl":
+                field["type"] = "readonly"
+
         initial = {
             "engl":       row.get("pk",         ""),
             "span":       row.get("span",        ""),
@@ -461,14 +467,19 @@ class ProductTypePage(QWidget):
             "changed_at": _fmt_dt(row.get("ch_dt")),
             "changed_no": str(row.get("changed_no") or 0),
         }
+
         modal = GenericFormModal(
             title="Edit Product Type",
-            fields=_build_form_schema(),
+            fields=fields,
             parent=self,
             mode="edit",
             initial_data=initial,
         )
-        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
+
+        modal.formSubmitted.connect(
+            lambda data, r=row: self._on_edit_submitted(r, data)
+        )
+
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: dict, data: dict):

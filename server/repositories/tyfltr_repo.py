@@ -1,5 +1,3 @@
-# server/repositories/tyfltr_repo.py
-
 from datetime import datetime
 from server.db import get_connection
 
@@ -13,16 +11,16 @@ def fetch_all_tyfltr() -> list[dict]:
             tzspan   AS span,
             tzfren   AS fren,
             tzgerm   AS germ,
-            tzgmbr   AS gmbr,
-            tzposi   AS posi,
-            tzadby   AS ad_by,
-            tzaddt   AS ad_dt,
-            tzchby   AS ch_by,
-            tzchdt   AS ch_dt,
-            tzchno   AS ch_no,
+
             tzrgid   AS added_by,
             tzrgdt   AS added_at,
+
             tzchid   AS changed_by,
+            tzchdt   AS ch_dt,
+            COALESCE(tzchno, 0) AS changed_no,
+
+            tzgmbr   AS gmbr,
+            tzposi   AS posi,
             tzdpfg   AS dp_fg,
             tzdsfg   AS ds_fg,
             tzptfg   AS pt_fg,
@@ -31,8 +29,8 @@ def fetch_all_tyfltr() -> list[dict]:
             tzptdt   AS pt_dt,
             tzsrce   AS source,
             tzusrm   AS user_remark,
-            tzitrm   AS item_remark,
-            tzchno   AS changed_no
+            tzitrm   AS item_remark
+
         FROM barcodesap.tyfltr
         WHERE tzdlfg <> '1'
         ORDER BY tzrgdt DESC
@@ -54,16 +52,16 @@ def fetch_tyfltr_by_pk(pk: str) -> dict | None:
             tzspan   AS span,
             tzfren   AS fren,
             tzgerm   AS germ,
-            tzgmbr   AS gmbr,
-            tzposi   AS posi,
-            tzadby   AS ad_by,
-            tzaddt   AS ad_dt,
-            tzchby   AS ch_by,
-            tzchdt   AS ch_dt,
-            tzchno   AS ch_no,
+
             tzrgid   AS added_by,
             tzrgdt   AS added_at,
+
             tzchid   AS changed_by,
+            tzchdt   AS ch_dt,
+            COALESCE(tzchno, 0) AS changed_no,
+
+            tzgmbr   AS gmbr,
+            tzposi   AS posi,
             tzdpfg   AS dp_fg,
             tzdsfg   AS ds_fg,
             tzptfg   AS pt_fg,
@@ -72,8 +70,8 @@ def fetch_tyfltr_by_pk(pk: str) -> dict | None:
             tzptdt   AS pt_dt,
             tzsrce   AS source,
             tzusrm   AS user_remark,
-            tzitrm   AS item_remark,
-            tzchno   AS changed_no
+            tzitrm   AS item_remark
+
         FROM barcodesap.tyfltr
         WHERE tzengl = %s
           AND tzdlfg <> '1'
@@ -100,12 +98,7 @@ def create_tyfltr(
     posi: str | None = None,
     user: str = "Admin",
 ) -> str:
-    """
-    Insert a new tyfltr row.
-    PK is tzengl (varchar 50), supplied by the caller.
-    Flags, remarks, and change tracking are left as DB defaults.
-    tzchid / tzchdt / tzchno are omitted — NULL until a real edit occurs.
-    """
+
     now = datetime.now()
     conn = get_connection()
     try:
@@ -117,14 +110,16 @@ def create_tyfltr(
                 tzspan, tzfren, tzgerm,
                 tzgmbr, tzposi,
                 tzrgid, tzrgdt,
-                tzdlfg
+                tzdlfg,
+                tzchno
             )
             VALUES (
                 %s,
                 %s, %s, %s,
                 %s, %s,
                 %s, %s,
-                '0'
+                '0',
+                0
             )
             RETURNING tzengl
             """,
@@ -145,7 +140,7 @@ def create_tyfltr(
         conn.close()
 
 
-# ── Update (Optimistic Locking) ───────────────────────────────────────────────
+# ── Update (Fixed Optimistic Locking) ─────────────────────────────────────────
 
 def update_tyfltr(
     pk: str,
@@ -157,14 +152,7 @@ def update_tyfltr(
     posi: str | None = None,
     user: str = "Admin",
 ):
-    """
-    Update the editable fields on an existing tyfltr row.
-    All other columns (flags, remarks, print tracking, source) are
-    preserved as-is — fetched from the DB and written back unchanged.
-    Uses optimistic locking on tzchno.
-    Note: tzengl (PK) is intentionally not updatable.
-    """
-    # ── Fetch current row to preserve untouched fields ────────────────
+
     existing = fetch_tyfltr_by_pk(pk)
     if existing is None:
         raise Exception(f"Record '{pk}' not found.")
@@ -193,14 +181,13 @@ def update_tyfltr(
                 tzitrm = %s,
                 tzchid = %s,
                 tzchdt = %s,
-                tzchno = %s
+                tzchno = COALESCE(tzchno, 0) + 1
             WHERE tzengl = %s
-              AND tzchno  = %s
+              AND COALESCE(tzchno, 0) = %s
             """,
             (
                 span, fren, germ,
                 gmbr, posi,
-                # preserved fields
                 existing["dp_fg"],
                 existing["ds_fg"],
                 existing["pt_fg"],
@@ -210,17 +197,17 @@ def update_tyfltr(
                 existing["source"],
                 existing["user_remark"],
                 existing["item_remark"],
-                # audit
                 user, now,
-                old_changed_no + 1,
-                # WHERE
                 pk,
                 old_changed_no,
             ),
         )
+
         if cur.rowcount == 0:
             raise Exception("Record was modified by another user.")
+
         conn.commit()
+
     except Exception:
         conn.rollback()
         raise
@@ -228,7 +215,7 @@ def update_tyfltr(
         conn.close()
 
 
-# ── Soft Delete ───────────────────────────────────────────────────────────────
+# ── Soft Delete (NULL-safe) ───────────────────────────────────────────────────
 
 def soft_delete_tyfltr(pk: str, user: str = "Admin"):
     now = datetime.now()
@@ -242,7 +229,7 @@ def soft_delete_tyfltr(pk: str, user: str = "Admin"):
                 tzdlfg = '1',
                 tzchid = %s,
                 tzchdt = %s,
-                tzchno = tzchno + 1
+                tzchno = COALESCE(tzchno, 0) + 1
             WHERE tzengl = %s
             """,
             (user, now, pk),
