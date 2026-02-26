@@ -15,7 +15,7 @@ def fetch_all_tyfltr() -> list[dict]:
             tzrgid   AS added_by,
             tzrgdt   AS added_at,
 
-            tzchid   AS changed_by,
+            tzchby   AS changed_by,
             tzchdt   AS ch_dt,
             COALESCE(tzchno, 0) AS changed_no,
 
@@ -56,7 +56,7 @@ def fetch_tyfltr_by_pk(pk: str) -> dict | None:
             tzrgid   AS added_by,
             tzrgdt   AS added_at,
 
-            tzchid   AS changed_by,
+            tzchby   AS changed_by,
             tzchdt   AS ch_dt,
             COALESCE(tzchno, 0) AS changed_no,
 
@@ -143,63 +143,45 @@ def create_tyfltr(
 # ── Update (Fixed Optimistic Locking) ─────────────────────────────────────────
 
 def update_tyfltr(
-    pk: str,
+    old_pk: str,
+    new_pk: str,
     span: str,
     fren: str,
     germ: str,
     old_changed_no: int,
-    gmbr: str | None = None,
-    posi: str | None = None,
     user: str = "Admin",
 ):
-
-    existing = fetch_tyfltr_by_pk(pk)
-    if existing is None:
-        raise Exception(f"Record '{pk}' not found.")
-
+    from datetime import datetime
     now = datetime.now()
+
     conn = get_connection()
     try:
         cur = conn.cursor()
+
         cur.execute(
             """
             UPDATE barcodesap.tyfltr
             SET
+                tzengl = %s,
                 tzspan = %s,
                 tzfren = %s,
                 tzgerm = %s,
-                tzgmbr = %s,
-                tzposi = %s,
-                tzdpfg = %s,
-                tzdsfg = %s,
-                tzptfg = %s,
-                tzptct = %s,
-                tzptid = %s,
-                tzptdt = %s,
-                tzsrce = %s,
-                tzusrm = %s,
-                tzitrm = %s,
-                tzchid = %s,
+                tzchby = %s,
                 tzchdt = %s,
-                tzchno = COALESCE(tzchno, 0) + 1
+                tzchno = %s
             WHERE tzengl = %s
-              AND COALESCE(tzchno, 0) = %s
+              AND tzchno = %s
             """,
             (
-                span, fren, germ,
-                gmbr, posi,
-                existing["dp_fg"],
-                existing["ds_fg"],
-                existing["pt_fg"],
-                existing["pt_ct"],
-                existing["pt_id"],
-                existing["pt_dt"],
-                existing["source"],
-                existing["user_remark"],
-                existing["item_remark"],
-                user, now,
-                pk,
-                old_changed_no,
+                new_pk,              # 1
+                span,                # 2
+                fren,                # 3
+                germ,                # 4
+                user,                # 5  <-- MUST BE USER
+                now,                 # 6
+                old_changed_no + 1,  # 7
+                old_pk,              # 8
+                old_changed_no,      # 9
             ),
         )
 

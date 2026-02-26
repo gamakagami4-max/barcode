@@ -452,9 +452,6 @@ class ProductTypePage(QWidget):
 
         # Build schema and make PK readonly
         fields = _build_form_schema()
-        for field in fields:
-            if field["name"] == "engl":
-                field["type"] = "readonly"
 
         initial = {
             "engl":       row.get("pk",         ""),
@@ -483,23 +480,32 @@ class ProductTypePage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: dict, data: dict):
-        engl = data.get("engl", "").strip()
-        span = data.get("span", "").strip()
-        fren = data.get("fren", "").strip()
-        germ = data.get("germ", "").strip()
+        old_pk = row["pk"]
+        new_pk = data.get("engl", "").strip()
+        span   = data.get("span", "").strip()
+        fren   = data.get("fren", "").strip()
+        germ   = data.get("germ", "").strip()
 
-        if not engl:
+        if not new_pk:
             QMessageBox.warning(self, "Validation Error", "English value is required.")
             return
+
+        # Duplicate check if PK changed
+        if new_pk.lower() != old_pk.lower():
+            if any(r["pk"].strip().lower() == new_pk.lower() for r in self.all_data):
+                QMessageBox.warning(self, "Duplicate Entry",
+                                    f'English value "{new_pk}" already exists.')
+                return
 
         old_changed_no = int(row.get("changed_no") or 0)
 
         try:
             update_tyfltr(
-                pk=row["pk"],
-                span=span or engl,
-                fren=fren or engl,
-                germ=germ or engl,
+                old_pk=old_pk,
+                new_pk=new_pk,
+                span=span or new_pk,
+                fren=fren or new_pk,
+                germ=germ or new_pk,
                 old_changed_no=old_changed_no,
             )
             self.load_data()
