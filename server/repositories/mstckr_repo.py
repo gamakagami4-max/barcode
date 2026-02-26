@@ -95,17 +95,6 @@ def create_mstckr(
     try:
         cur = conn.cursor()
 
-        print("CREATE_MSTCKR PARAMS:")
-        print({
-            "name": name,
-            "h_in": h_in,
-            "w_in": w_in,
-            "h_px": h_px,
-            "w_px": w_px,
-            "user": user,
-            "now": now,
-        })
-
         cur.execute(
             """
             INSERT INTO barcodesap.mstckr (
@@ -116,18 +105,22 @@ def create_mstckr(
                 mspixw,
                 msrgid,
                 msrgdt,
+                mschid,
+                mschdt,
                 mschno,
                 msdlfg
             )
             VALUES (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
+                %s,  -- name
+                %s,  -- height inch
+                %s,  -- width inch
+                %s,  -- height px
+                %s,  -- width px
+                %s,  -- added by
+                %s,  -- added at
+                NULL,
+                NULL,
+                0,
                 '0'
             )
             RETURNING msstnm
@@ -140,7 +133,6 @@ def create_mstckr(
                 w_px,
                 user,
                 now,
-                0,
             ),
         )
 
@@ -148,10 +140,8 @@ def create_mstckr(
         conn.commit()
         return pk
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        print("CREATE_MSTCKR ERROR:")
-        print(e)
         raise
 
     finally:
