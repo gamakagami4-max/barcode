@@ -57,7 +57,13 @@ VIEW_DETAIL_FIELDS = [
 
 def _build_form_schema(mode: str = "add") -> list[dict]:
     schema = [
-        {"name": "item_code",     "label": "Item Code",      "type": "text",  "placeholder": "e.g., EIF1-SFF1-FC-1001", "required": True},
+        {
+            "name": "item_code",
+            "label": "Item Code",
+            "type": "readonly" if mode == "edit" else "text",
+            "placeholder": "e.g., EIF1-SFF1-FC-1001",
+            "required": True,
+        },
         {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True},
         {"name": "warehouse",     "label": "Warehouse",       "type": "text",  "placeholder": "e.g., EIF",              "required": False},
         {"name": "part_no",       "label": "Part Number",     "type": "text",  "placeholder": "Enter part number",       "required": False},

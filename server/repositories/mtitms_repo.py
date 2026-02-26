@@ -82,10 +82,10 @@ def create_mtitms(
 ) -> str:
     """
     Insert a new mtitms row.
-    Only core business fields are set.
-    Flags and change tracking columns follow DB defaults.
+    Satisfies all NOT NULL constraints explicitly.
     """
     now = datetime.now()
+
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -96,24 +96,30 @@ def create_mtitms(
                 mmitds,
                 mmisap,
                 mmtyp1,
+                mmtbfg,
                 mmrgid,
                 mmrgdt,
+                mmadby,
                 mmaddt,
+                mmchid,
                 mmchdt,
                 mmchno,
                 mmdlfg
             )
             VALUES (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                0,
-                '0'
+                %s,  -- mmitno
+                %s,  -- mmitds
+                %s,  -- mmisap
+                %s,  -- mmtyp1
+                %s,  -- mmtbfg (required)
+                %s,  -- mmrgid
+                %s,  -- mmrgdt
+                %s,  -- mmadby
+                %s,  -- mmaddt
+                %s,  -- mmchid
+                %s,  -- mmchdt
+                0,   -- mmchno
+                '0'  -- mmdlfg
             )
             RETURNING mmitno
             """,
@@ -122,21 +128,25 @@ def create_mtitms(
                 description,
                 sap_code,
                 type1,
+                "0",     # mmtbfg default flag
                 user,
                 now,
+                user,
                 now,
+                user,
                 now,
             ),
         )
+
         pk = cur.fetchone()[0]
         conn.commit()
         return pk
+
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-
 
 # ── Update (Optimistic Locking) ───────────────────────────────────────────────
 
