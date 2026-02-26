@@ -2,7 +2,7 @@
 
 import threading
 import openpyxl
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt, QObject, Signal, QTimer
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -20,7 +20,10 @@ from repositories.mmsdgr_repo import (
     soft_delete_sdgr,
     update_sdgr,
 )
-from repositories.mmtbnm_repo import fetch_connection_table_map, fetch_tbnm_id_map
+from repositories.mengin_repo import fetch_all_engines
+from repositories.mconnc_repo import fetch_connections_by_engine
+from repositories.mtable_repo import fetch_tables_by_connection
+from repositories.field_repo import fetch_fields
 
 ROW_STANDARD          = "standard"
 QUERY_COL_FIXED_WIDTH = 370
@@ -256,9 +259,8 @@ class SourceDataPage(QWidget):
         self._last_search_text  = ""
         self._sort_fields:       list[str]       = []
         self._sort_directions:   dict[str, str]  = {}
-        self._connection_tables: dict[str, dict] = {}
-        self._tbnm_id_map:       dict[str, int]  = {}
-        self._conc_id_map:       dict[str, int]  = {}
+        self._engine_map = {}        # code -> id
+        self._conn_map   = {}        # engine_code -> [conn_names]
         self._active_modal: GenericFormModal | None = None
         self._init_ui()
         self.load_data()
@@ -334,7 +336,9 @@ class SourceDataPage(QWidget):
             hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
-
+            
+   
+            
     def _on_row_selection_changed(self):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
@@ -472,15 +476,29 @@ class SourceDataPage(QWidget):
 
     def load_data(self):
         try:
-            self.all_data            = [_row_to_tuple(r) for r in fetch_all_sdgr()]
-            self._connection_tables  = fetch_connection_table_map()
-            self._tbnm_id_map, self._conc_id_map = fetch_tbnm_id_map()
+            self.all_data = [_row_to_tuple(r) for r in fetch_all_sdgr()]
+
+            # Load engines
+            engines = fetch_all_engines()
+
+            self._engine_map = {}
+            self._conn_map = {}
+
+            for e in engines:
+                engine_code = e["code"]
+                engine_id   = e["pk"]
+
+                self._engine_map[engine_code] = engine_id
+
+                conns = fetch_connections_by_engine(engine_id)
+                self._conn_map[engine_code] = [c["name"] for c in conns]
+
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Failed to load data:\n\n{exc}")
-            self.all_data           = []
-            self._connection_tables = {}
-            self._tbnm_id_map       = {}
-            self._conc_id_map       = {}
+            self.all_data = []
+            self._engine_map = {}
+            self._conn_map = {}
+
         self._apply_filter_and_reset_page()
 
     # ── Filtering & sorting ───────────────────────────────────────────────────
@@ -559,46 +577,7 @@ class SourceDataPage(QWidget):
             if btn:
                 btn.clicked.connect(slot)
 
-    # ── FK resolution ─────────────────────────────────────────────────────────
-
-    def _resolve_fk_ids(self, engine: str, conn_name: str,
-                        table_name: str) -> tuple[int, int] | None:
-        conc_key = f"{engine}::{conn_name}"
-        tbnm_key = f"{engine}::{conn_name}::{table_name}"
-        tbnm_key_prefixed = f"{engine}::{conn_name}::t.{table_name}"
-        conciy = self._conc_id_map.get(conc_key)
-        tbnmiy = self._tbnm_id_map.get(tbnm_key) or self._tbnm_id_map.get(tbnm_key_prefixed)
-        if conciy is None or tbnmiy is None:
-            QMessageBox.warning(
-                self, "Lookup Error",
-                f"Could not resolve IDs for:\n"
-                f"  Engine:     {engine}\n"
-                f"  Connection: {conn_name}\n"
-                f"  Table:      {table_name}\n\n"
-                "Please refresh and try again.",
-            )
-            return None
-        return conciy, tbnmiy
-
-    def _resolve_conn_id(self, engine: str, conn_name: str) -> int | None:
-        conc_key = f"{engine}::{conn_name}"
-        conciy   = self._conc_id_map.get(conc_key)
-        if conciy is None:
-            QMessageBox.warning(
-                self, "Lookup Error",
-                f"Could not resolve connection ID for:\n"
-                f"  Engine:     {engine}\n"
-                f"  Connection: {conn_name}\n\n"
-                "Please refresh and try again.",
-            )
-        return conciy
-
-    # ── Helper: split mixed list for a given engine+conn ─────────────────────
-
-    def _get_tables_and_fields(self, engine: str, conn: str) -> tuple[list[str], list[str]]:
-        mixed = self._connection_tables.get(engine, {}).get(conn, [])
-        return _split_tables_and_fields(mixed)
-
+    
     # ── Source-type mutual-exclusion ──────────────────────────────────────────
 
     def _apply_source_type_state(self, modal: GenericFormModal, source_type: str):
@@ -643,16 +622,22 @@ class SourceDataPage(QWidget):
                     from PySide6.QtWidgets import QTextEdit as _QTE
                     if isinstance(query_widget, _QTE):
                         query_widget.setPlainText("")
+
                 engine = modal.get_field_value("engine")
                 conn   = modal.get_field_value("conn")
+
                 if engine and conn:
-                    tables, _ = self._get_tables_and_fields(engine, conn)
+                    try:
+                        tables = [t["name"] for t in fetch_tables_by_connection(conn)]
+                    except Exception:
+                        tables = []
+
                     modal.update_field_options("table_name", tables)
 
             return
 
         if field_name == "engine" and value:
-            conns = sorted(self._connection_tables.get(value, {}).keys())
+            conns = self._conn_map.get(value, [])
             modal.update_field_options("conn", conns)
             modal.update_field_options("table_name", [])
             modal.update_field_options("fields", [])
@@ -661,10 +646,19 @@ class SourceDataPage(QWidget):
                 fields_widget.set_actions_visible(False)
 
         elif field_name == "conn" and value:
-            engine = modal.get_field_value("engine")
-            tables, _ = self._get_tables_and_fields(engine, value)
+            try:
+                tables = [t["name"] for t in fetch_tables_by_connection(value)]
+            except Exception:
+                tables = []
+
             modal.update_field_options("table_name", tables)
             modal.update_field_options("fields", [])
+
+            # ✅ AUTO SELECT FIRST TABLE
+            if tables:
+                first_table = tables[0]
+                modal.set_field_value("table_name", first_table)
+                self._fetch_and_populate_fields(modal, first_table)
             fields_widget = modal.inputs.get("fields")
             if fields_widget and hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(False)
@@ -686,101 +680,129 @@ class SourceDataPage(QWidget):
 
     # ── Async field population ────────────────────────────────────────────────
 
-    def _fetch_and_populate_fields(self, modal: GenericFormModal, table_name: str):
-        """Start a background fetch for columns then populate the fields
-        checkbox list on the main thread via Qt's queued signal mechanism.
-        The modal is fully interactive the whole time — zero blocking."""
+    def _fetch_and_populate_fields(self, modal, table_name):
+        engine = modal.get_field_value("engine")
+        conn   = modal.get_field_value("conn")
 
-        fetcher = _ColsFetcher(parent=self)
+        if not engine or not conn:
+            return
 
-        def _on_cols_ready(cols: list):
-            # Guard: modal may have closed before the fetch finished
-            if not modal.isVisible():
-                return
-            saved   = getattr(modal, "_saved_fields", None)
-            checked = saved if saved else cols
-            # Convert DB metadata to checkbox options
-            options = []
-            for col in cols:
-                value = col["name"]
-                label = col.get("comment") or value
-                options.append({
-                    "value": value,
-                    "label": label
-                })
+        def _run():
+            try:
+                cols = fetch_fields(conn, table_name)
+            except Exception:
+                cols = []
 
-            modal.update_field_options("fields", options, checked=checked)
-            fields_widget = modal.inputs.get("fields")
-            if fields_widget:
-                fields_widget.setMinimumHeight(155)
-                fields_widget.setMaximumHeight(155)
-                cbw = getattr(fields_widget, "_checkbox_widget", None)
-                if cbw and hasattr(cbw, "_scroll"):
-                    cbw._scroll.setFixedHeight(125)
-                if hasattr(fields_widget, "set_actions_visible"):
-                    fields_widget.set_actions_visible(True)
-            # Clear saved fields after first population so switching to a
-            # different table doesn't incorrectly re-apply old selections.
-            modal._saved_fields = None
+            # Safely update UI on main thread
+            QTimer.singleShot(
+                0,
+                lambda: self._update_fields_ui(modal, cols)
+            )
 
-        fetcher.done.connect(_on_cols_ready)
-        fetcher.start(table_name)
+        threading.Thread(target=_run, daemon=True).start()
 
+
+    def _update_fields_ui(self, modal, cols):
+        print(">>> _update_fields_ui CALLED")
+        print(">>> COLS RECEIVED:", cols)
+
+        options = [col["field_name"] for col in cols]
+        print(">>> OPTIONS:", options)
+
+        fields_container = modal.inputs.get("fields")
+        print(">>> fields_container:", fields_container)
+
+        if not fields_container:
+            print(">>> fields_container is None ❌")
+            return
+
+        # Get the real checkbox widget
+        checkbox_widget = getattr(fields_container, "_checkbox_widget", None)
+
+        if not checkbox_widget:
+            print(">>> checkbox_widget is None ❌")
+            return
+
+        print(">>> Updating checkbox options")
+
+        # Pre-check saved fields in edit mode
+        saved = getattr(modal, "_saved_fields", [])
+
+        checkbox_widget.set_options(options, checked_options=saved)
+
+        # Show select buttons if options exist
+        if hasattr(fields_container, "set_actions_visible"):
+            fields_container.set_actions_visible(bool(options))
+
+        print(">>> DONE updating UI")
     # ── Add ───────────────────────────────────────────────────────────────────
 
     def handle_add_action(self):
+        default_engine = "postgresql"
+        default_conn   = "barcode db"
+
+        schema = _build_form_schema(
+            self._build_connection_tables_structure(),
+            initial_engine=default_engine,
+            initial_conn=default_conn,
+            initial_source_type=SOURCE_TYPE_TABLE,
+        )
+
         modal = GenericFormModal(
             title="Add Source Group",
-            fields=_build_form_schema(self._connection_tables),
+            fields=schema,
             parent=self,
             mode="add",
+            initial_data={
+                "engine": default_engine,
+                "conn": default_conn,
+                "source_type": SOURCE_TYPE_TABLE,
+            },
         )
         modal.fieldChanged.connect(
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
         )
         modal.formSubmitted.connect(self._on_add_submitted)
-        self._apply_source_type_state(modal, SOURCE_TYPE_TABLE)
+        # Trigger engine + connection cascade immediately
+        self._on_field_changed(modal, "engine", default_engine)
+        self._on_field_changed(modal, "conn", default_conn)
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        engine      = data.get("engine",      "").strip()
-        conn_name   = data.get("conn",        "").strip()
+        engine      = data.get("engine", "").strip()
+        conn_name   = data.get("conn", "").strip()
+        table_name  = data.get("table_name", "").strip()
+        query       = data.get("query", "").strip()
         source_type = data.get("source_type", SOURCE_TYPE_TABLE)
 
         if not engine or not conn_name:
             QMessageBox.warning(self, "Validation", "Engine and Connection are required.")
             return
 
-        if source_type == SOURCE_TYPE_TABLE:
-            table_name = data.get("table_name", "").strip()
-            query      = ""
-            if not table_name:
-                QMessageBox.warning(self, "Validation", "Table Name is required.")
-                return
-            ids = self._resolve_fk_ids(engine, conn_name, table_name)
-            if ids is None:
-                return
-            conciy, tbnmiy = ids
-        else:
-            query      = data.get("query", "").strip()
-            table_name = ""
-            if not query:
-                QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
-                return
-            conciy = self._resolve_conn_id(engine, conn_name)
-            if conciy is None:
-                return
-            tbnmiy = None
+        if source_type == SOURCE_TYPE_TABLE and not table_name:
+            QMessageBox.warning(self, "Validation", "Table Name is required.")
+            return
+
+        if source_type == SOURCE_TYPE_QUERY and not query:
+            QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
+            return
 
         selected_fields = data.get("fields", [])
         if isinstance(selected_fields, str):
             selected_fields = [f.strip() for f in selected_fields.split(",") if f.strip()]
 
         try:
-            create_sdgr(conciy, tbnmiy, query, engine, selected_fields)
+            create_sdgr(
+                engine=engine,
+                conn_name=conn_name,
+                table_name=table_name if source_type == SOURCE_TYPE_TABLE else "",
+                query=query,
+                fields=selected_fields
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Insert failed:\n\n{exc}")
             return
+
         self.load_data()
 
     # ── Export ────────────────────────────────────────────────────────────────
@@ -895,7 +917,7 @@ class SourceDataPage(QWidget):
         # Build schema and guarantee the saved table_name is always a valid
         # combo option (prevents "Please select a table..." showing on open).
         schema = _build_form_schema(
-            self._connection_tables,
+            self._build_connection_tables_structure(),
             initial_engine=engine,
             initial_conn=conn_name,
             initial_table=table_name,
@@ -940,47 +962,45 @@ class SourceDataPage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
-        engine      = data.get("engine",      "").strip()
-        conn_name   = data.get("conn",        "").strip()
+        engine      = data.get("engine", "").strip()
+        conn_name   = data.get("conn", "").strip()
+        table_name  = data.get("table_name", "").strip()
+        query       = data.get("query", "").strip()
         source_type = data.get("source_type", SOURCE_TYPE_TABLE)
 
         if not engine or not conn_name:
             QMessageBox.warning(self, "Validation", "Engine and Connection are required.")
             return
 
+        if source_type == SOURCE_TYPE_TABLE and not table_name:
+            QMessageBox.warning(self, "Validation", "Table Name is required.")
+            return
+
+        if source_type == SOURCE_TYPE_QUERY and not query:
+            QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
+            return
+
         pk             = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0
-
-        if source_type == SOURCE_TYPE_TABLE:
-            table_name = data.get("table_name", "").strip()
-            query      = ""
-            if not table_name:
-                QMessageBox.warning(self, "Validation", "Table Name is required.")
-                return
-            ids = self._resolve_fk_ids(engine, conn_name, table_name)
-            if ids is None:
-                return
-            conciy, tbnmiy = ids
-        else:
-            query      = data.get("query", "").strip()
-            table_name = ""
-            if not query:
-                QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
-                return
-            conciy = self._resolve_conn_id(engine, conn_name)
-            if conciy is None:
-                return
-            tbnmiy = None
 
         selected_fields = data.get("fields", [])
         if isinstance(selected_fields, str):
             selected_fields = [f.strip() for f in selected_fields.split(",") if f.strip()]
 
         try:
-            update_sdgr(pk, conciy, tbnmiy, query, engine, old_changed_no, selected_fields)
+            update_sdgr(
+                pk=pk,
+                engine=engine,
+                conn_name=conn_name,
+                table_name=table_name if source_type == SOURCE_TYPE_TABLE else "",
+                query=query,
+                old_changed_no=old_changed_no,
+                fields=selected_fields
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
+
         self.load_data()
 
     # ── Delete ────────────────────────────────────────────────────────────────
@@ -1005,3 +1025,19 @@ class SourceDataPage(QWidget):
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
                 return
             self.load_data()
+
+    def _build_connection_tables_structure(self) -> dict:
+        result = {}
+
+        for engine_code, conn_list in self._conn_map.items():
+            result[engine_code] = {}
+            for conn_name in conn_list:
+                try:
+                    tables = fetch_tables_by_connection(conn_name)
+                    result[engine_code][conn_name] = [
+                        t["name"] for t in tables
+                    ]
+                except Exception:
+                    result[engine_code][conn_name] = []
+
+        return result
