@@ -7,7 +7,7 @@ from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHeaderView, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget,
 )
-
+from PySide6.QtCore import QMetaObject, Qt
 from components.generic_form_modal import GenericFormModal
 from components.search_bar import StandardSearchBar
 from components.sort_by_widget import SortByWidget
@@ -681,58 +681,62 @@ class SourceDataPage(QWidget):
     # ── Async field population ────────────────────────────────────────────────
 
     def _fetch_and_populate_fields(self, modal, table_name):
+        print(">>> _fetch_and_populate_fields CALLED")
+
         engine = modal.get_field_value("engine")
         conn   = modal.get_field_value("conn")
 
-        if not engine or not conn:
+        if not engine or not conn or not table_name:
+            print(">>> Missing required values")
             return
 
-        def _run():
-            try:
-                cols = fetch_fields(conn, table_name)
-            except Exception:
-                cols = []
+        try:
+            cols = fetch_fields(conn, table_name)
+            print(">>> GOT COLS:", cols)
+        except Exception as e:
+            print(">>> ERROR:", e)
+            cols = []
 
-            # Safely update UI on main thread
-            QTimer.singleShot(
-                0,
-                lambda: self._update_fields_ui(modal, cols)
-            )
-
-        threading.Thread(target=_run, daemon=True).start()
+        # Direct UI update (no thread)
+        self._update_fields_ui(modal, cols)
 
 
     def _update_fields_ui(self, modal, cols):
         print(">>> _update_fields_ui CALLED")
         print(">>> COLS RECEIVED:", cols)
 
-        options = [col["field_name"] for col in cols]
-        print(">>> OPTIONS:", options)
-
-        fields_container = modal.inputs.get("fields")
-        print(">>> fields_container:", fields_container)
-
-        if not fields_container:
-            print(">>> fields_container is None ❌")
+        if not cols:
+            modal.update_field_options("fields", [])
             return
 
-        # Get the real checkbox widget
-        checkbox_widget = getattr(fields_container, "_checkbox_widget", None)
+        saved = getattr(modal, "_saved_fields", None)
+        checked = saved if saved else [col["name"] for col in cols]
 
-        if not checkbox_widget:
-            print(">>> checkbox_widget is None ❌")
-            return
+        # IMPORTANT: must be dict format
+        options = []
+        for col in cols:
+            value = col["name"]
+            label = col.get("comment") or value
+            options.append({
+                "value": value,
+                "label": label
+            })
 
-        print(">>> Updating checkbox options")
+        modal.update_field_options("fields", options, checked=checked)
 
-        # Pre-check saved fields in edit mode
-        saved = getattr(modal, "_saved_fields", [])
+        fields_widget = modal.inputs.get("fields")
+        if fields_widget:
+            fields_widget.setMinimumHeight(155)
+            fields_widget.setMaximumHeight(155)
 
-        checkbox_widget.set_options(options, checked_options=saved)
+            cbw = getattr(fields_widget, "_checkbox_widget", None)
+            if cbw and hasattr(cbw, "_scroll"):
+                cbw._scroll.setFixedHeight(125)
 
-        # Show select buttons if options exist
-        if hasattr(fields_container, "set_actions_visible"):
-            fields_container.set_actions_visible(bool(options))
+            if hasattr(fields_widget, "set_actions_visible"):
+                fields_widget.set_actions_visible(True)
+
+        modal._saved_fields = None
 
         print(">>> DONE updating UI")
     # ── Add ───────────────────────────────────────────────────────────────────

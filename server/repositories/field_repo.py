@@ -4,12 +4,20 @@ from server.db import get_connection
 def fetch_fields(conn_name: str, table_name: str):
     """
     Fetch real columns directly from PostgreSQL information_schema.
+    Return format:
+    [
+        {"name": "column_name", "comment": "column_comment"},
+        ...
+    ]
     """
 
     sql = """
         SELECT
-            column_name AS field_name,
-            column_name AS field_desc
+            column_name AS name,
+            COALESCE(col_description(
+                (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass::oid,
+                ordinal_position
+            ), column_name) AS comment
         FROM information_schema.columns
         WHERE table_schema = 'barcodesap'
           AND table_name = %s
