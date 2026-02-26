@@ -443,33 +443,52 @@ class BrandPage(QWidget):
         row = self._get_selected_row()
         if row is None:
             return
+
+        # 🔒 Lock primary key
+        schema = _build_form_schema()
+        for field in schema:
+            if field["name"] == "nobr":
+                field["type"] = "readonly"
+                break
+
         modal = GenericFormModal(
             title="Edit Brand",
-            fields=_build_form_schema(),
+            fields=schema,
             parent=self,
             mode="edit",
             initial_data=_row_to_modal_data(row),
         )
-        modal.formSubmitted.connect(lambda data, r=row: self._on_edit_submitted(r, data))
+
+        modal.formSubmitted.connect(
+            lambda data, r=row: self._on_edit_submitted(r, data)
+        )
+
         self._open_modal(modal)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
         name = data.get("name", "").strip()
+        case_ = data.get("case_", "").strip() or None
+
         if not name:
             QMessageBox.warning(self, "Validation", "Brand Name is required.")
             return
 
         old_changed_no = int(row[7]) if str(row[7]).isdigit() else 0
+
         try:
             update_mmbran(
                 pk=row[0],
                 name=name,
-                case_=data.get("case_", "").strip() or None,
+                flag=None,  # 🔥 explicitly pass flag
+                case_=case_,
                 old_changed_no=old_changed_no,
+                user="Admin",
             )
+
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Update failed:\n\n{exc}")
             return
+
         self.load_data()
 
     def handle_view_detail_action(self):
@@ -511,6 +530,9 @@ class BrandPage(QWidget):
         row = self._get_selected_row()
         if row is None:
             return
+
+        old_changed_no = int(row[7]) if str(row[7]).isdigit() else 0
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
         msg.setText(f'Are you sure you want to delete "{row[0]}"?')
@@ -518,10 +540,16 @@ class BrandPage(QWidget):
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         msg.setDefaultButton(QMessageBox.Cancel)
         msg.setIcon(QMessageBox.Warning)
+
         if msg.exec() == QMessageBox.Yes:
             try:
-                soft_delete_mmbran(row[0])
+                soft_delete_mmbran(
+                    pk=row[0],
+                    old_changed_no=old_changed_no,
+                    user="Admin",
+                )
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
                 return
+
             self.load_data()

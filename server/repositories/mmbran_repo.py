@@ -53,8 +53,8 @@ def fetch_mmbran_by_pk(pk: str) -> dict | None:
             mbcase   AS case_,
             mbadby   AS ad_by,
             mbaddt   AS ad_dt,
-            mbchby   AS ch_by,
-            mbchdt   AS ch_dt,
+            mbchby   AS changed_by,
+            mbchdt   AS changed_at,
             mbchno   AS changed_no,
             mbrgid   AS added_by,
             mbrgdt   AS added_at,
@@ -229,7 +229,7 @@ def update_mmbran(
 
 # ── Soft Delete ───────────────────────────────────────────────────────────────
 
-def soft_delete_mmbran(pk: str, user: str = "Admin"):
+def soft_delete_mmbran(pk: str, old_changed_no: int, user: str = "Admin"):
     now = datetime.now()
     conn = get_connection()
     try:
@@ -242,11 +242,16 @@ def soft_delete_mmbran(pk: str, user: str = "Admin"):
                 mbchby = %s,
                 mbchdt = %s,
                 mbchid = %s,
-                mbchno = mbchno + 1
+                mbchno = %s
             WHERE mbnobr = %s
+              AND mbchno = %s
             """,
-            (user, now, user, pk),
+            (user, now, user, old_changed_no + 1, pk, old_changed_no),
         )
+
+        if cur.rowcount == 0:
+            raise Exception("Record was modified by another user.")
+
         conn.commit()
     except Exception:
         conn.rollback()
