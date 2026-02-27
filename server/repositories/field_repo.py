@@ -1,45 +1,39 @@
 from server.db import get_connection
 
 
-def fetch_fields(conn_name: str, table_name: str):
-    """
-    Fetch real columns directly from PostgreSQL information_schema.
-    Return format:
-    [
-        {"name": "column_name", "comment": "column_comment"},
-        ...
-    ]
-    """
+def fetch_fields(connection_name: str, table_name: str) -> list[dict]:
+    print("=== FETCH FIELDS DEBUG ===")
+    print("Connection name:", repr(connection_name))
+    print("Table name:", repr(table_name))
 
     sql = """
         SELECT
-            column_name AS name,
-            COALESCE(col_description(
-                (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass::oid,
-                ordinal_position
-            ), column_name) AS comment
-        FROM information_schema.columns
-        WHERE table_schema = 'barcodesap'
-          AND table_name = %s
-        ORDER BY ordinal_position
+            mflid AS pk,
+            mtflnm AS name
+        FROM barcodesap.mmfield
+        WHERE mtconm = %s
+          AND mttbnm = %s
+        ORDER BY mtflnm
     """
 
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(sql, (table_name,))
+        cur.execute(sql, (connection_name, table_name))
 
         rows = cur.fetchall()
-        cols = [d[0] for d in cur.description]
+        print("Rows returned from DB:", rows)
 
+        cols = [desc[0] for desc in cur.description]
         result = [dict(zip(cols, row)) for row in rows]
 
-        print("FIELDS RETURNED FROM REPO:", result)
+        print("Final result:", result)
+        print("==========================")
 
         return result
 
     except Exception as e:
-        print("FIELD FETCH ERROR:", e)
+        print("FETCH FIELDS ERROR:", e)
         return []
 
     finally:
