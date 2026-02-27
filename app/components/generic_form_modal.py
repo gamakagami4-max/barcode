@@ -1,6 +1,5 @@
 # app/components/generic_form_modal.py
-# Original light theme — only change: Select All / Select None buttons
-# are now clean pill chips instead of plain underlined text links.
+# FIXED: Checkbox display now correctly handles pre-formatted labels with " AS "
 
 import qtawesome as qta
 from PySide6.QtWidgets import (
@@ -562,7 +561,18 @@ class _CheckboxListWidget(QWidget):
 
         # Build checkboxes
         for value, label in normalized:
-            display = f"{value} AS {label}" if label and label != value else value
+            # FIX: Check if label already contains " AS " (from fetch_fields)
+            # If so, use it as-is; otherwise, format it with value
+            if label and label != value:
+                if " AS " in label:
+                    # Label already formatted (e.g., "column_name AS Comment")
+                    display = label
+                else:
+                    # Label needs formatting
+                    display = f"{value} AS {label}"
+            else:
+                display = value
+            
             cb = QCheckBox(display)
             cb.setChecked(value in checked_set)
             cb.setEnabled(not self._disabled)

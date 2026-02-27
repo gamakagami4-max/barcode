@@ -1,5 +1,3 @@
-# app/pages/master_source_group.py
-
 import threading
 import openpyxl
 from PySide6.QtCore import Qt, QObject, Signal, QTimer
@@ -23,7 +21,8 @@ from repositories.mmsdgr_repo import (
 from repositories.mengin_repo import fetch_all_engines
 from repositories.mconnc_repo import fetch_connections_by_engine
 from repositories.mtable_repo import fetch_tables_by_connection
-from repositories.field_repo import fetch_fields
+from repositories.field_repo import fetch_fields, fetch_field_names_by_ids
+from server.db import get_connection
 
 ROW_STANDARD          = "standard"
 QUERY_COL_FIXED_WIDTH = 370
@@ -132,17 +131,55 @@ def _split_tables_and_fields(mixed: list[str]) -> tuple[list[str], list[str]]:
 
 # ── Data conversion ───────────────────────────────────────────────────────────
 
-def row_to_tuple(r, conn_map, table_map):
+def _format_fields_with_comments(field_names: list[str], table_name: str, conn_pk: int) -> str:
+    """
+    Format field names as 'name (comment)' by fetching comments from DB.
+    Falls back to just names if fetch fails.
+    """
+    if not field_names or not table_name:
+        return ", ".join(field_names) if field_names else ""
+    
+    try:
+        # Fetch all fields for this table to get comments
+        cols = fetch_fields(conn_pk, table_name)
+        
+        # Build a map of name -> comment
+        comment_map = {}
+        for col in cols:
+            name = col.get("name")
+            comment = col.get("comment")
+            if name and comment:
+                comment_map[name] = comment
+        
+        # Format each field name
+        formatted = []
+        for fname in field_names:
+            if fname in comment_map:
+                formatted.append(f"{fname} ({comment_map[fname]})")
+            else:
+                formatted.append(fname)
+        
+        return ", ".join(formatted)
+    
+    except Exception as e:
+        print(f"Error formatting fields with comments: {e}")
+        # Fallback: just return the names
+        return ", ".join(field_names)
+
+
+def row_to_tuple(r, conn_map, table_map, engine_map=None):
     pk      = r["pk"]
     eng     = (r.get("engine") or "").strip()
 
-    # Resolve connection name
+    # Resolve connection name and PK
     conn_id = r.get("connection_id")
     conn_name = ""
+    conn_pk = None
     for code, conns in conn_map.items():
         for name in conns:
             if str(conn_id) == str(name) or conn_id == name:
                 conn_name = name
+                conn_pk = conn_id
                 break
         if conn_name:
             break
@@ -162,13 +199,22 @@ def row_to_tuple(r, conn_map, table_map):
             if table_name:
                 break
 
-    # Fields
+    # Fields - format with comments
     fields_raw = r.get("fields") or []
     if isinstance(fields_raw, str):
         fields_list = [f.strip() for f in fields_raw.split(",") if f.strip()]
     else:
         fields_list = [str(f).strip() for f in fields_raw if f]
-    fields_display = ", ".join(fields_list)
+    
+    # Try to enhance with comments if we have connection PK
+    if conn_pk and table_name and engine_map and eng in engine_map:
+        engine_id = engine_map.get(eng)
+        if engine_id:
+            fields_display = _format_fields_with_comments(fields_list, table_name, conn_pk)
+        else:
+            fields_display = ", ".join(fields_list)
+    else:
+        fields_display = ", ".join(fields_list)
 
     return (
         f"{eng}::{conn_name}::{table_name}::{pk}",  # 0 composite key
@@ -362,9 +408,7 @@ class SourceDataPage(QWidget):
             hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
     # ── Selection helpers ─────────────────────────────────────────────────────
-            
-   
-            
+
     def _on_row_selection_changed(self):
         self._update_selection_dependent_state(bool(self.table.selectedItems()))
 
@@ -471,6 +515,7 @@ class SourceDataPage(QWidget):
         self.table.setItem(r, 7, self._make_item(row[7]))
         self.table.setItem(r, 8, self._make_item(row[8]))
         self.table.setItem(r, 9, self._make_item(row[9]))
+
     def render_page(self):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
@@ -520,7 +565,7 @@ class SourceDataPage(QWidget):
 
             # 3️⃣ Fetch SDGR records and convert to tuples
             self.all_data = [
-                row_to_tuple(r, self._conn_map, table_map) 
+                row_to_tuple(r, self._conn_map, table_map, self._engine_map) 
                 for r in fetch_all_sdgr()
             ]
 
@@ -572,9 +617,11 @@ class SourceDataPage(QWidget):
     def _sort_key(self, row: tuple, idx: int):
         val = str(row[idx]) if row[idx] is not None else ""
         try:
-            return float(val.replace(",", ""))
+            # Try to convert to float for numeric comparison
+            return (0, float(val.replace(",", "")))  # 0 = numeric, sorts before strings
         except ValueError:
-            return val.lower()
+            # Keep as string for text comparison
+            return (1, val.lower())  # 1 = string, sorts after numbers
 
     # ── Pagination ────────────────────────────────────────────────────────────
 
@@ -609,7 +656,6 @@ class SourceDataPage(QWidget):
             if btn:
                 btn.clicked.connect(slot)
 
-    
     # ── Source-type mutual-exclusion ──────────────────────────────────────────
 
     def _apply_source_type_state(self, modal: GenericFormModal, source_type: str):
@@ -691,8 +737,26 @@ class SourceDataPage(QWidget):
                 fields_widget.set_actions_visible(False)
 
         elif field_name == "table_name" and value:
-            # Clear saved fields because table changed
-            modal._saved_fields = None
+            print(f"\n_on_field_changed: table_name = {value}")
+            
+            # Only clear saved fields if table actually changed (not during initial edit setup)
+            # Check if we're in edit mode and table hasn't actually changed
+            current_saved = getattr(modal, "_saved_fields", None)
+            old_table = getattr(modal, "_last_selected_table", None)
+            
+            print(f"  current_saved: {current_saved}")
+            print(f"  old_table: {old_table}")
+            
+            if old_table != value:
+                print(f"  Table changed from {old_table} to {value} - clearing saved fields")
+                # Table actually changed - clear saved fields
+                modal._saved_fields = None
+            else:
+                print(f"  Table is same ({value}) - keeping saved fields")
+            # else: table didn't change, keep saved fields for pre-checking
+            
+            modal._last_selected_table = value
+            print(f"  Calling _fetch_and_populate_fields for {value}")
             self._fetch_and_populate_fields(modal, value)
 
         elif field_name == "table_name" and not value:
@@ -709,38 +773,92 @@ class SourceDataPage(QWidget):
     # ── Async field population ────────────────────────────────────────────────
 
     def _fetch_and_populate_fields(self, modal, table_name):
+        print("\n_fetch_and_populate_fields called")
+        print(f"  table_name: {table_name}")
+        
         engine = modal.get_field_value("engine")
         conn_name = modal.get_field_value("conn")
+        
+        print(f"  engine: {engine}")
+        print(f"  conn_name: {conn_name}")
 
         if not engine or not conn_name or not table_name:
+            print(f"  -> Missing required: engine={bool(engine)}, conn={bool(conn_name)}, table={bool(table_name)}")
             return
 
         try:
             # Resolve connection PK from engine map
             engine_id = self._engine_map.get(engine)
+            print(f"  engine_id: {engine_id}")
+            
             if not engine_id:
                 raise ValueError("Invalid engine selected")
 
             connections = fetch_connections_by_engine(engine_id)
+            print(f"  Fetched {len(connections)} connections")
+            
             conn_obj = next((c for c in connections if c["name"] == conn_name), None)
             if not conn_obj:
                 raise ValueError(f"Invalid connection: {conn_name}")
             conn_pk = conn_obj["pk"]
+            
+            print(f"  conn_pk: {conn_pk}")
 
-            cols = fetch_fields(conn_pk, table_name)  # pass PK, not name
+            # FIX: Pass conn_pk (int), which is correct
+            cols = fetch_fields(conn_pk, table_name)
+            print(f"  fetch_fields returned {len(cols) if cols else 0} columns")
+            if cols:
+                for i, col in enumerate(cols[:3]):
+                    print(f"    Col[{i}]: {col.get('name')} (comment: {col.get('comment')})")
+                    
         except Exception as e:
-            print("Fetch fields error:", e)
+            print(f"  ERROR: {e}")
+            import traceback
+            traceback.print_exc()
             cols = []
 
+        print(f"  Scheduling _update_fields_ui with {len(cols) if cols else 0} cols")
         QTimer.singleShot(50, lambda: self._update_fields_ui(modal, cols))
 
     def _update_fields_ui(self, modal, cols):
+        print("\n" + "="*60)
+        print("_update_fields_ui DEBUG")
+        print("="*60)
+        print(f"1. cols received: {len(cols) if cols else 0} fields")
+        if cols:
+            for i, c in enumerate(cols[:3]):
+                print(f"   Sample col[{i}]: name={c.get('name')}, comment={c.get('comment')}")
+        
         if not cols:
+            print("   -> No cols, returning empty")
             modal.update_field_options("fields", [])
             return
 
-        # saved field NAMES from DB (edit mode)
+        # Get saved field NAMES from DB (edit mode)
         saved_names = getattr(modal, "_saved_fields", None)
+        print(f"2. modal._saved_fields: {saved_names}")
+        print(f"   Type: {type(saved_names)}")
+        
+        # Convert to list of names if it's a list of IDs (edit mode)
+        if saved_names and isinstance(saved_names, list) and saved_names:
+            print(f"3. saved_names is a list with {len(saved_names)} items")
+            print(f"   First item: {saved_names[0]}, type: {type(saved_names[0])}")
+            
+            if isinstance(saved_names[0], int):
+                print(f"4. Converting IDs to names: {saved_names}")
+                # These are field IDs from DB - need to fetch names
+                try:
+                    saved_names = fetch_field_names_by_ids(saved_names)
+                    print(f"5. Converted successfully to: {saved_names}")
+                except Exception as e:
+                    print(f"ERROR: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    saved_names = []
+            else:
+                print(f"4. Items are not ints (type: {type(saved_names[0])}), using as-is")
+        else:
+            print(f"3. No saved_names to process")
 
         options = []
 
@@ -755,32 +873,49 @@ class SourceDataPage(QWidget):
                 label = name
 
             options.append({
-                "value": name,   # use column name instead of pk
+                "value": name,   # Use field NAME as value
                 "label": label,
             })
 
+        print(f"6. Built {len(options)} options")
+        for i, opt in enumerate(options[:3]):
+            print(f"   Option[{i}]: value={opt['value']}, label={opt['label']}")
+
         # Pre-check logic
         if saved_names:
-            # Expecting saved field names now
+            # Expecting saved field NAMES now
             checked_dict = {fname: True for fname in saved_names}
+            print(f"7. Using saved names for pre-check:")
+            print(f"   Saved: {list(checked_dict.keys())}")
         else:
             # Default: select all
             checked_dict = {col["name"]: True for col in cols}
+            print(f"7. No saved names, selecting all {len(checked_dict)} fields")
 
+        print(f"8. Final checked_dict ({len(checked_dict)} items): {list(checked_dict.keys())}")
+        
         modal.update_field_options("fields", options, checked=checked_dict)
+        print(f"9. Called update_field_options")
 
         # Resize UI
         fields_widget = modal.inputs.get("fields")
+        print(f"10. fields_widget found: {fields_widget is not None}")
+        
         if fields_widget:
             fields_widget.setMinimumHeight(155)
             fields_widget.setMaximumHeight(230)
 
             cbw = getattr(fields_widget, "_checkbox_widget", None)
+            print(f"11. _checkbox_widget found: {cbw is not None}")
+            
             if cbw and hasattr(cbw, "_scroll"):
                 cbw._scroll.setFixedHeight(125)
 
             if hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(True)
+        
+        print("="*60 + "\n")
+
     # ── Add ───────────────────────────────────────────────────────────────────
 
     def handle_add_action(self):
@@ -838,12 +973,11 @@ class SourceDataPage(QWidget):
             QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
             return
 
-        selected_fields = data.get("fields", [])
+        # Get field names from form
+        selected_field_names = data.get("fields", [])
 
-        # Ensure list[int]
-        if not isinstance(selected_fields, list):
-            selected_fields = []
-
+        # Convert field NAMES to IDs for DB storage
+        selected_field_ids = self._convert_field_names_to_ids(selected_field_names)
 
         try:
             # Resolve engine PK
@@ -872,7 +1006,7 @@ class SourceDataPage(QWidget):
                 matbnmiy=tbnmiy,
                 maqlsv=query if source_type == SOURCE_TYPE_QUERY else "",
                 maengn=engine,
-                fields=selected_fields,
+                fields=selected_field_ids,
                 user="Admin",
             )
 
@@ -881,6 +1015,33 @@ class SourceDataPage(QWidget):
             return
 
         self.load_data()
+
+    def _convert_field_names_to_ids(self, field_names: list[str]) -> list[int]:
+        """Convert field names to their database IDs."""
+        if not field_names:
+            return []
+
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            placeholders = ','.join(['%s'] * len(field_names))
+            cur.execute(
+                f"""
+                SELECT mflid FROM barcodesap.mmfield 
+                WHERE mtflnm IN ({placeholders})
+                ORDER BY mflid
+                """,
+                field_names
+            )
+            field_ids = [row[0] for row in cur.fetchall()]
+            conn.close()
+            return field_ids
+        except Exception as e:
+            print(f"Error converting field names to IDs: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
     # ── Export ────────────────────────────────────────────────────────────────
 
     def handle_export_action(self):
@@ -942,7 +1103,6 @@ class SourceDataPage(QWidget):
 
         if isinstance(fields_raw, list) and fields_raw:
             try:
-                from repositories.field_repo import fetch_field_names_by_ids
                 names = fetch_field_names_by_ids(fields_raw)
                 fields_str = ", ".join(names)
             except Exception:
@@ -1010,10 +1170,11 @@ class SourceDataPage(QWidget):
             fields=schema,
             parent=self,
             mode="edit",
-            initial_data=initial,
+            initial_data={},  # Don't populate yet - will do it after cascade
         )
 
         modal._saved_fields = saved_fields
+        modal._deferred_initial_data = initial  # Store for later
 
         modal.fieldChanged.connect(
             lambda name, val, m=modal: self._on_field_changed(m, name, val)
@@ -1022,10 +1183,42 @@ class SourceDataPage(QWidget):
 
         self._apply_source_type_state(modal, initial_source_type)
 
-        if table_name and initial_source_type == SOURCE_TYPE_TABLE:
-            self._fetch_and_populate_fields(modal, table_name)
+        # For edit mode, populate engine and connection FIRST via cascade
+        # Then populate all form values, then fetch fields
+        if engine:
+            self._on_field_changed(modal, "engine", engine)
+        if conn_name:
+            self._on_field_changed(modal, "conn", conn_name)
+        
+        # NOW populate initial data after engine/conn cascade is set up
+        # This sets actual field values so get_field_value() will work
+        QTimer.singleShot(100, lambda: self._populate_edit_form(modal, initial, table_name, initial_source_type))
 
         self._open_modal(modal)
+
+    def _populate_edit_form(self, modal: GenericFormModal, initial_data: dict, table_name: str, source_type: str):
+        """Populate form fields after cascade is complete."""
+        print("\n_populate_edit_form called")
+        print(f"  table_name: {table_name}, source_type: {source_type}")
+        
+        # Populate main fields
+        for field_name in ["engine", "conn", "source_type", "table_name", "query"]:
+            if field_name in initial_data:
+                modal.set_field_value(field_name, initial_data[field_name])
+                print(f"  Set {field_name} = {initial_data[field_name]}")
+        
+        # Handle readonly fields
+        for field_name in ["added_by", "added_at", "changed_by", "changed_at", "changed_no"]:
+            if field_name in initial_data:
+                modal.set_field_value(field_name, str(initial_data[field_name]))
+        
+        # NOW that engine/conn/table are actually SET, fetch the fields
+        if table_name and source_type == SOURCE_TYPE_TABLE:
+            print(f"  Now fetching fields for table {table_name}")
+            # Mark the table so we don't clear saved fields
+            modal._last_selected_table = table_name
+            # Fetch and populate fields
+            self._fetch_and_populate_fields(modal, table_name)
 
     def _on_edit_submitted(self, row: tuple, data: dict):
         engine      = data.get("engine", "").strip()
@@ -1046,11 +1239,11 @@ class SourceDataPage(QWidget):
             QMessageBox.warning(self, "Validation", "Query / Link Server is required.")
             return
 
-        selected_fields = data.get("fields", [])
+        # Get field names from form
+        selected_field_names = data.get("fields", [])
 
-        if not isinstance(selected_fields, list):
-            selected_fields = []
-
+        # Convert field NAMES to IDs for DB storage
+        selected_field_ids = self._convert_field_names_to_ids(selected_field_names)
 
         pk = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0
@@ -1080,7 +1273,7 @@ class SourceDataPage(QWidget):
                 matbnmiy=tbnmiy,
                 maqlsv=query if source_type == SOURCE_TYPE_QUERY else "",
                 maengn=engine,
-                fields=selected_fields,
+                fields=selected_field_ids,
                 old_changed_no=old_changed_no,
                 user="Admin",
             )

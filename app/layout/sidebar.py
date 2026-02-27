@@ -411,7 +411,7 @@ class Sidebar(QFrame):
         t_layout = QVBoxLayout(title_container)
         t_layout.setContentsMargins(12, 8, 12, 20)
         
-        title_label = QLabel("Barcode System")
+        title_label = QLabel("Menu")
         title_label.setStyleSheet("""
             font-size: 17px; 
             font-weight: 700; 
@@ -422,10 +422,6 @@ class Sidebar(QFrame):
         t_layout.addWidget(title_label)
         
         self.content_layout.addWidget(title_container)
-
-        # Menus
-        self.content_layout.addWidget(self.create_label("MENU"))
-        self.content_layout.addSpacing(4)
 
         # File Menu
         file_items = {"Dashboard": lambda: self.nav_callback(0)}
