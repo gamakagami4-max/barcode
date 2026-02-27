@@ -739,23 +739,33 @@ class SourceDataPage(QWidget):
             modal.update_field_options("fields", [])
             return
 
-        # saved field IDs from DB (edit mode)
-        saved_ids = getattr(modal, "_saved_fields", None)
+        # saved field NAMES from DB (edit mode)
+        saved_names = getattr(modal, "_saved_fields", None)
 
-        # Build checkbox options using FIELD ID as value
         options = []
+
         for col in cols:
+            name = col["name"]
+            comment = col.get("comment")
+
+            # Build label as: field_name AS comment
+            if comment:
+                label = f"{name} AS {comment}"
+            else:
+                label = name
+
             options.append({
-                "value": col["pk"],          # ← IMPORTANT: use mflid
-                "label": col["name"],        # display name
+                "value": name,   # use column name instead of pk
+                "label": label,
             })
 
         # Pre-check logic
-        if saved_ids:
-            checked_dict = {int(fid): True for fid in saved_ids}
+        if saved_names:
+            # Expecting saved field names now
+            checked_dict = {fname: True for fname in saved_names}
         else:
-            # default: select all
-            checked_dict = {col["pk"]: True for col in cols}
+            # Default: select all
+            checked_dict = {col["name"]: True for col in cols}
 
         modal.update_field_options("fields", options, checked=checked_dict)
 
@@ -764,9 +774,11 @@ class SourceDataPage(QWidget):
         if fields_widget:
             fields_widget.setMinimumHeight(155)
             fields_widget.setMaximumHeight(230)
+
             cbw = getattr(fields_widget, "_checkbox_widget", None)
             if cbw and hasattr(cbw, "_scroll"):
                 cbw._scroll.setFixedHeight(125)
+
             if hasattr(fields_widget, "set_actions_visible"):
                 fields_widget.set_actions_visible(True)
     # ── Add ───────────────────────────────────────────────────────────────────
@@ -832,7 +844,6 @@ class SourceDataPage(QWidget):
         if not isinstance(selected_fields, list):
             selected_fields = []
 
-        selected_fields = [int(fid) for fid in selected_fields]
 
         try:
             # Resolve engine PK
@@ -1040,7 +1051,6 @@ class SourceDataPage(QWidget):
         if not isinstance(selected_fields, list):
             selected_fields = []
 
-        selected_fields = [int(fid) for fid in selected_fields]
 
         pk = row[10]
         old_changed_no = int(row[9]) if str(row[9]).isdigit() else 0

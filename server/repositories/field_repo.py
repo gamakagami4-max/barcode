@@ -8,18 +8,28 @@ def fetch_fields(connection_name: str, table_name: str) -> list[dict]:
 
     sql = """
         SELECT
-            mflid AS pk,
-            mtflnm AS name
-        FROM barcodesap.mmfield
-        WHERE mtconm = %s
-          AND mttbnm = %s
-        ORDER BY mtflnm
+            a.attnum AS pk,                 -- column position (or use your own id if needed)
+            a.attname AS name,              -- column name
+            pgd.description AS comment      -- column comment
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c
+            ON a.attrelid = c.oid
+        JOIN pg_catalog.pg_namespace n
+            ON c.relnamespace = n.oid
+        LEFT JOIN pg_catalog.pg_description pgd
+            ON pgd.objoid = c.oid
+           AND pgd.objsubid = a.attnum
+        WHERE c.relname = %s
+          AND n.nspname = 'barcodesap'          -- change schema if needed
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        ORDER BY a.attnum
     """
 
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(sql, (connection_name, table_name))
+        cur.execute(sql, (table_name,))
 
         rows = cur.fetchall()
         print("Rows returned from DB:", rows)
@@ -27,7 +37,13 @@ def fetch_fields(connection_name: str, table_name: str) -> list[dict]:
         cols = [desc[0] for desc in cur.description]
         result = [dict(zip(cols, row)) for row in rows]
 
-        print("Final result:", result)
+        print("Final result:")
+        for r in result:
+            print(
+                f"Column: {r['name']} | "
+                f"Comment: {r.get('comment')}"
+            )
+
         print("==========================")
 
         return result
