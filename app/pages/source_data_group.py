@@ -502,16 +502,7 @@ class SourceDataPage(QWidget):
 
     def load_data(self):
         try:
-            # Build table map once
-            table_map = self._build_connection_tables_structure()
-
-            # Fetch all SDGR records and convert to tuples for the table
-            self.all_data = [
-                row_to_tuple(r, self._conn_map, table_map) 
-                for r in fetch_all_sdgr()
-            ]
-
-            # Load engines and connections
+            # 1️⃣ Load engines and connections first
             engines = fetch_all_engines()
             self._engine_map = {}
             self._conn_map   = {}
@@ -523,6 +514,15 @@ class SourceDataPage(QWidget):
 
                 conns = fetch_connections_by_engine(engine_id)
                 self._conn_map[engine_code] = [c["name"] for c in conns]
+
+            # 2️⃣ Build table map once connections are ready
+            table_map = self._build_connection_tables_structure()
+
+            # 3️⃣ Fetch SDGR records and convert to tuples
+            self.all_data = [
+                row_to_tuple(r, self._conn_map, table_map) 
+                for r in fetch_all_sdgr()
+            ]
 
         except Exception as exc:
             QMessageBox.critical(self, "Database Error", f"Failed to load data:\n\n{exc}")
@@ -709,25 +709,30 @@ class SourceDataPage(QWidget):
     # ── Async field population ────────────────────────────────────────────────
 
     def _fetch_and_populate_fields(self, modal, table_name):
-        print(">>> _fetch_and_populate_fields CALLED")
-
         engine = modal.get_field_value("engine")
-        conn   = modal.get_field_value("conn")
+        conn_name = modal.get_field_value("conn")
 
-        if not engine or not conn or not table_name:
-            print(">>> Missing required values")
+        if not engine or not conn_name or not table_name:
             return
 
         try:
-            cols = fetch_fields(conn, table_name)
-            print(">>> GOT COLS:", cols)
+            # Resolve connection PK from engine map
+            engine_id = self._engine_map.get(engine)
+            if not engine_id:
+                raise ValueError("Invalid engine selected")
+
+            connections = fetch_connections_by_engine(engine_id)
+            conn_obj = next((c for c in connections if c["name"] == conn_name), None)
+            if not conn_obj:
+                raise ValueError(f"Invalid connection: {conn_name}")
+            conn_pk = conn_obj["pk"]
+
+            cols = fetch_fields(conn_pk, table_name)  # pass PK, not name
         except Exception as e:
-            print(">>> ERROR:", e)
+            print("Fetch fields error:", e)
             cols = []
 
-        # Delay UI update slightly to ensure modal widgets exist
         QTimer.singleShot(50, lambda: self._update_fields_ui(modal, cols))
-
 
     def _update_fields_ui(self, modal, cols):
         print(">>> _update_fields_ui CALLED")
