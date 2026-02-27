@@ -101,7 +101,6 @@ class CollapsibleMenu(QWidget):
         self.header_widget.setCursor(Qt.PointingHandCursor)
         self.header_widget.mousePressEvent = self.toggle_expansion
         
-        # Add hover stylesheet with transition
         self.header_widget.enterEvent = lambda event: self.animate_hover(True)
         self.header_widget.leaveEvent = lambda event: self.animate_hover(False)
         
@@ -133,11 +132,9 @@ class CollapsibleMenu(QWidget):
         self.container.setMaximumHeight(0)
         self.main_layout.addWidget(self.container)
         
-        # Animation setup
         self.chevron_animation = None
 
     def animate_hover(self, is_entering):
-        """Smooth hover animation"""
         if is_entering:
             self.header_widget.setStyleSheet("""
                 QWidget { background-color: #F1F5F9; border-radius: 6px; }
@@ -148,37 +145,28 @@ class CollapsibleMenu(QWidget):
             """)
 
     def on_sub_clicked(self, button, callback):
-        """Clears previous selections across the sidebar and highlights the clicked button."""
         self.sidebar_ref.clear_all_selections()
         button.setStyleSheet(STYLE_ACTIVE)
         callback()
 
     def update_chevron(self):
-        """Update chevron icon with rotation animation"""
         icon_code = "fa5s.chevron-down" if self.is_expanded else "fa5s.chevron-right"
         self.chevron_label.setPixmap(qta.icon(icon_code, color="#94A3B8").pixmap(QSize(10, 10)))
 
     def toggle_expansion(self, event):
-        """Toggle expansion with smooth animation"""
         self.is_expanded = not self.is_expanded
-        
-        # Update chevron
         self.update_chevron()
         
-        # Animate container expansion
         if self.is_expanded:
             self.container.setVisible(True)
-            # Calculate the target height
             target_height = self.container_layout.sizeHint().height()
             
-            # Height animation
             self.height_anim = QPropertyAnimation(self.container, b"maximumHeight")
             self.height_anim.setDuration(250)
             self.height_anim.setStartValue(0)
             self.height_anim.setEndValue(target_height)
             self.height_anim.setEasingCurve(QEasingCurve.OutCubic)
             
-            # Opacity animation
             self.opacity_effect = QGraphicsOpacityEffect()
             self.container.setGraphicsEffect(self.opacity_effect)
             
@@ -188,18 +176,15 @@ class CollapsibleMenu(QWidget):
             self.opacity_anim.setEndValue(1.0)
             self.opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
             
-            # Start animations
             self.height_anim.start()
             self.opacity_anim.start()
         else:
-            # Height animation
             self.height_anim = QPropertyAnimation(self.container, b"maximumHeight")
             self.height_anim.setDuration(200)
             self.height_anim.setStartValue(self.container.height())
             self.height_anim.setEndValue(0)
             self.height_anim.setEasingCurve(QEasingCurve.InCubic)
             
-            # Opacity animation
             if self.container.graphicsEffect():
                 self.opacity_anim = QPropertyAnimation(self.container.graphicsEffect(), b"opacity")
                 self.opacity_anim.setDuration(200)
@@ -208,12 +193,10 @@ class CollapsibleMenu(QWidget):
                 self.opacity_anim.setEasingCurve(QEasingCurve.InCubic)
                 self.opacity_anim.start()
             
-            # Hide after animation
             self.height_anim.finished.connect(lambda: self.container.setVisible(False))
             self.height_anim.start()
 
 class Sidebar(QFrame):
-    # Signal emitted when sidebar collapse state changes
     collapsed_changed = Signal(bool)
     
     def __init__(self, nav_callback):
@@ -228,8 +211,8 @@ class Sidebar(QFrame):
         self.setFixedWidth(self.expanded_width)
         self.setStyleSheet("""
             QFrame { 
-                background-color: #FAFAFA; 
-                border-right: 1px solid #E5E7EB; 
+                background-color: #E2E8F0; 
+                border-right: 1px solid #CBD5E1; 
             }
         """)
         
@@ -237,7 +220,7 @@ class Sidebar(QFrame):
         self.main_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self.main_sidebar_layout.setSpacing(0)
 
-        # Toggle button container (always visible at top)
+        # Toggle button container
         self.toggle_container = QWidget()
         self.toggle_container.setStyleSheet("background: transparent;")
         toggle_layout = QHBoxLayout(self.toggle_container)
@@ -302,7 +285,7 @@ class Sidebar(QFrame):
 
         self.content_container = QWidget()
         self.content_container.setObjectName("content_container")
-        self.content_container.setStyleSheet("#content_container { background: #FAFAFA; }")
+        self.content_container.setStyleSheet("#content_container { background: #E2E8F0; }")
         
         self.content_layout = QVBoxLayout(self.content_container)
         self.content_layout.setContentsMargins(14, 10, 14, 20)
@@ -314,16 +297,13 @@ class Sidebar(QFrame):
         self.build_ui()
 
     def toggle_sidebar(self):
-        """Toggle sidebar between expanded and collapsed states with smooth animation"""
         self.is_collapsed = not self.is_collapsed
         
-        # Update toggle button icon
         if self.is_collapsed:
             self.toggle_btn.setIcon(qta.icon("fa5s.chevron-right", color="#475569"))
         else:
             self.toggle_btn.setIcon(qta.icon("fa5s.bars", color="#475569"))
         
-        # Animate width change
         self.width_anim = QPropertyAnimation(self, b"minimumWidth")
         self.width_anim.setDuration(300)
         self.width_anim.setStartValue(self.width())
@@ -336,9 +316,7 @@ class Sidebar(QFrame):
         self.width_anim_max.setEndValue(self.collapsed_width if self.is_collapsed else self.expanded_width)
         self.width_anim_max.setEasingCurve(QEasingCurve.InOutCubic)
         
-        # Fade content in/out
         if self.is_collapsed:
-            # Fade out content before collapsing
             self.opacity_effect = QGraphicsOpacityEffect()
             self.content_container.setGraphicsEffect(self.opacity_effect)
             
@@ -350,7 +328,6 @@ class Sidebar(QFrame):
             self.opacity_anim.finished.connect(lambda: self.content_container.setVisible(False))
             self.opacity_anim.start()
             
-            # Hide user panel
             if hasattr(self, 'user_panel'):
                 self.user_opacity_effect = QGraphicsOpacityEffect()
                 self.user_panel.setGraphicsEffect(self.user_opacity_effect)
@@ -363,7 +340,6 @@ class Sidebar(QFrame):
                 self.user_opacity_anim.finished.connect(lambda: self.user_panel.setVisible(False))
                 self.user_opacity_anim.start()
         else:
-            # Show content first, then fade in
             self.content_container.setVisible(True)
             if hasattr(self, 'user_panel'):
                 self.user_panel.setVisible(True)
@@ -392,22 +368,16 @@ class Sidebar(QFrame):
         self.width_anim.start()
         self.width_anim_max.start()
         
-        # Emit signal for parent widget to adjust layout
         self.collapsed_changed.emit(self.is_collapsed)
 
     def clear_all_selections(self):
-        """Resets all sidebar sub-buttons to the normal style with fade animation."""
         for menu in self.menus:
             for btn in menu.sub_buttons:
                 btn.setStyleSheet(STYLE_NORMAL)
 
     def build_ui(self):
         title_container = QWidget()
-        title_container.setStyleSheet("""
-            QWidget {
-                background: transparent;
-            }
-        """)
+        title_container.setStyleSheet("QWidget { background: transparent; }")
         t_layout = QVBoxLayout(title_container)
         t_layout.setContentsMargins(12, 8, 12, 20)
         
@@ -420,7 +390,6 @@ class Sidebar(QFrame):
         """)
         
         t_layout.addWidget(title_label)
-        
         self.content_layout.addWidget(title_container)
 
         # File Menu
@@ -450,26 +419,27 @@ class Sidebar(QFrame):
         # Barcode Menu
         barcode_items = {
             "Barcode Design": lambda: self.nav_callback(9),
-            "Barcode Editor": lambda: self.nav_callback(10)}
+            "Barcode Editor": lambda: self.nav_callback(10)
+        }
         barcode_menu = CollapsibleMenu("Barcode", "fa5s.barcode", barcode_items, self)
         self.content_layout.addWidget(barcode_menu)
         self.menus.append(barcode_menu)
        
         self.content_layout.addStretch()
 
-        # Professional User Panel - FIXED VERSION
+        # User Panel
         self.user_panel = QWidget()
         self.user_panel.setObjectName("user_panel")
         self.user_panel.setStyleSheet("""
             #user_panel {
-                background-color: #FFFFFF;
-                border-top: 1px solid #E5E7EB;
+                background-color: #E2E8F0;
+                border-top: 1px solid #CBD5E1;
             }
         """)
         user_layout = QHBoxLayout(self.user_panel)
         user_layout.setContentsMargins(16, 14, 16, 14)
 
-        # --- Avatar ---
+        # Avatar
         avatar_container = QWidget()
         avatar_container.setFixedSize(36, 36)
         avatar_container.setStyleSheet("""
@@ -486,7 +456,7 @@ class Sidebar(QFrame):
         avatar.setPixmap(qta.icon("fa5s.user", color="#2563EB").pixmap(QSize(16, 16)))
         avatar_layout.addWidget(avatar)
 
-        # --- User Info ---
+        # User Info
         user_info = QLabel("Administrator<br><span style='color:#6B7280; font-size: 10px;'>System User</span>")
         user_info.setTextFormat(Qt.RichText)
         user_info.setStyleSheet("""
@@ -497,7 +467,7 @@ class Sidebar(QFrame):
             border: none;
         """)
 
-        # --- Exit Button ---
+        # Exit Button
         exit_btn = QPushButton()
         exit_btn.setIcon(qta.icon("fa5s.sign-out-alt", color="#9CA3AF"))
         exit_btn.setIconSize(QSize(16, 16))
@@ -512,29 +482,21 @@ class Sidebar(QFrame):
                 outline: none;
             }
             QPushButton:hover {
-                background-color: #FEE2E2;  /* light red on hover */
-                color: #DC2626;               /* icon turns red */
+                background-color: #FEE2E2;
             }
         """)
-        # Optional: connect exit
-        # exit_btn.clicked.connect(self.handle_exit)
 
-        # --- Add to layout in order ---
         user_layout.addWidget(avatar_container)
         user_layout.addSpacing(10)
         user_layout.addWidget(user_info)
-        user_layout.addStretch()  # Push exit button to the far right
+        user_layout.addStretch()
         user_layout.addWidget(exit_btn)
 
         self.main_sidebar_layout.addWidget(self.user_panel)
 
     def set_active(self, page_id: int):
-        """Highlight the sidebar item that corresponds to the given page_id."""
-
-        # First clear all selections
         self.clear_all_selections()
 
-        # Map page_id → button text (must match your CollapsibleMenu labels)
         mapping = {
             0: "Dashboard",
             2: "Source Data Group",
@@ -552,16 +514,12 @@ class Sidebar(QFrame):
         if not target_text:
             return
 
-        # Loop through menus and sub_buttons to find the matching one
         for menu in self.menus:
             for btn in menu.sub_buttons:
                 if btn.text() == target_text:
                     btn.setStyleSheet(STYLE_ACTIVE)
-
-                    # Expand parent menu if collapsed
                     if not menu.is_expanded:
                         menu.toggle_expansion(None)
-
                     return
 
     def create_label(self, text):
