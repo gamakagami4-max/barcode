@@ -14,6 +14,16 @@ from components.standard_table import StandardTable
 from components.standard_button import StandardButton
 from components.sort_by_widget import SortByWidget
 from components.generic_form_modal import GenericFormModal
+
+# Repository
+from server.repositories.mbarcd_repo import (
+    fetch_all_mbarcd,
+    fetch_mbarcd_by_pk,
+    create_mbarcd,
+    update_mbarcd,
+    delete_mbarcd,
+)
+
 # --- Design Tokens ---
 COLORS = {
     "bg_main": "#F8FAFC",
@@ -43,6 +53,35 @@ VIEW_DETAIL_FIELDS = [
     ("Last Print At", 10),
 ]
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _fmt_date(value) -> str:
+    """Format a datetime / date / string value for display."""
+    if value is None:
+        return "-"
+    if isinstance(value, datetime):
+        return value.strftime("%d-%b-%Y")
+    return str(value)
+
+
+def _dict_to_row(d: dict) -> tuple:
+    """Convert a mbarcd repo dict to the display tuple used by the table."""
+    sticker_size = d.get("sticker_name") or f"{d.get('h_in', '')} X {d.get('w_in', '')}"
+    status = "DISPLAY" if d.get("dp_fg") == 1 else "NOT DISPLAY"
+    return (
+        d.get("pk", ""),                   # 0  CODE
+        d.get("name", ""),                 # 1  NAME
+        sticker_size,                      # 2  STICKER SIZE
+        status,                            # 3  STATUS
+        d.get("added_by", "-"),            # 4  ADDED BY
+        _fmt_date(d.get("added_at")),      # 5  ADDED AT
+        d.get("changed_by", "-"),          # 6  CHANGED BY
+        _fmt_date(d.get("changed_at")),    # 7  CHANGED AT
+        str(d.get("changed_no", 0)),       # 8  CHANGED NO
+        d.get("printed_by") or "-",        # 9  LAST PRINT BY
+        _fmt_date(d.get("printed_at")),    # 10 LAST PRINT AT
+    )
+
 
 class BarcodeListPage(QWidget):
     # Signal to request navigation to editor page
@@ -50,7 +89,8 @@ class BarcodeListPage(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.all_data = []
+        self.all_data = []        # list[tuple]  — display rows
+        self.all_dicts = {}       # dict[pk -> raw repo dict] — for CRUD ops
         self.filtered_data = []
         self.current_page = 0
         self.page_size = 25
@@ -59,8 +99,8 @@ class BarcodeListPage(QWidget):
         self._last_search_text = ""
         self._sort_fields = []
         self._sort_directions = {}
-        self.selected_row_data = None
-        self.barcode_counter = 3120
+        self.selected_row_data = None   # tuple (display)
+        self.selected_row_dict = None   # dict  (raw repo record)
         self.current_user = "YOSAFAT.YACOB"
         self.init_ui()
         self.load_data()
@@ -184,10 +224,13 @@ class BarcodeListPage(QWidget):
             row = selected_rows[0].row()
             item = self.table.item(row, 0)
             if item:
-                self.selected_row_data = item.data(Qt.UserRole)
+                self.selected_row_data = item.data(Qt.UserRole)        # tuple
+                pk = self.selected_row_data[0] if self.selected_row_data else None
+                self.selected_row_dict = self.all_dicts.get(pk)        # raw dict
                 self._update_selection_dependent_state(True)
         else:
             self.selected_row_data = None
+            self.selected_row_dict = None
             self._update_selection_dependent_state(False)
 
     # ------------------------------------------------------------------
@@ -195,16 +238,14 @@ class BarcodeListPage(QWidget):
     # ------------------------------------------------------------------
 
     def load_data(self):
-        initial_data = [
-            ("ADR/BAR/3116", "SWI_NCC_424-16-111140SW_INNER_HYDRAULIC_60X45",  "60 X 45 MM", "DISPLAY",     "ACT",          "02-Feb-2026", "ACT",          "02-Feb-2026", "4",  "ADS", "04-Feb-2026"),
-            ("ADR/BAR/3117", "[SAP] SAKURA INNER DIELECTRIC FLUIDS FILTER",     "5 X 3 INCH", "DISPLAY",     "JJH",          "03-Feb-2026", "JJH",          "03-Feb-2026", "9",  "ADB", "10-Jul-2024"),
-            ("ADR/BAR/3118", "P486182_HYDRAULIC_OUTER_(SAP)_ROTED",             "7 X 2.5 INCH","NOT DISPLAY", "ACT",         "04-Feb-2026", "ACT",          "05-Feb-2026", "17", "ACT", "04-Feb-2026"),
-            ("ADR/BAR/3120", "TEST BARCODE",                                    "4 X 2",      "DISPLAY",     "YOSAFAT.YACOB","05-Feb-2026", "YOSAFAT.YACOB","05-Feb-2026", "5",  "-",   "-"),
-        ]
+        try:
+            records = fetch_all_mbarcd()
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", f"Failed to load barcode data:\n{e}")
+            records = []
 
-        if not self.all_data:
-            self.all_data = list(initial_data)
-
+        self.all_dicts = {r["pk"]: r for r in records}
+        self.all_data = [_dict_to_row(r) for r in records]
         self._apply_filter_and_reset_page()
 
     def render_page(self):
@@ -412,29 +453,42 @@ class BarcodeListPage(QWidget):
     def handle_add_action(self):
         self.navigate_to_editor.emit()
 
-    def on_barcode_added(self, form_data):
-        self.barcode_counter += 1
-        new_code = f"ADR/BAR/{self.barcode_counter}"
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def on_barcode_added(self, form_data: dict):
+        """
+        Called by the editor page after the user submits the Add form.
 
-        new_record = (
-            new_code,
-            form_data["name"],
-            form_data["sticker_size"],
-            form_data["status"],
-            self.current_user,
-            current_date,
-            self.current_user,
-            current_date,
-            "1",
-            "-",
-            "-"
-        )
+        Expected keys in form_data:
+            pk, name, h_in, w_in, h_px, w_px,
+            company (opt), type_ (opt), sticker_name (opt),
+            flag, cont, print_, print_flag, db_fg, ad_fg, dp_fg
+        """
+        try:
+            created_pk = create_mbarcd(
+                pk=form_data["pk"],
+                name=form_data["name"],
+                h_in=form_data["h_in"],
+                w_in=form_data["w_in"],
+                h_px=form_data["h_px"],
+                w_px=form_data["w_px"],
+                company=form_data.get("company"),
+                type_=form_data.get("type_"),
+                sticker_name=form_data.get("sticker_name"),
+                flag=form_data.get("flag", 0),
+                cont=form_data.get("cont", 0),
+                print_=form_data.get("print_", 0),
+                print_flag=form_data.get("print_flag", 0),
+                db_fg=form_data.get("db_fg", 0),
+                ad_fg=form_data.get("ad_fg", 0),
+                dp_fg=form_data.get("dp_fg", 0),
+                user=self.current_user,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Create Error", f"Failed to create barcode:\n{e}")
+            return
 
-        self.all_data.insert(0, new_record)
-        self._apply_filter_and_reset_page()
-
-        QMessageBox.information(self, "Success", f"Barcode '{new_code}' has been created successfully!")
+        # Reload from DB to reflect the real saved state
+        self.load_data()
+        QMessageBox.information(self, "Success", f"Barcode '{created_pk}' has been created successfully!")
 
     def handle_export_action(self):
         import openpyxl
@@ -471,40 +525,43 @@ class BarcodeListPage(QWidget):
             return
         self.navigate_to_editor.emit()
 
-    def on_barcode_edited(self, form_data):
-        if not self.selected_row_data:
+    def on_barcode_edited(self, form_data: dict):
+        """
+        Called by the editor page after the user submits the Edit form.
+
+        Expected keys in form_data:
+            new_pk (may equal old pk), name, h_in, w_in, h_px, w_px,
+            company (opt), type_ (opt), sticker_name (opt)
+        """
+        if not self.selected_row_dict:
+            QMessageBox.warning(self, "Edit", "No record selected for editing.")
             return
 
-        code_to_edit = self.selected_row_data[0]
+        old_pk = self.selected_row_dict["pk"]
+        old_changed_no = self.selected_row_dict.get("changed_no", 0)
 
-        for i, record in enumerate(self.all_data):
-            if record[0] == code_to_edit:
-                current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                try:
-                    change_no = int(record[8]) + 1
-                except (ValueError, IndexError):
-                    change_no = 1
+        try:
+            update_mbarcd(
+                old_pk=old_pk,
+                new_pk=form_data.get("new_pk", old_pk),
+                name=form_data["name"],
+                h_in=form_data["h_in"],
+                w_in=form_data["w_in"],
+                h_px=form_data["h_px"],
+                w_px=form_data["w_px"],
+                old_changed_no=old_changed_no,
+                company=form_data.get("company"),
+                type_=form_data.get("type_"),
+                sticker_name=form_data.get("sticker_name"),
+                user=self.current_user,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Update Error", f"Failed to update barcode:\n{e}")
+            return
 
-                updated_record = (
-                    record[0],
-                    form_data["name"],
-                    form_data["sticker_size"],
-                    form_data["status"],
-                    record[4],
-                    record[5],
-                    self.current_user,
-                    current_date,
-                    str(change_no),
-                    record[9],
-                    record[10]
-                )
-
-                self.all_data[i] = updated_record
-                self.selected_row_data = updated_record
-                break
-
-        self._apply_filter_and_reset_page()
-        QMessageBox.information(self, "Success", f"Barcode '{code_to_edit}' has been updated successfully!")
+        # Reload from DB to reflect the real saved state
+        self.load_data()
+        QMessageBox.information(self, "Success", f"Barcode '{old_pk}' has been updated successfully!")
 
     def handle_delete_action(self):
         if not self.selected_row_data:
@@ -522,7 +579,13 @@ class BarcodeListPage(QWidget):
         )
 
         if reply == QMessageBox.Yes:
-            self.all_data = [record for record in self.all_data if record[0] != code_to_delete]
+            try:
+                delete_mbarcd(pk=code_to_delete, user=self.current_user)
+            except Exception as e:
+                QMessageBox.critical(self, "Delete Error", f"Failed to delete barcode:\n{e}")
+                return
+
             self.selected_row_data = None
-            self._apply_filter_and_reset_page()
+            self.selected_row_dict = None
+            self.load_data()
             QMessageBox.information(self, "Deleted", f"Barcode '{code_to_delete}' has been deleted successfully!")
