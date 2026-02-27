@@ -10,11 +10,20 @@ def fetch_tables_by_connection(conn_name: str):
         WHERE mtconm = %s
         ORDER BY mttbnm
     """
+
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(sql, (conn_name,))
-        cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        rows = cur.fetchall()
+
+        return [
+            {
+                "pk": row[0],      # 👈 use table name as PK
+                "name": row[0]
+            }
+            for row in rows
+        ]
+
     finally:
         conn.close()
