@@ -844,7 +844,8 @@ class GenericFormModal(QDialog):
         self.setModal(False)
         self.setWindowFlags(
             Qt.Dialog | Qt.CustomizeWindowHint |
-            Qt.WindowTitleHint | Qt.WindowCloseButtonHint
+            Qt.WindowTitleHint | Qt.WindowCloseButtonHint |
+            Qt.MSWindowsFixedSizeDialogHint
         )
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
 
