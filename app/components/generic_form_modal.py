@@ -1,5 +1,7 @@
 # app/components/generic_form_modal.py
 # FIXED: Checkbox display now correctly handles pre-formatted labels with " AS "
+# FIXED: _DropdownPanel.set_options uses synchronous destruction to prevent ghost widgets
+# FIXED: AnimatedCombo panel is fully destroyed and recreated on update_field_options
 
 import qtawesome as qta
 from PySide6.QtWidgets import (
@@ -223,22 +225,22 @@ class _DropdownPanel(QFrame):
             self._style_btn(btn, btn.text() == option)
 
     def set_options(self, options: list[str], selected: str = ""):
+        # Synchronously destroy old scroll area to prevent ghost widget corruption
         lay = self.layout()
         while lay.count():
             item = lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)   # synchronous destruction — no deleteLater()
+
         self._buttons.clear()
         self._options  = options
         self._selected = selected
-        for opt in options:
-            btn = QPushButton(opt)
-            btn.setFixedHeight(_OPTION_HEIGHT)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _=False, o=opt: self._pick(o))
-            self._style_btn(btn, opt == selected)
-            lay.addWidget(btn)
-            self._buttons.append(btn)
+
+        # Rebuild fresh
+        self._build_options()
+        print(f"[DropdownPanel.set_options] Rebuilt with {len(options)} options, selected={selected!r}")
 
     def show_animated(self):
         th = self._target_height()
@@ -412,6 +414,19 @@ class AnimatedCombo(QWidget):
             self._panel.setAttribute(Qt.WA_TranslucentBackground, False)
             self._panel.optionSelected.connect(self._on_picked)
             self._panel.hide()
+            print(f"[AnimatedCombo._ensure_panel] Created new panel with {len(self._options)} options")
+
+    def _destroy_panel(self):
+        """Synchronously destroy the floating panel."""
+        if self._panel is not None:
+            self._panel.hide()
+            self._panel.setParent(None)  # synchronous destruction
+            self._panel = None
+            print("[AnimatedCombo._destroy_panel] Panel destroyed")
+        if self._global_filter_installed:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().removeEventFilter(self._global_filter)
+            self._global_filter_installed = False
 
     def _toggle(self):
         self._ensure_panel()
@@ -498,22 +513,9 @@ class _CheckboxListWidget(QWidget):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         """)
 
-        self._inner = QWidget()
-        self._inner.setStyleSheet(f"""
-            QWidget {{
-                background: {COLORS['white']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-            }}
-        """)
-        self._lay = QVBoxLayout(self._inner)
-        self._lay.setContentsMargins(10, 8, 10, 8)
-        self._lay.setSpacing(4)
-
         self._checkboxes: dict[str, QCheckBox] = {}
-        self._build_checkboxes(options, checked_set)
-
-        self._scroll.setWidget(self._inner)
+        self._inner = None
+        self._rebuild_inner(options, checked_set)
         outer.addWidget(self._scroll)
 
         self._empty_lbl = QLabel("Select a table to see its fields")
@@ -526,27 +528,33 @@ class _CheckboxListWidget(QWidget):
         outer.addWidget(self._empty_lbl)
         self._scroll.setVisible(bool(options))
 
-    def _build_checkboxes(self, options, checked_set: set):
-        """
-        options can be:
-            ["col1", "col2"]
-            OR
-            [("col1", "Column 1")]
-            OR
-            [{"value": "col1", "label": "Column 1"}]
-        """
-
-        # Clear layout
-        while self._lay.count():
-            item = self._lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    def _rebuild_inner(self, options, checked_set: set):
+        """Fully replace the scroll widget — avoids layout corruption on repeated calls."""
+        # Destroy old inner widget completely (synchronous, not deleteLater)
+        if self._inner is not None:
+            old = self._inner
+            self._scroll.takeWidget()   # detach from scroll before destroying
+            old.hide()
+            old.setParent(None)         # synchronous destruction
+            self._inner = None
+            print(f"[_CheckboxListWidget._rebuild_inner] Destroyed old inner widget")
 
         self._checkboxes.clear()
 
+        inner = QWidget()
+        inner.setStyleSheet(f"""
+            QWidget {{
+                background: {COLORS['white']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 6px;
+            }}
+        """)
+        lay = QVBoxLayout(inner)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(4)
+
         # Normalize into (value, label)
         normalized = []
-
         for opt in options:
             if isinstance(opt, dict):
                 value = opt.get("value")
@@ -556,30 +564,21 @@ class _CheckboxListWidget(QWidget):
             else:
                 value = opt
                 label = opt
-
             normalized.append((value, label))
 
-        # Build checkboxes
         for value, label in normalized:
-            # FIX: Check if label already contains " AS " (from fetch_fields)
-            # If so, use it as-is; otherwise, format it with value
             if label and label != value:
                 if " AS " in label:
-                    # Label already formatted (e.g., "column_name AS Comment")
                     display = label
                 else:
-                    # Label needs formatting
                     display = f"{value} AS {label}"
             else:
                 display = value
-            
+
             cb = QCheckBox(display)
             cb.setChecked(value in checked_set)
             cb.setEnabled(not self._disabled)
-
-            # Store actual value (important!)
             cb._value = value
-
             cb.setStyleSheet(f"""
                 QCheckBox {{
                     font-size: 13px;
@@ -603,11 +602,17 @@ class _CheckboxListWidget(QWidget):
                     background: {COLORS['readonly_bg']};
                 }}
             """)
-
-            self._lay.addWidget(cb)
-
-            # Key must be value (NOT label)
+            lay.addWidget(cb)
             self._checkboxes[value] = cb
+
+        self._inner = inner
+        self._scroll.setWidget(inner)
+        print(f"[_CheckboxListWidget._rebuild_inner] Built {len(normalized)} checkboxes, "
+              f"checked={[v for v in self._checkboxes if self._checkboxes[v].isChecked()][:5]}")
+
+    def _build_checkboxes(self, options, checked_set: set):
+        """Alias kept for compatibility — delegates to _rebuild_inner."""
+        self._rebuild_inner(options, checked_set)
 
     def get_value(self) -> list[str]:
         return [opt for opt, cb in self._checkboxes.items() if cb.isChecked()]
@@ -622,6 +627,8 @@ class _CheckboxListWidget(QWidget):
         checked_options:
             ["col1", "col2"]
         """
+        print(f"[_CheckboxListWidget.set_options] {len(options)} options, "
+            f"checked_options={list(checked_options)[:5] if checked_options else None}")
 
         # Normalize options into (value, label)
         normalized = []
@@ -639,9 +646,9 @@ class _CheckboxListWidget(QWidget):
             resolved = []
             for opt in checked_options:
                 if isinstance(opt, dict):
-                    val = opt.get("value") or opt.get("name") or opt.get("id")  # try common key names
+                    val = opt.get("value") or opt.get("name") or opt.get("id")
                     if val is None:
-                        val = next(iter(opt.values()), None)                    # last resort: first value in dict
+                        val = next(iter(opt.values()), None)
                     if val is not None and not isinstance(val, dict):
                         resolved.append(val)
                 else:
@@ -650,8 +657,8 @@ class _CheckboxListWidget(QWidget):
         else:
             checked_set = {value for value, _ in normalized}
 
-        # Rebuild checkboxes
-        self._build_checkboxes(normalized, checked_set)
+        # Rebuild checkboxes using synchronous inner widget replacement
+        self._rebuild_inner(normalized, checked_set)
 
         has_opts = bool(normalized)
         self._scroll.setVisible(has_opts)
@@ -660,13 +667,14 @@ class _CheckboxListWidget(QWidget):
     def set_all_enabled(self, enabled: bool):
         for cb in self._checkboxes.values():
             cb.setEnabled(enabled)
-        self._inner.setStyleSheet(f"""
-            QWidget {{
-                background: {COLORS['white'] if enabled else COLORS['readonly_bg']};
-                border: 1px solid {COLORS['border'] if enabled else COLORS['border_light']};
-                border-radius: 6px;
-            }}
-        """)
+        if self._inner:
+            self._inner.setStyleSheet(f"""
+                QWidget {{
+                    background: {COLORS['white'] if enabled else COLORS['readonly_bg']};
+                    border: 1px solid {COLORS['border'] if enabled else COLORS['border_light']};
+                    border-radius: 6px;
+                }}
+            """)
 
     def select_all(self):
         for cb in self._checkboxes.values():
@@ -954,18 +962,42 @@ class GenericFormModal(QDialog):
         if isinstance(widget, _TabSelectWidget):
             return
         if isinstance(widget, _CheckboxListWidget):
+            # checked may be a dict {name: bool} or a list — normalize to list of checked names
+            if isinstance(checked, dict):
+                checked = [k for k, v in checked.items() if v]
             widget.set_options(options, checked)
         elif hasattr(widget, '_checkbox_widget'):
-            widget._checkbox_widget.set_options(options, checked)
+            # checked may be a dict {name: bool} or a list — normalize to list of checked names
+            if isinstance(checked, dict):
+                checked_list = [k for k, v in checked.items() if v]
+            else:
+                checked_list = checked
+            widget._checkbox_widget.set_options(options, checked_list)
         elif isinstance(widget, AnimatedCombo):
-            widget.clear()
-            if options:
-                widget.addItems(options)
-                if not widget._placeholder:
-                    widget._current = options[0]
-                    widget._trigger.set_text(options[0])
-                    if widget._panel:
-                        widget._panel.set_options(options, options[0])
+            # Destroy old floating panel entirely to prevent ghost widget corruption
+            widget._destroy_panel()
+
+            widget._options = list(options)
+            widget._current = ""
+
+            if widget._placeholder:
+                widget._trigger.set_text(widget._placeholder)
+                widget._trigger._lbl.setStyleSheet(
+                    f"color: {COLORS['text_muted']}; font-size: 13px;"
+                    " background: transparent; border: none;"
+                )
+            else:
+                display = options[0] if options else ""
+                widget._current = display
+                widget._trigger.set_text(display)
+                widget._trigger._lbl.setStyleSheet(
+                    f"color: {COLORS['text_primary']}; font-size: 13px;"
+                    " background: transparent; border: none;"
+                )
+
+            print(f"[update_field_options] '{name}' updated with {len(options)} options, "
+                  f"panel destroyed — will be recreated fresh on next open")
+
         elif isinstance(widget, QComboBox):
             widget.blockSignals(True)
             widget.clear()
@@ -1117,7 +1149,6 @@ class GenericFormModal(QDialog):
             if field.get("required") and self.mode != "view":
                 label_text += " *"
 
-            # Main label
             label_widget = QLabel(label_text)
 
             if field.get("type") == "readonly":
@@ -1127,7 +1158,6 @@ class GenericFormModal(QDialog):
             else:
                 label_widget.setStyleSheet("font-size: 13px; font-weight: 500;")
 
-            # If comment exists → stack it under the label
             if comment_text:
                 comment_label = QLabel(comment_text)
                 comment_label.setWordWrap(True)
@@ -1335,7 +1365,6 @@ class GenericFormModal(QDialog):
                 btn_row = QHBoxLayout()
                 btn_row.setSpacing(6)
 
-                # ── Clean pill-chip buttons ────────────────────────────
                 def _btn(label, slot):
                     b = QPushButton(label)
                     b.setFixedHeight(22)
@@ -1363,7 +1392,6 @@ class GenericFormModal(QDialog):
 
                 self._select_all_btn  = _btn("Select All",  w.select_all)
                 self._select_none_btn = _btn("Select None", w.select_none)
-                # Hidden until a table name is selected
                 self._select_all_btn.setVisible(False)
                 self._select_none_btn.setVisible(False)
                 btn_row.addWidget(self._select_all_btn)
@@ -1436,7 +1464,7 @@ class GenericFormModal(QDialog):
 
                 inp = QLineEdit()
                 inp.setMinimumHeight(36)
-                inp.setFixedWidth(120)  # optional: keeps both sides balanced
+                inp.setFixedWidth(120)
 
                 if editable:
                     inp.setPlaceholderText(placeholder)
@@ -1462,7 +1490,6 @@ class GenericFormModal(QDialog):
                 err_lbl.setStyleSheet("font-size: 11px; color: #EF4444; background: transparent;")
                 err_lbl.setVisible(False)
 
-                # input + error stacked
                 input_container = QWidget()
                 vl = QVBoxLayout(input_container)
                 vl.setContentsMargins(0, 0, 0, 0)
@@ -1470,7 +1497,6 @@ class GenericFormModal(QDialog):
                 vl.addWidget(inp)
                 vl.addWidget(err_lbl)
 
-                # 🔁 Reversed order (box first, label second)
                 hl.addWidget(input_container)
                 hl.addWidget(header_lbl)
 
