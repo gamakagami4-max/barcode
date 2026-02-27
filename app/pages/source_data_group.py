@@ -155,7 +155,7 @@ def _format_fields_with_comments(field_names: list[str], table_name: str, conn_p
         formatted = []
         for fname in field_names:
             if fname in comment_map:
-                formatted.append(f"{fname} ({comment_map[fname]})")
+                formatted.append(f"{fname} AS {comment_map[fname]}")
             else:
                 formatted.append(fname)
         
@@ -205,7 +205,11 @@ def row_to_tuple(r, conn_map, table_map, engine_map=None):
         fields_list = [f.strip() for f in fields_raw.split(",") if f.strip()]
     else:
         fields_list = [str(f).strip() for f in fields_raw if f]
-    
+
+    # Deduplicate while preserving order
+    seen = set()
+    fields_list = [f for f in fields_list if not (f in seen or seen.add(f))]
+
     # Try to enhance with comments if we have connection PK
     if conn_pk and table_name and engine_map and eng in engine_map:
         engine_id = engine_map.get(eng)
@@ -1021,6 +1025,9 @@ class SourceDataPage(QWidget):
         if not field_names:
             return []
 
+        # Deduplicate while preserving order
+        field_names = list(dict.fromkeys(field_names))
+
         try:
             conn = get_connection()
             cur = conn.cursor()
@@ -1041,7 +1048,6 @@ class SourceDataPage(QWidget):
             import traceback
             traceback.print_exc()
             return []
-
     # ── Export ────────────────────────────────────────────────────────────────
 
     def handle_export_action(self):
