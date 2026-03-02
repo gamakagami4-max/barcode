@@ -1402,7 +1402,7 @@ class BarcodeEditorPage(QWidget):
         divider.setStyleSheet(f"background-color: {COLORS['border']}; min-height: 1px;")
         sidebar_layout.addWidget(divider)
 
-        prop_header = QWidget(); prop_header.setStyleSheet("QWidget { background: #F8FAFC; border-radius: 6px; padding: 2px 0px; }")
+        prop_header = QWidget(); prop_header.setStyleSheet("QWidget { background: transparent; border: none; padding: 2px 0px; }")
         prop_header_layout = QHBoxLayout(prop_header); prop_header_layout.setContentsMargins(8,6,8,6); prop_header_layout.setSpacing(4)
         prop_icon = QLabel(); prop_icon.setPixmap(qta.icon("fa5s.sliders-h", color="#6366F1").pixmap(14,14))
         prop_header_layout.addWidget(prop_icon)
@@ -1414,9 +1414,9 @@ class BarcodeEditorPage(QWidget):
         self.prop_name_input = QLineEdit("")
         self.prop_name_input.setPlaceholderText("select component"); self.prop_name_input.setFixedHeight(24)
         self.prop_name_input.setStyleSheet("""
-            QLineEdit { font-weight:700; font-size:9pt; color:#1E293B; letter-spacing:0.3px; background:white; border:1px solid #E2E8F0; border-radius:4px; padding:2px 8px; }
-            QLineEdit:focus { border:1.5px solid #6366F1; background:white; }
-            QLineEdit:disabled { background:#F1F5F9; color:#94A3B8; border:1px solid #E2E8F0; }
+            QLineEdit { font-weight:700; font-size:9pt; color:#1E293B; letter-spacing:0.3px; background:#EEF2FF; border:none; border-radius:4px; padding:2px 8px; }
+            QLineEdit:focus { border:none; background:#E0E7FF; }
+            QLineEdit:disabled { background:#F1F5F9; color:#94A3B8; border:none; border-radius:4px; }
         """)
         self.prop_name_input.textChanged.connect(self.update_current_component_name)
         prop_header_layout.addWidget(self.prop_name_input, stretch=1); sidebar_layout.addWidget(prop_header)
