@@ -1228,10 +1228,15 @@ class BarcodeEditorPage(QWidget):
         self.component_list.setFocusPolicy(Qt.NoFocus)
         self.component_list.setStyleSheet("""
             QListWidget { border: none; background: transparent; outline: none; }
-            QScrollBar:vertical { border: none; background: transparent; width: 8px; margin: 0px; }
-            QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 4px; min-height: 30px; }
-            QScrollBar::handle:vertical:hover { background: #94A3B8; }
-            QScrollBar::handle:vertical:pressed { background: #6366F1; }
+            QScrollBar:vertical {
+                border: none; background: transparent;
+                width: 6px; margin: 6px 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #CBD5E1; border-radius: 3px; min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover { background: #6366F1; }
+            QScrollBar::handle:vertical:pressed { background: #4338CA; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
         """)
@@ -1314,13 +1319,32 @@ class BarcodeEditorPage(QWidget):
         self.design_saved.emit(payload)
 
     def apply_modern_scrollbar(self, scroll_area):
-        scroll_area.verticalScrollBar().setStyleSheet("""
-            QScrollBar:vertical { border: none; background: transparent; width: 6px; margin: 4px; }
-            QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 3px; min-height: 20px; }
+        SCROLLBAR_STYLE = """
+            QScrollBar:vertical {
+                border: none; background: transparent;
+                width: 6px; margin: 6px 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #CBD5E1; border-radius: 3px; min-height: 24px;
+            }
             QScrollBar::handle:vertical:hover { background: #6366F1; }
-            QScrollBar::add-line, QScrollBar::sub-line { height: 0px; }
-        """)
-
+            QScrollBar::handle:vertical:pressed { background: #4338CA; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+            QScrollBar:horizontal {
+                border: none; background: transparent;
+                height: 6px; margin: 2px 6px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #CBD5E1; border-radius: 3px; min-width: 24px;
+            }
+            QScrollBar::handle:horizontal:hover { background: #6366F1; }
+            QScrollBar::handle:horizontal:pressed { background: #4338CA; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+        """
+        self.view.verticalScrollBar().setStyleSheet(SCROLLBAR_STYLE)
+        self.view.horizontalScrollBar().setStyleSheet(SCROLLBAR_STYLE)
     def sync_z_order_from_list(self):
         count = self.component_list.count()
         for i in range(count):
