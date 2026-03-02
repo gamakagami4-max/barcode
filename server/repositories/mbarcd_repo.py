@@ -147,7 +147,7 @@ def fetch_mbarcd_by_pk(pk: str) -> dict | None:
 # Later, mbusrm elements can be converted to ZPL commands for printing.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def update_mbarcd_layout(pk: str, usrm: str, itrm: str) -> None:
+def update_mbarcd_layout(pk: str, usrm: str, itrm: str, is_new: bool = False) -> None:
     """
     Persist the barcode canvas design to mbarcd.
       mbusrm — JSON list of canvas elements (positions, types, properties)
@@ -161,16 +161,27 @@ def update_mbarcd_layout(pk: str, usrm: str, itrm: str) -> None:
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE barcodesap.mbarcd
-               SET mbusrm = %s,
-                   mbitrm = %s,
-                   mbchno = mbchno + 1
-             WHERE mbbrcd = %s
-            """,
-            (usrm, itrm, pk),
-        )
+        if is_new:
+            cur.execute(
+                """
+                UPDATE barcodesap.mbarcd
+                SET mbusrm = %s,
+                    mbitrm = %s
+                WHERE mbbrcd = %s
+                """,
+                (usrm, itrm, pk),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE barcodesap.mbarcd
+                SET mbusrm = %s,
+                    mbitrm = %s,
+                    mbchno = mbchno + 1
+                WHERE mbbrcd = %s
+                """,
+                (usrm, itrm, pk),
+            )
         if cur.rowcount == 0:
             raise Exception(f"Record '{pk}' not found or already deleted.")
         conn.commit()
