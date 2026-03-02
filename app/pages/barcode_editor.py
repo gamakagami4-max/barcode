@@ -102,6 +102,53 @@ MODERN_INPUT_STYLE = """
     }
 """
 
+# ── Modern scrollbar style — defined at module level so it's accessible everywhere ──
+MODERN_SCROLLBAR_STYLE = """
+    QScrollBar:vertical {
+        border: none;
+        background: transparent;
+        width: 6px;
+        margin: 6px 2px;
+    }
+    QScrollBar::handle:vertical {
+        background: #CBD5E1;
+        border-radius: 3px;
+        min-height: 24px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background: #6366F1;
+    }
+    QScrollBar::handle:vertical:pressed {
+        background: #4338CA;
+    }
+    QScrollBar::add-line:vertical,
+    QScrollBar::sub-line:vertical { height: 0px; }
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical { background: none; }
+
+    QScrollBar:horizontal {
+        border: none;
+        background: transparent;
+        height: 6px;
+        margin: 2px 6px;
+    }
+    QScrollBar::handle:horizontal {
+        background: #CBD5E1;
+        border-radius: 3px;
+        min-width: 24px;
+    }
+    QScrollBar::handle:horizontal:hover {
+        background: #6366F1;
+    }
+    QScrollBar::handle:horizontal:pressed {
+        background: #4338CA;
+    }
+    QScrollBar::add-line:horizontal,
+    QScrollBar::sub-line:horizontal { width: 0px; }
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal { background: none; }
+"""
+
 
 # ── Custom scroll area that clamps inner widget width to viewport ──────────────
 class ConstrainedScrollArea(QScrollArea):
@@ -1187,6 +1234,9 @@ class BarcodeEditorPage(QWidget):
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setStyleSheet("background: #E8EDF3; border: 1px solid #CBD5E1; border-radius: 8px;")
         self.view.setAlignment(Qt.AlignCenter)
+        # Apply modern scrollbar directly on the scrollbar widgets
+        self.view.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
+        self.view.horizontalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         workspace_layout.addWidget(self.view, stretch=3)
 
         # ── Sidebar ───────────────────────────────────────────────────
@@ -1226,19 +1276,9 @@ class BarcodeEditorPage(QWidget):
         self.component_list.viewport().setMouseTracking(True)
         self.component_list.setSelectionMode(QListWidget.SingleSelection)
         self.component_list.setFocusPolicy(Qt.NoFocus)
-        self.component_list.setStyleSheet("""
-            QListWidget { border: none; background: transparent; outline: none; }
-            QScrollBar:vertical {
-                border: none; background: transparent;
-                width: 6px; margin: 6px 2px;
-            }
-            QScrollBar::handle:vertical {
-                background: #CBD5E1; border-radius: 3px; min-height: 24px;
-            }
-            QScrollBar::handle:vertical:hover { background: #6366F1; }
-            QScrollBar::handle:vertical:pressed { background: #4338CA; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+        self.component_list.setStyleSheet(f"""
+            QListWidget {{ border: none; background: transparent; outline: none; }}
+            {MODERN_SCROLLBAR_STYLE}
         """)
         self.component_list.setItemDelegate(ComponentItemDelegate(self.component_list))
         self.component_list.delete_item_requested.connect(self.delete_component)
@@ -1291,8 +1331,16 @@ class BarcodeEditorPage(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet(f"background: {COLORS['prop_bg']}; border-radius: 8px;")
-        self.apply_modern_scrollbar(self.scroll_area)
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background: {COLORS['prop_bg']};
+                border-radius: 8px;
+                border: none;
+            }}
+            {MODERN_SCROLLBAR_STYLE}
+        """)
+        # Belt-and-suspenders: also set directly on the scrollbar widget
+        self.scroll_area.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
 
         self.inspector_widget = QWidget()
         self.inspector_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -1318,33 +1366,6 @@ class BarcodeEditorPage(QWidget):
         payload["name"] = self._design_name
         self.design_saved.emit(payload)
 
-    def apply_modern_scrollbar(self, scroll_area):
-        SCROLLBAR_STYLE = """
-            QScrollBar:vertical {
-                border: none; background: transparent;
-                width: 6px; margin: 6px 2px;
-            }
-            QScrollBar::handle:vertical {
-                background: #CBD5E1; border-radius: 3px; min-height: 24px;
-            }
-            QScrollBar::handle:vertical:hover { background: #6366F1; }
-            QScrollBar::handle:vertical:pressed { background: #4338CA; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-            QScrollBar:horizontal {
-                border: none; background: transparent;
-                height: 6px; margin: 2px 6px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #CBD5E1; border-radius: 3px; min-width: 24px;
-            }
-            QScrollBar::handle:horizontal:hover { background: #6366F1; }
-            QScrollBar::handle:horizontal:pressed { background: #4338CA; }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
-        """
-        self.view.verticalScrollBar().setStyleSheet(SCROLLBAR_STYLE)
-        self.view.horizontalScrollBar().setStyleSheet(SCROLLBAR_STYLE)
     def sync_z_order_from_list(self):
         count = self.component_list.count()
         for i in range(count):
