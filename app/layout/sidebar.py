@@ -109,11 +109,7 @@ class CollapsibleMenu(QWidget):
         # --- Sub-menu Container ---
         self.container = QWidget()
         self.container_layout = QVBoxLayout(self.container)
-        self.container.setStyleSheet("""
-            QWidget {
-                background: transparent;
-            }
-        """)
+        self.container.setStyleSheet("QWidget { background: transparent; }")
         self.container_layout.setContentsMargins(28, 4, 0, 4) 
         self.container_layout.setSpacing(1)
         
@@ -122,9 +118,7 @@ class CollapsibleMenu(QWidget):
             sub_btn.setCursor(Qt.PointingHandCursor)
             sub_btn.setFocusPolicy(Qt.NoFocus) 
             sub_btn.setStyleSheet(STYLE_NORMAL)
-            
             sub_btn.clicked.connect(lambda chk=False, b=sub_btn, c=callback: self.on_sub_clicked(b, c))
-            
             self.sub_buttons.append(sub_btn)
             self.container_layout.addWidget(sub_btn)
         
@@ -136,13 +130,9 @@ class CollapsibleMenu(QWidget):
 
     def animate_hover(self, is_entering):
         if is_entering:
-            self.header_widget.setStyleSheet("""
-                QWidget { background-color: #F1F5F9; border-radius: 6px; }
-            """)
+            self.header_widget.setStyleSheet("QWidget { background-color: #F1F5F9; border-radius: 6px; }")
         else:
-            self.header_widget.setStyleSheet("""
-                QWidget { background: transparent; border-radius: 6px; }
-            """)
+            self.header_widget.setStyleSheet("QWidget { background: transparent; border-radius: 6px; }")
 
     def on_sub_clicked(self, button, callback):
         self.sidebar_ref.clear_all_selections()
@@ -234,14 +224,10 @@ class Sidebar(QFrame):
         self.toggle_btn.setFocusPolicy(Qt.NoFocus)
         self.toggle_btn.setStyleSheet("""
             QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 8px;
-                outline: none;
+                background: transparent; border: none;
+                border-radius: 8px; outline: none;
             }
-            QPushButton:hover {
-                background-color: #F1F5F9;
-            }
+            QPushButton:hover { background-color: #F1F5F9; }
         """)
         self.toggle_btn.clicked.connect(self.toggle_sidebar)
         
@@ -256,31 +242,12 @@ class Sidebar(QFrame):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setStyleSheet("""
-            QScrollArea { 
-                background: transparent; 
-                border: none; 
-            }
-            QScrollBar:vertical { 
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical { 
-                background: #D1D5DB;
-                border-radius: 3px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover { 
-                background: #9CA3AF;
-            }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: none;
-            }
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical { background: transparent; width: 6px; margin: 0px; }
+            QScrollBar::handle:vertical { background: #D1D5DB; border-radius: 3px; min-height: 30px; }
+            QScrollBar::handle:vertical:hover { background: #9CA3AF; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
         """)
 
         self.content_container = QWidget()
@@ -331,7 +298,6 @@ class Sidebar(QFrame):
             if hasattr(self, 'user_panel'):
                 self.user_opacity_effect = QGraphicsOpacityEffect()
                 self.user_panel.setGraphicsEffect(self.user_opacity_effect)
-                
                 self.user_opacity_anim = QPropertyAnimation(self.user_opacity_effect, b"opacity")
                 self.user_opacity_anim.setDuration(200)
                 self.user_opacity_anim.setStartValue(1.0)
@@ -346,7 +312,6 @@ class Sidebar(QFrame):
             
             self.opacity_effect = QGraphicsOpacityEffect()
             self.content_container.setGraphicsEffect(self.opacity_effect)
-            
             self.opacity_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
             self.opacity_anim.setDuration(300)
             self.opacity_anim.setStartValue(0.0)
@@ -357,7 +322,6 @@ class Sidebar(QFrame):
             if hasattr(self, 'user_panel'):
                 self.user_opacity_effect = QGraphicsOpacityEffect()
                 self.user_panel.setGraphicsEffect(self.user_opacity_effect)
-                
                 self.user_opacity_anim = QPropertyAnimation(self.user_opacity_effect, b"opacity")
                 self.user_opacity_anim.setDuration(300)
                 self.user_opacity_anim.setStartValue(0.0)
@@ -367,7 +331,6 @@ class Sidebar(QFrame):
         
         self.width_anim.start()
         self.width_anim_max.start()
-        
         self.collapsed_changed.emit(self.is_collapsed)
 
     def clear_all_selections(self):
@@ -383,12 +346,8 @@ class Sidebar(QFrame):
         
         title_label = QLabel("Menu")
         title_label.setStyleSheet("""
-            font-size: 17px; 
-            font-weight: 700; 
-            color: #111827; 
-            background: transparent;
+            font-size: 17px; font-weight: 700; color: #111827; background: transparent;
         """)
-        
         t_layout.addWidget(title_label)
         self.content_layout.addWidget(title_container)
 
@@ -403,12 +362,12 @@ class Sidebar(QFrame):
         # Master Menu
         master_items = {
             "Source Data Group": lambda: self.nav_callback(2),
-            "Master Sticker": lambda: self.nav_callback(3),
+            "Master Sticker":    lambda: self.nav_callback(3),
             "Master Filter Type": lambda: self.nav_callback(4),
-            "Master Brand": lambda: self.nav_callback(5),
+            "Master Brand":      lambda: self.nav_callback(5),
             "Master Product Type": lambda: self.nav_callback(6),
-            "Master Item": lambda: self.nav_callback(7),
-            "Master Brand Case": lambda: self.nav_callback(8)
+            "Master Item":       lambda: self.nav_callback(7),
+            "Master Brand Case": lambda: self.nav_callback(8),
         }
         master_menu = CollapsibleMenu("Master", "fa5s.database", master_items, self)
         self.content_layout.addWidget(master_menu)
@@ -416,10 +375,9 @@ class Sidebar(QFrame):
 
         self.content_layout.addSpacing(2)
 
-        # Barcode Menu
+        # Barcode Menu — only "Barcode Design"; editor is embedded inside it
         barcode_items = {
             "Barcode Design": lambda: self.nav_callback(9),
-            "Barcode Editor": lambda: self.nav_callback(10)
         }
         barcode_menu = CollapsibleMenu("Barcode", "fa5s.barcode", barcode_items, self)
         self.content_layout.addWidget(barcode_menu)
@@ -439,13 +397,10 @@ class Sidebar(QFrame):
         user_layout = QHBoxLayout(self.user_panel)
         user_layout.setContentsMargins(16, 14, 16, 14)
 
-        # Avatar
         avatar_container = QWidget()
         avatar_container.setFixedSize(36, 36)
         avatar_container.setStyleSheet("""
-            background-color: #EFF6FF;
-            border: 2px solid #DBEAFE;
-            border-radius: 18px;
+            background-color: #EFF6FF; border: 2px solid #DBEAFE; border-radius: 18px;
         """)
         avatar_layout = QHBoxLayout(avatar_container)
         avatar_layout.setContentsMargins(0, 0, 0, 0)
@@ -456,18 +411,13 @@ class Sidebar(QFrame):
         avatar.setPixmap(qta.icon("fa5s.user", color="#2563EB").pixmap(QSize(16, 16)))
         avatar_layout.addWidget(avatar)
 
-        # User Info
         user_info = QLabel("Administrator<br><span style='color:#6B7280; font-size: 10px;'>System User</span>")
         user_info.setTextFormat(Qt.RichText)
         user_info.setStyleSheet("""
-            font-size: 12px; 
-            font-weight: 600; 
-            color: #111827;
-            background: transparent;
-            border: none;
+            font-size: 12px; font-weight: 600; color: #111827;
+            background: transparent; border: none;
         """)
 
-        # Exit Button
         exit_btn = QPushButton()
         exit_btn.setIcon(qta.icon("fa5s.sign-out-alt", color="#9CA3AF"))
         exit_btn.setIconSize(QSize(16, 16))
@@ -475,15 +425,8 @@ class Sidebar(QFrame):
         exit_btn.setCursor(Qt.PointingHandCursor)
         exit_btn.setFocusPolicy(Qt.NoFocus)
         exit_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 6px;
-                outline: none;
-            }
-            QPushButton:hover {
-                background-color: #FEE2E2;
-            }
+            QPushButton { background: transparent; border: none; border-radius: 6px; outline: none; }
+            QPushButton:hover { background-color: #FEE2E2; }
         """)
 
         user_layout.addWidget(avatar_container)
@@ -507,7 +450,7 @@ class Sidebar(QFrame):
             7: "Master Item",
             8: "Master Brand Case",
             9: "Barcode Design",
-            10: "Barcode Editor",
+            # 10 (Barcode Editor) is no longer a separate sidebar item
         }
 
         target_text = mapping.get(page_id)
@@ -525,11 +468,7 @@ class Sidebar(QFrame):
     def create_label(self, text):
         lbl = QLabel(text)
         lbl.setStyleSheet("""
-            font-size: 10px; 
-            color: #9CA3AF; 
-            font-weight: 700; 
-            letter-spacing: 0.8px;
-            padding: 6px 12px 4px 12px; 
-            background: transparent;
+            font-size: 10px; color: #9CA3AF; font-weight: 700;
+            letter-spacing: 0.8px; padding: 6px 12px 4px 12px; background: transparent;
         """)
         return lbl

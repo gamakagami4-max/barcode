@@ -129,6 +129,86 @@ def fetch_mbarcd_by_pk(pk: str) -> dict | None:
         conn.close()
 
 
+# ── Layout (Canvas Design Persistence) ───────────────────────────────────────
+#
+# IMPORTANT: Run this migration once on your database before using these functions:
+#
+#   ALTER TABLE barcodesap.mbarcd
+#       ADD COLUMN IF NOT EXISTS mbusrm text,
+#       ADD COLUMN IF NOT EXISTS mbitrm text;
+#
+# mbusrm stores the canvas element list as JSON:
+#   [{"type":"text","x":50,"y":30,"text":"LABEL","font_size":10,...}, ...]
+#
+# mbitrm stores canvas metadata as JSON:
+#   {"canvas_w": 600, "canvas_h": 400}
+#
+# Both are used to restore the visual design when the user clicks Edit.
+# Later, mbusrm elements can be converted to ZPL commands for printing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def update_mbarcd_layout(pk: str, usrm: str, itrm: str) -> None:
+    """
+    Persist the barcode canvas design to mbarcd.
+      mbusrm — JSON list of canvas elements (positions, types, properties)
+      mbitrm — JSON dict of canvas metadata  {"canvas_w": 600, "canvas_h": 400}
+
+    Run this migration once before calling this function:
+        ALTER TABLE barcodesap.mbarcd
+            ADD COLUMN IF NOT EXISTS mbusrm text,
+            ADD COLUMN IF NOT EXISTS mbitrm text;
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE barcodesap.mbarcd
+               SET mbusrm = %s,
+                   mbitrm = %s,
+                   mbchno = mbchno + 1
+             WHERE mbbrcd = %s
+            """,
+            (usrm, itrm, pk),
+        )
+        if cur.rowcount == 0:
+            raise Exception(f"Record '{pk}' not found or already deleted.")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def fetch_mbarcd_layout(pk: str) -> dict | None:
+    """
+    Fetch only the canvas layout columns for a given mbbrcd.
+    Returns {"usrm": "...", "itrm": "..."} or None if not found.
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT mbusrm, mbitrm
+              FROM barcodesap.mbarcd
+             WHERE mbbrcd = %s
+             LIMIT 1
+            """,
+            (pk,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "usrm": row[0] or "",
+            "itrm": row[1] or "",
+        }
+    finally:
+        conn.close()
+
+
 # ── Create ────────────────────────────────────────────────────────────────────
 
 def create_mbarcd(
@@ -148,9 +228,9 @@ def create_mbarcd(
     db_fg: int = 0,
     ad_fg: int = 0,
     dp_fg: int = 0,
-    user: str = "Admin",
 ) -> str:
     now = datetime.now()
+    user = "SYSTEM"  # placeholder until user auth is wired up
     conn = get_connection()
 
     try:

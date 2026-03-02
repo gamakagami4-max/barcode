@@ -28,7 +28,6 @@ COLORS = {
     "legacy_blue": "#1E3A8A" 
 }
 
-# Shared modern combo style — removes native arrow entirely; chevron injected via qtawesome label
 MODERN_COMBO_STYLE = """
     QComboBox {
         background-color: white;
@@ -52,7 +51,6 @@ MODERN_COMBO_STYLE = """
     }
 """
 
-# Shared input style — SpinBox native arrows hidden (ChevronSpinBox paints them manually)
 MODERN_INPUT_STYLE = """
     QLineEdit, QSpinBox, QComboBox {
         background-color: white;
@@ -106,11 +104,7 @@ MODERN_INPUT_STYLE = """
 
 
 class ChevronSpinBox(QSpinBox):
-    """
-    QSpinBox that paints qtawesome chevron-up / chevron-down icons
-    directly into the up/down button regions — reliable cross-platform rendering.
-    """
-    _BTN_W = 20  # must match stylesheet width above
+    _BTN_W = 20
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -129,15 +123,12 @@ class ChevronSpinBox(QSpinBox):
         icon_h = self._px_up.height()
         cx     = x_left + (btn_w - icon_w) // 2
 
-        # Up chevron — vertically centred in top half
         painter.drawPixmap(cx, (h // 2 - icon_h) // 2, self._px_up)
-        # Down chevron — vertically centred in bottom half
         painter.drawPixmap(cx, h // 2 + (h // 2 - icon_h) // 2, self._px_down)
         painter.end()
 
 
 def make_spin(min_val: int = 0, max_val: int = 5000, value: int = 0) -> ChevronSpinBox:
-    """Convenience factory: ChevronSpinBox with consistent range + style."""
     spin = ChevronSpinBox()
     spin.setRange(min_val, max_val)
     spin.setValue(value)
@@ -146,10 +137,6 @@ def make_spin(min_val: int = 0, max_val: int = 5000, value: int = 0) -> ChevronS
 
 
 def make_chevron_combo(items: list[str], style: str = MODERN_INPUT_STYLE) -> QComboBox:
-    """
-    Factory that returns a QComboBox with a qtawesome chevron-down icon
-    anchored to the far-right inside the widget, matching StandardSearchBar.
-    """
     combo = QComboBox()
     combo.addItems(items)
     combo.setStyleSheet(style)
@@ -172,21 +159,15 @@ def make_chevron_combo(items: list[str], style: str = MODERN_INPUT_STYLE) -> QCo
 
 def keep_within_bounds(item, new_pos):
     scene_rect = item.scene().sceneRect()
-
-    # critical fix for groups
     rect = item.sceneBoundingRect()
-
     width = rect.width()
     height = rect.height()
-
     x = max(scene_rect.left(), min(new_pos.x(), scene_rect.right() - width))
     y = max(scene_rect.top(), min(new_pos.y(), scene_rect.bottom() - height))
-
     return QPointF(x, y)
 
 
 def setup_item_logic(item, on_move_callback):
-    """Patches itemChange to enforce boundaries and update position UI."""
     original_item_change = item.itemChange
     def patched_item_change(change, value):
         if change == QGraphicsItem.ItemPositionChange and item.scene():
@@ -199,7 +180,6 @@ def setup_item_logic(item, on_move_callback):
 # --- Property Editors ---
 
 class TextPropertyEditor(QWidget):
-    """Refined editor with clear input boxes and modern styling."""
     def __init__(self, target_item, update_callback):
         super().__init__()
         self.item = target_item
@@ -216,7 +196,6 @@ class TextPropertyEditor(QWidget):
             lbl.setStyleSheet(label_style)
             return lbl
 
-        # Fields — all combos use the qtawesome chevron factory
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(create_label("ALIGNMENT :"), self.align_combo)
 
@@ -273,10 +252,8 @@ class TextPropertyEditor(QWidget):
     def update_position_fields(self, pos):
         self.top_spin.blockSignals(True)
         self.left_spin.blockSignals(True)
-
         self.top_spin.setValue(int(pos.y()))
         self.left_spin.setValue(int(pos.x()))
-
         self.top_spin.blockSignals(False)
         self.left_spin.blockSignals(False)
 
@@ -284,7 +261,6 @@ class TextPropertyEditor(QWidget):
 class LinePropertyEditor(QWidget):
     def __init__(self, target_item, update_callback):
         super().__init__()
-
         self.item = target_item
         self.update_callback = update_callback
 
@@ -345,7 +321,6 @@ class LinePropertyEditor(QWidget):
 class RectanglePropertyEditor(QWidget):
     def __init__(self, target_item, update_callback):
         super().__init__()
-
         self.item = target_item
         self.update_callback = update_callback
 
@@ -410,7 +385,6 @@ class RectanglePropertyEditor(QWidget):
 class BarcodePropertyEditor(QWidget):
     def __init__(self, target_item, update_callback):
         super().__init__()
-
         self.item = target_item
         self.update_callback = update_callback
 
@@ -462,7 +436,6 @@ class BarcodePropertyEditor(QWidget):
             del child
 
         self.item.setPos(0, 0)
-
         self.item.design = new_design
         self.item.bg = QGraphicsRectItem(0, 0, self.item.container_width, self.item.container_height)
         self.item.bg.setPen(QPen(QColor("#CBD5E1"), 1, Qt.DashLine))
@@ -493,10 +466,10 @@ class BarcodePropertyEditor(QWidget):
                 self.item.addToGroup(bar)
             x_offset += width
 
-        label = QGraphicsTextItem("*12345678*")
-        label.setFont(QFont("Courier", 9, QFont.Bold))
-        label.setPos(35, 58)
-        self.item.addToGroup(label)
+        lbl = QGraphicsTextItem("*12345678*")
+        lbl.setFont(QFont("Courier", 9, QFont.Bold))
+        lbl.setPos(35, 58)
+        self.item.addToGroup(lbl)
 
         self.item.setPos(old_scene_pos)
         self.update_callback()
@@ -588,13 +561,11 @@ class GridGraphicsScene(QGraphicsScene):
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
 
-        # Draw the canvas boundary shadow/fill first
         scene_r = self.sceneRect()
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.drawRect(scene_r)
 
-        # Grid lines (clipped to canvas area)
         painter.setPen(QPen(self.grid_color, 1))
         left = int(scene_r.left()) - (int(scene_r.left()) % self.grid_size)
         top  = int(scene_r.top())  - (int(scene_r.top())  % self.grid_size)
@@ -609,7 +580,6 @@ class GridGraphicsScene(QGraphicsScene):
             painter.drawLine(QPointF(scene_r.left(), y), QPointF(scene_r.right(), y))
             y += self.grid_size
 
-        # Canvas border
         painter.setPen(QPen(QColor("#94A3B8"), 1.5))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(scene_r)
@@ -787,14 +757,269 @@ CANVAS_PRESETS = [
 ]
 
 
+import json as _json
+
 # --- Main Page ---
 
 class BarcodeEditorPage(QWidget):
+    # Emitted by Save button — carries the full serialised design payload
+    design_saved = Signal(dict)
+
     def __init__(self):
         super().__init__()
-        self._canvas_w = 600   # default canvas width  (px)
-        self._canvas_h = 400   # default canvas height (px)
+        self._canvas_w = 600
+        self._canvas_h = 400
+        self._design_code = ""
+        self._design_name = ""
         self.init_ui()
+
+    # ------------------------------------------------------------------
+    # Public API — called by BarcodeListPage
+    # ------------------------------------------------------------------
+
+    def reset_for_new(self, form_data: dict | None = None):
+        """Clear the canvas and reset the editor for a brand-new design."""
+        self.scene.clearSelection()
+        for item in list(self.scene.items()):
+            self.scene.removeItem(item)
+        self.component_list.clear()
+        self.comp_count_badge.setText("0")
+        self.prop_name_input.setText("")
+        self.prop_name_input.setEnabled(False)
+        while self.inspector_layout.count():
+            child = self.inspector_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        if form_data:
+            w = int(form_data.get("w_px") or 600)
+            h = int(form_data.get("h_px") or 400)
+            self._design_code = form_data.get("pk", "")
+            self._design_name = form_data.get("name", "")
+        else:
+            w, h = 600, 400
+            self._design_code = ""
+            self._design_name = ""
+
+        self._canvas_w, self._canvas_h = w, h
+        self.canvas_w_spin.setValue(w)
+        self.canvas_h_spin.setValue(h)
+        self.scene.setSceneRect(QRectF(0, 0, w, h))
+        self._update_design_subtitle()
+
+    def load_design(self, row_data: tuple, row_dict: dict | None):
+        """Load an existing design from the DB record into the editor."""
+        self.reset_for_new()
+
+        if row_dict:
+            # Canvas dimensions
+            w = row_dict.get("w_px") or self._canvas_w
+            h = row_dict.get("h_px") or self._canvas_h
+            try:
+                w, h = int(w), int(h)
+                self._canvas_w, self._canvas_h = w, h
+                self.canvas_w_spin.setValue(w)
+                self.canvas_h_spin.setValue(h)
+                self.scene.setSceneRect(QRectF(0, 0, w, h))
+            except (TypeError, ValueError):
+                pass
+
+            self._design_code = str(row_dict.get("pk", ""))
+            self._design_name = str(row_dict.get("name", ""))
+
+            # Restore canvas elements from bsusrm JSON
+            usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
+            if usrm:
+                try:
+                    self.deserialize_canvas(_json.loads(usrm))
+                except Exception as e:
+                    print(f"[load_design] Could not deserialize canvas: {e}")
+
+            # Restore canvas size override from bsitrm if present
+            itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
+            if itrm:
+                try:
+                    meta = _json.loads(itrm)
+                    cw = int(meta.get("canvas_w", w))
+                    ch = int(meta.get("canvas_h", h))
+                    if cw != w or ch != h:
+                        self._canvas_w, self._canvas_h = cw, ch
+                        self.canvas_w_spin.setValue(cw)
+                        self.canvas_h_spin.setValue(ch)
+                        self.scene.setSceneRect(QRectF(0, 0, cw, ch))
+                except Exception as e:
+                    print(f"[load_design] Could not read itrm meta: {e}")
+        else:
+            self._design_code = str(row_data[0]) if row_data else ""
+            self._design_name = str(row_data[1]) if row_data and len(row_data) > 1 else ""
+
+        self._update_design_subtitle()
+
+    # ------------------------------------------------------------------
+    # Serialise / deserialise canvas
+    # ------------------------------------------------------------------
+
+    def serialize_canvas(self) -> list[dict]:
+        """
+        Convert every top-level scene item into a JSON-serialisable dict.
+        Returns a list of element dicts.
+        """
+        elements = []
+        for item in self.scene.items():
+            if item.group():          # skip children of groups
+                continue
+            d = self._serialize_item(item)
+            if d:
+                elements.append(d)
+        return elements
+
+    def _serialize_item(self, item) -> dict | None:
+        base = {
+            "x":      round(item.pos().x(), 2),
+            "y":      round(item.pos().y(), 2),
+            "z":      item.zValue(),
+            "visible": item.isVisible(),
+            "rotation": item.rotation(),
+            "name":   getattr(item, "component_name", ""),
+        }
+
+        if isinstance(item, BarcodeItem):
+            base.update({
+                "type":             "barcode",
+                "design":           item.design,
+                "container_width":  item.container_width,
+                "container_height": item.container_height,
+            })
+            return base
+
+        if isinstance(item, QGraphicsTextItem):
+            font = item.font()
+            base.update({
+                "type":      "text",
+                "text":      item.toPlainText(),
+                "font_size": font.pointSize(),
+                "font_family": font.family(),
+                "bold":      font.bold(),
+                "italic":    font.italic(),
+            })
+            return base
+
+        if isinstance(item, QGraphicsLineItem):
+            line = item.line()
+            pen  = item.pen()
+            base.update({
+                "type":      "line",
+                "x2":        round(line.x2(), 2),
+                "y2":        round(line.y2(), 2),
+                "thickness": pen.width(),
+            })
+            return base
+
+        if isinstance(item, QGraphicsRectItem):
+            rect = item.rect()
+            pen  = item.pen()
+            base.update({
+                "type":         "rect",
+                "width":        round(rect.width(),  2),
+                "height":       round(rect.height(), 2),
+                "border_width": pen.width(),
+            })
+            return base
+
+        return None
+
+    def deserialize_canvas(self, elements: list[dict]):
+        """Reconstruct scene items from a serialised element list."""
+        flags = (
+            QGraphicsItem.ItemIsMovable |
+            QGraphicsItem.ItemIsSelectable |
+            QGraphicsItem.ItemSendsGeometryChanges
+        )
+
+        for d in elements:
+            kind = d.get("type")
+            item = None
+
+            if kind == "text":
+                item = QGraphicsTextItem(d.get("text", ""))
+                font = QFont(d.get("font_family", "Arial"), d.get("font_size", 10))
+                font.setBold(d.get("bold", False))
+                font.setItalic(d.get("italic", False))
+                item.setFont(font)
+                item.component_name = d.get("name", "Text")
+                setup_item_logic(item, self.update_pos_label)
+                item.setFlags(flags)
+
+            elif kind == "line":
+                item = QGraphicsLineItem(0, 0, d.get("x2", 100), d.get("y2", 0))
+                pen = QPen(Qt.black, d.get("thickness", 2))
+                item.setPen(pen)
+                item.component_name = d.get("name", "Line")
+                setup_item_logic(item, self.update_pos_label)
+                item.setFlags(flags)
+
+            elif kind == "rect":
+                item = QGraphicsRectItem(0, 0, d.get("width", 100), d.get("height", 50))
+                pen = QPen(Qt.black, d.get("border_width", 2))
+                item.setPen(pen)
+                item.component_name = d.get("name", "Rectangle")
+                setup_item_logic(item, self.update_pos_label)
+                item.setFlags(flags)
+
+            elif kind == "barcode":
+                item = BarcodeItem(
+                    self.update_pos_label,
+                    design=d.get("design", "CODE128"),
+                )
+                item.container_width  = d.get("container_width",  160)
+                item.container_height = d.get("container_height", 80)
+                item.component_name   = d.get("name", "Barcode")
+                # resize the background rect to match saved dimensions
+                item.bg.setRect(0, 0, item.container_width, item.container_height)
+
+            if item is None:
+                continue
+
+            item.setPos(d.get("x", 0), d.get("y", 0))
+            item.setZValue(d.get("z", 0))
+            item.setVisible(d.get("visible", True))
+            item.setRotation(d.get("rotation", 0))
+            self.scene.addItem(item)
+
+            display_name = self.get_component_display_name(item)
+            li = QListWidgetItem(display_name)
+            li.graphics_item = item
+            self.component_list.addItem(li)
+
+        self.comp_count_badge.setText(str(self.component_list.count()))
+        self.sync_z_order_from_list()
+
+    def get_design_payload(self) -> dict:
+        """
+        Build the full save payload to hand back to BarcodeListPage.
+        Stored as:
+          bsusrm  — JSON list of canvas elements
+          bsitrm  — JSON dict with canvas dimensions and future metadata
+        """
+        elements = self.serialize_canvas()
+        canvas_meta = {
+            "canvas_w": self._canvas_w,
+            "canvas_h": self._canvas_h,
+        }
+        return {
+            "usrm": _json.dumps(elements,      separators=(",", ":")),
+            "itrm": _json.dumps(canvas_meta,   separators=(",", ":")),
+        }
+
+    def _update_design_subtitle(self):
+        """Refresh the code/name pill next to the editor title."""
+        code = getattr(self, "_design_code", "")
+        name = getattr(self, "_design_name", "")
+        if code or name:
+            text = f"{code}  ·  {name}" if (code and name) else (code or name)
+        else:
+            text = "New Design"
+        self._subtitle_lbl.setText(text)
 
     # ------------------------------------------------------------------
     # UI Construction
@@ -809,11 +1034,35 @@ class BarcodeEditorPage(QWidget):
         header.setStyleSheet("background: transparent; border: none;")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(0)
+
+        # Back button
+        self.back_btn = StandardButton(
+            "Back to List",
+            icon_name="fa5s.arrow-left",
+            variant="secondary"
+        )
+        self.back_btn.setToolTip("Return to Barcode Design list")
+        header_layout.addWidget(self.back_btn)
+        header_layout.addSpacing(16)
+
+        # Title + subtitle pill
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+
         title_lbl = QLabel("Barcode Editor")
         title_lbl.setStyleSheet(
-            "font-size: 24px; font-weight: 700; color: #111827; background: transparent;"
+            "font-size: 22px; font-weight: 700; color: #111827; background: transparent;"
         )
-        header_layout.addWidget(title_lbl)
+        title_col.addWidget(title_lbl)
+
+        self._subtitle_lbl = QLabel("New Design")
+        self._subtitle_lbl.setStyleSheet(
+            "font-size: 11px; color: #6366F1; font-weight: 600; background: transparent;"
+        )
+        title_col.addWidget(self._subtitle_lbl)
+
+        header_layout.addLayout(title_col)
         header_layout.addStretch()
         self.main_layout.addWidget(header)
         self.main_layout.addSpacing(12)
@@ -833,7 +1082,6 @@ class BarcodeEditorPage(QWidget):
         editor_toolbar.addWidget(self.btn_add_code)
         editor_toolbar.addSpacing(12)
 
-        # ── Canvas Size Controls (inline in toolbar) ──────────────────
         canvas_size_widget = self._build_canvas_size_widget()
         editor_toolbar.addWidget(canvas_size_widget)
 
@@ -869,7 +1117,6 @@ class BarcodeEditorPage(QWidget):
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(10)
 
-        # Components header
         comp_header = QWidget()
         comp_header.setStyleSheet("background: transparent; border: none;")
         comp_header_layout = QHBoxLayout(comp_header)
@@ -895,7 +1142,6 @@ class BarcodeEditorPage(QWidget):
         comp_header_layout.addWidget(self.comp_count_badge)
         sidebar_layout.addWidget(comp_header)
 
-        # Component List
         self.component_list = DeleteSignalList()
         self.component_list.setSpacing(2)
         self.component_list.setMouseTracking(True)
@@ -916,17 +1162,13 @@ class BarcodeEditorPage(QWidget):
         self.component_list.itemClicked.connect(self.sync_selection_from_list)
         sidebar_layout.addWidget(self.component_list, stretch=2)
 
-        # Divider
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet(f"background-color: {COLORS['border']}; min-height: 1px;")
         sidebar_layout.addWidget(divider)
 
-        # Properties header
         prop_header = QWidget()
-        prop_header.setStyleSheet("""
-            QWidget { background: #F8FAFC; border-radius: 6px; padding: 2px 0px; }
-        """)
+        prop_header.setStyleSheet("QWidget { background: #F8FAFC; border-radius: 6px; padding: 2px 0px; }")
         prop_header_layout = QHBoxLayout(prop_header)
         prop_header_layout.setContentsMargins(8, 6, 8, 6)
         prop_header_layout.setSpacing(4)
@@ -962,7 +1204,6 @@ class BarcodeEditorPage(QWidget):
         prop_header_layout.addWidget(self.prop_name_input, stretch=1)
         sidebar_layout.addWidget(prop_header)
 
-        # Scrollable Property Inspector
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -983,16 +1224,20 @@ class BarcodeEditorPage(QWidget):
         self.btn_add_rect.clicked.connect(lambda: self.add_element("rect"))
         self.btn_add_line.clicked.connect(lambda: self.add_element("line"))
         self.btn_add_code.clicked.connect(lambda: self.add_element("barcode"))
+        self.save_btn.clicked.connect(self._on_save_clicked)
         self.scene.selectionChanged.connect(self.on_selection_changed)
+
+    def _on_save_clicked(self):
+        """Serialize canvas and emit design_saved; BarcodeListPage handles DB write."""
+        payload = self.get_design_payload()
+        payload["pk"]   = self._design_code
+        payload["name"] = self._design_name
+        self.design_saved.emit(payload)
 
     # ------------------------------------------------------------------
     # Canvas Size Widget
     # ------------------------------------------------------------------
     def _build_canvas_size_widget(self) -> QWidget:
-        """
-        Returns a compact inline widget:
-          [ruler icon]  W [spin]  × H [spin]  [preset combo]  [Apply btn]
-        """
         container = QWidget()
         container.setStyleSheet("""
             QWidget {
@@ -1005,13 +1250,11 @@ class BarcodeEditorPage(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
-        # Ruler icon
         ruler_lbl = QLabel()
         ruler_lbl.setPixmap(qta.icon("fa5s.ruler-combined", color="#6366F1").pixmap(14, 14))
         ruler_lbl.setStyleSheet("background: transparent; border: none;")
         layout.addWidget(ruler_lbl)
 
-        # "CANVAS" label
         canvas_lbl = QLabel("CANVAS")
         canvas_lbl.setStyleSheet(
             "font-size: 9px; font-weight: 700; color: #64748B; "
@@ -1019,14 +1262,12 @@ class BarcodeEditorPage(QWidget):
         )
         layout.addWidget(canvas_lbl)
 
-        # Thin separator
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setStyleSheet("color: #E2E8F0; background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
         sep.setFixedHeight(18)
         layout.addWidget(sep)
 
-        # W label + spin
         w_lbl = QLabel("W")
         w_lbl.setStyleSheet("font-size: 10px; color: #94A3B8; background: transparent; border: none;")
         layout.addWidget(w_lbl)
@@ -1043,7 +1284,6 @@ class BarcodeEditorPage(QWidget):
         cross_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; background: transparent; border: none;")
         layout.addWidget(cross_lbl)
 
-        # H label + spin
         h_lbl = QLabel("H")
         h_lbl.setStyleSheet("font-size: 10px; color: #94A3B8; background: transparent; border: none;")
         layout.addWidget(h_lbl)
@@ -1056,14 +1296,12 @@ class BarcodeEditorPage(QWidget):
         self.canvas_h_spin.setToolTip("Canvas height in pixels")
         layout.addWidget(self.canvas_h_spin)
 
-        # Thin separator
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.VLine)
         sep2.setStyleSheet("color: #E2E8F0; background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
         sep2.setFixedHeight(18)
         layout.addWidget(sep2)
 
-        # Preset combo
         preset_labels = [p[0] for p in CANVAS_PRESETS]
         self.preset_combo = make_chevron_combo(preset_labels, style=MODERN_INPUT_STYLE)
         self.preset_combo.setFixedWidth(130)
@@ -1073,7 +1311,6 @@ class BarcodeEditorPage(QWidget):
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
         layout.addWidget(self.preset_combo)
 
-        # Apply button
         apply_btn = StandardButton("Apply", icon_name="fa5s.check", variant="primary")
         apply_btn.setFixedHeight(28)
         apply_btn.clicked.connect(self._apply_canvas_size)
@@ -1085,10 +1322,9 @@ class BarcodeEditorPage(QWidget):
     # Canvas Resize Logic
     # ------------------------------------------------------------------
     def _on_preset_changed(self, index: int):
-        """When a preset is chosen fill the spinboxes (but don't apply yet)."""
         _, w, h = CANVAS_PRESETS[index]
         if w is None:
-            return  # "Custom" — leave spins as-is
+            return
         self.canvas_w_spin.blockSignals(True)
         self.canvas_h_spin.blockSignals(True)
         self.canvas_w_spin.setValue(w)
@@ -1097,7 +1333,6 @@ class BarcodeEditorPage(QWidget):
         self.canvas_h_spin.blockSignals(False)
 
     def _apply_canvas_size(self):
-        """Resize the scene rect; items stay where they are (clamped if needed)."""
         new_w = self.canvas_w_spin.value()
         new_h = self.canvas_h_spin.value()
         self._canvas_w = new_w
@@ -1106,7 +1341,6 @@ class BarcodeEditorPage(QWidget):
         new_rect = QRectF(0, 0, new_w, new_h)
         self.scene.setSceneRect(new_rect)
 
-        # Reset preset combo to "Custom" if it doesn't match any preset
         matched = False
         for i, (label, pw, ph) in enumerate(CANVAS_PRESETS):
             if pw == new_w and ph == new_h:
@@ -1117,10 +1351,9 @@ class BarcodeEditorPage(QWidget):
                 break
         if not matched:
             self.preset_combo.blockSignals(True)
-            self.preset_combo.setCurrentIndex(0)  # "Custom"
+            self.preset_combo.setCurrentIndex(0)
             self.preset_combo.blockSignals(False)
 
-        # Clamp existing items that now fall outside the new canvas
         for graphics_item in self.scene.items():
             if graphics_item.group():
                 continue
@@ -1132,17 +1365,13 @@ class BarcodeEditorPage(QWidget):
             if nx != x or ny != y:
                 graphics_item.setPos(max(0, nx), max(0, ny))
 
-        # Update canvas size indicator label
-        self._update_canvas_info_label(new_w, new_h)
-
         self.scene.update()
 
     def _update_canvas_info_label(self, w: int, h: int):
-        """Optionally update a status label (if you add one later)."""
-        pass  # Hook for future use
+        pass
 
     # ------------------------------------------------------------------
-    # Helpers (unchanged from original)
+    # Helpers
     # ------------------------------------------------------------------
     def apply_modern_scrollbar(self, scroll_area):
         scroll_area.verticalScrollBar().setStyleSheet("""
