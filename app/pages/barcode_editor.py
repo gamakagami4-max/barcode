@@ -4,9 +4,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, 
     QGraphicsScene, QGraphicsView, QGraphicsItem, QGraphicsRectItem, 
     QGraphicsTextItem, QGraphicsItemGroup, QGraphicsLineItem, QListWidget, 
-    QListWidgetItem, QComboBox, QLineEdit, QSpinBox, QFormLayout, 
+    QListWidgetItem, QComboBox, QLineEdit, QSpinBox, QFormLayout, QGridLayout,
     QApplication, QScrollArea, QStyledItemDelegate, QStyle, QSizePolicy,
-    QStackedWidget, QDoubleSpinBox, QCheckBox, QPushButton
+    QStackedWidget, QDoubleSpinBox, QCheckBox, QPushButton, QSpacerItem
 )
 from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QFontMetrics, QCursor
@@ -53,7 +53,6 @@ class _ComboDropdown(QFrame):
         self._build(width)
 
     def _build(self, width):
-        # Scroll area for long lists
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -210,7 +209,6 @@ class CustomCombo(QFrame):
         self._is_open = True
         self._apply_style(True)
         self._set_chevron(True)
-        # Install app-level event filter to detect outside clicks
         QApplication.instance().installEventFilter(self)
 
     def _close(self):
@@ -232,17 +230,15 @@ class CustomCombo(QFrame):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
             gpos = QCursor.pos()
-            # Close if click is outside both the trigger and the dropdown
             in_trigger  = self.rect().contains(self.mapFromGlobal(gpos))
             in_dropdown = (self._dropdown is not None and
                            self._dropdown.isVisible() and
                            self._dropdown.rect().contains(self._dropdown.mapFromGlobal(gpos)))
             if not in_trigger and not in_dropdown:
                 self._close()
-        return False  # never consume the event
+        return False
 
     def hideEvent(self, event):
-        # Clean up if parent widget hides
         if self._is_open:
             self._close()
         super().hideEvent(event)
@@ -934,31 +930,32 @@ class GeneralTab(QWidget):
 
         muted_style = f"color:{COLORS['text_mute']}; font-size:10px; background:transparent; border:none;"
 
-        # ── Single compact card ───────────────────────────────────────
+        # ── Card with no border ───────────────────────────────────────
         card = QFrame()
         card.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #E2E8F0; border-radius: 8px; }"
+            "QFrame { background: white; border: none; border-radius: 8px; }"
         )
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(16, 12, 16, 12)
-        card_layout.setSpacing(0)
 
-        # ── LEFT SIDE: Sticker / Height / Width ───────────────────────
-        left_form = QFormLayout()
-        left_form.setSpacing(6)
-        left_form.setHorizontalSpacing(10)
-        left_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        left_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # ── Single QGridLayout for perfect row alignment ───────────────
+        # Columns: 0=left labels, 1=left values, 2=vdiv, 3=mid labels,
+        #          4=mid values, 5=vdiv2, 6=right content, 7=stretch
+        card_layout = QGridLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 14)
+        card_layout.setHorizontalSpacing(10)
+        card_layout.setVerticalSpacing(10)
+        card_layout.setColumnStretch(7, 1)  # trailing stretch
 
+        # ── LEFT: Sticker / Height / Width ────────────────────────────
         sticker_keys = list(self._sticker_data.keys())
-        self.sticker_combo = make_chevron_combo([""] + sticker_keys)
+        self.sticker_combo = make_chevron_combo(sticker_keys)
         self.sticker_combo.setPlaceholderText("— Select sticker —")
         self.sticker_combo.setFixedWidth(200)
-        left_form.addRow(lbl("STICKER :"), self.sticker_combo)
+        card_layout.addWidget(lbl("STICKER :"), 0, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.sticker_combo, 0, 1, Qt.AlignVCenter)
 
         # Height row
         h_row_w = QWidget(); h_row_w.setStyleSheet("background: transparent; border: none;")
-        h_hl = QHBoxLayout(h_row_w); h_hl.setContentsMargins(0,0,0,0); h_hl.setSpacing(4)
+        h_hl = QHBoxLayout(h_row_w); h_hl.setContentsMargins(0, 0, 0, 0); h_hl.setSpacing(4)
         self.height_inch = make_readonly(); self.height_inch.setFixedWidth(70)
         h_hl.addWidget(self.height_inch)
         inch_lbl1 = QLabel("INCH /"); inch_lbl1.setStyleSheet(muted_style); h_hl.addWidget(inch_lbl1)
@@ -966,11 +963,12 @@ class GeneralTab(QWidget):
         h_hl.addWidget(self.height_px)
         px_lbl1 = QLabel("PIXEL"); px_lbl1.setStyleSheet(muted_style); h_hl.addWidget(px_lbl1)
         h_hl.addStretch()
-        left_form.addRow(lbl("HEIGHT :"), h_row_w)
+        card_layout.addWidget(lbl("HEIGHT :"), 1, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(h_row_w, 1, 1, Qt.AlignVCenter)
 
         # Width row
         w_row_w = QWidget(); w_row_w.setStyleSheet("background: transparent; border: none;")
-        w_hl = QHBoxLayout(w_row_w); w_hl.setContentsMargins(0,0,0,0); w_hl.setSpacing(4)
+        w_hl = QHBoxLayout(w_row_w); w_hl.setContentsMargins(0, 0, 0, 0); w_hl.setSpacing(4)
         self.width_inch = make_readonly(); self.width_inch.setFixedWidth(70)
         w_hl.addWidget(self.width_inch)
         inch_lbl2 = QLabel("INCH /"); inch_lbl2.setStyleSheet(muted_style); w_hl.addWidget(inch_lbl2)
@@ -978,54 +976,44 @@ class GeneralTab(QWidget):
         w_hl.addWidget(self.width_px)
         px_lbl2 = QLabel("PIXEL"); px_lbl2.setStyleSheet(muted_style); w_hl.addWidget(px_lbl2)
         w_hl.addStretch()
-        left_form.addRow(lbl("WIDTH :"), w_row_w)
+        card_layout.addWidget(lbl("WIDTH :"), 2, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(w_row_w, 2, 1, Qt.AlignVCenter)
 
-        card_layout.addLayout(left_form)
-
-        # ── Vertical divider ──────────────────────────────────────────
+        # ── Vertical divider 1 ────────────────────────────────────────
         vdiv = QFrame()
         vdiv.setFrameShape(QFrame.VLine)
         vdiv.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        vdiv.setContentsMargins(0, 0, 0, 0)
-        card_layout.addSpacing(24)
-        card_layout.addWidget(vdiv)
-        card_layout.addSpacing(24)
+        card_layout.addWidget(vdiv, 0, 2, 3, 1)  # span all 3 rows
+        card_layout.setColumnMinimumWidth(2, 32)
 
         # ── MIDDLE: Code / Name / Display Status ──────────────────────
-        mid_form = QFormLayout()
-        mid_form.setSpacing(6)
-        mid_form.setHorizontalSpacing(10)
-        mid_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        mid_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
         self.code_input = make_input("e.g. BC001")
         self.code_input.setFixedWidth(160)
-        mid_form.addRow(lbl("CODE :"), self.code_input)
-
         self.name_input = make_input("e.g. Member Label A4")
         self.name_input.setFixedWidth(220)
-        mid_form.addRow(lbl("NAME :"), self.name_input)
-
         self.status_combo = make_chevron_combo(["ACTIVE", "INACTIVE", "DRAFT"])
         self.status_combo.setFixedWidth(160)
-        mid_form.addRow(lbl("DISPLAY STATUS :"), self.status_combo)
 
-        card_layout.addLayout(mid_form)
+        card_layout.addWidget(lbl("CODE :"),           0, 3, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.code_input,          0, 4, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("NAME :"),            1, 3, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.name_input,          1, 4, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("DISPLAY STATUS :"), 2, 3, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.status_combo,        2, 4, Qt.AlignVCenter)
 
-        # ── Vertical divider ──────────────────────────────────────────
+        # ── Vertical divider 2 ────────────────────────────────────────
         vdiv2 = QFrame()
         vdiv2.setFrameShape(QFrame.VLine)
         vdiv2.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        vdiv2.setContentsMargins(0, 0, 0, 0)
-        card_layout.addSpacing(24)
-        card_layout.addWidget(vdiv2)
-        card_layout.addSpacing(24)
+        card_layout.addWidget(vdiv2, 0, 5, 3, 1)
+        card_layout.setColumnMinimumWidth(5, 32)
 
-        # ── RIGHT SIDE: Jenis Cetak checkboxes ───────────────────────
-        right_layout = QVBoxLayout()
+        # ── RIGHT: Jenis Cetak ────────────────────────────────────────
+        right_w = QWidget()
+        right_w.setStyleSheet("background: transparent; border: none;")
+        right_layout = QVBoxLayout(right_w)
         right_layout.setSpacing(6)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setAlignment(Qt.AlignTop)
 
         jenis_lbl = QLabel("JENIS CETAK :")
         jenis_lbl.setStyleSheet(label_style)
@@ -1038,8 +1026,13 @@ class GeneralTab(QWidget):
         right_layout.addWidget(self.chk_barcode_printer)
         right_layout.addWidget(self.chk_report)
 
-        card_layout.addLayout(right_layout)
-        card_layout.addStretch()
+        card_layout.addWidget(right_w, 0, 6, 3, 1, Qt.AlignTop | Qt.AlignLeft)
+
+        # Trailing stretch column
+        card_layout.addItem(
+            QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum),
+            0, 7, 3, 1
+        )
 
         root.addWidget(card)
         root.addStretch()
@@ -1081,7 +1074,6 @@ class GeneralTab(QWidget):
             self.width_inch.setText(f"{d['w_in']:.2f}")
             self.width_px.setText(str(d["w_px"]))
         else:
-            self.sticker_combo.setCurrentIndex(0)
             self.height_inch.setText(f"{h_in:.2f}" if h_in else "")
             self.height_px.setText(str(h_px) if h_px else "")
             self.width_inch.setText(f"{w_in:.2f}" if w_in else "")
@@ -1273,7 +1265,6 @@ class BarcodeEditorPage(QWidget):
             return
         self._canvas_w, self._canvas_h = w_px, h_px
         self.scene.setSceneRect(QRectF(0, 0, w_px, h_px))
-        # Keep _sticker_name in sync with whatever the user picked
         self._sticker_name = self.general_tab.sticker_combo.currentText()
 
     def _switch_tab(self, index: int):
@@ -1333,7 +1324,6 @@ class BarcodeEditorPage(QWidget):
 
         header_bar_layout.addStretch()
 
-        # Save Design button in header
         self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
         self.save_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.save_btn)
@@ -1461,11 +1451,9 @@ class BarcodeEditorPage(QWidget):
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
     def _on_save_clicked(self):
-        # Sync all fields from GeneralTab before saving
         selected_sticker = self.general_tab.sticker_combo.currentText()
         if selected_sticker:
             self._sticker_name = selected_sticker
-        # Also sync code/name in case user edited them
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
         if code_val:
