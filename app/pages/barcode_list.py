@@ -369,7 +369,7 @@ class BarcodeListPage(QWidget):
         # 1. Header
         enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
-            title="Barcode Management",
+            title="Barcode Design",
             subtitle="Generate and manage enterprise-wide barcode assets.",
             enabled_actions=enabled
         )
