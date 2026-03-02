@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
     QApplication, QScrollArea, QStyledItemDelegate, QStyle, QSizePolicy,
     QStackedWidget, QDoubleSpinBox, QCheckBox, QPushButton
 )
-from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal
-from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QFontMetrics
+from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QFontMetrics, QCursor
 from components.barcode_design_modal import BarcodeDesignModal
 from PySide6.QtWidgets import QDialog
 import shiboken6
@@ -29,28 +29,276 @@ COLORS = {
     "legacy_blue": "#1E3A8A" 
 }
 
-MODERN_COMBO_STYLE = """
-    QComboBox {
-        background-color: white;
-        border: 1px solid #CBD5E1;
-        border-radius: 4px;
-        padding: 5px 28px 5px 8px;
-        font-size: 11px;
-        color: #334155;
-    }
-    QComboBox:focus {
-        border: 1.5px solid #6366F1;
-    }
-    QComboBox::drop-down {
-        border: 0px;
-        background: transparent;
-    }
-    QComboBox::down-arrow {
-        image: none;
-        width: 0;
-        height: 0;
-    }
-"""
+MODERN_COMBO_STYLE = ""  # Kept for legacy references; CustomCombo is used instead
+
+
+# ── Custom combo widget (bypasses Qt native dropdown which ignores stylesheets) ──
+
+class _ComboDropdown(QFrame):
+    """Floating dropdown — uses Qt.Tool (not Qt.Popup) to avoid hide-before-click race."""
+    optionSelected = Signal(str)
+
+    _ITEM_H = 32
+    _PAD    = 4
+    _MAX_H  = 260
+
+    def __init__(self, options, selected, width):
+        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setStyleSheet("QFrame { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px; }")
+        self._options = [str(o) for o in options]
+        self._selected = selected
+        self._buttons  = []
+        self._build(width)
+
+    def _build(self, width):
+        # Scroll area for long lists
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                border: none; background: #F4F4F5; width: 6px;
+                margin: 4px 2px; border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D4D4D8; border-radius: 3px; min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover { background: #A1A1AA; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        """)
+
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent; border: none;")
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(self._PAD, self._PAD, self._PAD, self._PAD)
+        layout.setSpacing(2)
+
+        for opt in self._options:
+            btn = QPushButton(opt)
+            btn.setFixedHeight(self._ITEM_H)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.clicked.connect(lambda checked=False, o=opt: self._select(o))
+            self._style_btn(btn, opt == self._selected)
+            layout.addWidget(btn)
+            self._buttons.append(btn)
+
+        scroll.setWidget(inner)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        content_h = self._PAD * 2 + len(self._options) * (self._ITEM_H + 2)
+        self.setFixedWidth(max(width, 160))
+        self.setFixedHeight(min(content_h + 2, self._MAX_H))
+
+    def _style_btn(self, btn, selected):
+        if selected:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #EFF6FF; color: #3B82F6;
+                    border: none; border-radius: 4px;
+                    font-size: 12px; font-weight: 500;
+                    text-align: left; padding: 0 10px;
+                }
+                QPushButton:hover { background: #DBEAFE; color: #3B82F6; }
+            """)
+        else:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent; color: #18181B;
+                    border: none; border-radius: 4px;
+                    font-size: 12px; font-weight: 400;
+                    text-align: left; padding: 0 10px;
+                }
+                QPushButton:hover { background: #F4F4F5; color: #18181B; }
+            """)
+
+    def _select(self, option):
+        self._selected = option
+        for btn in self._buttons:
+            self._style_btn(btn, btn.text() == option)
+        self.optionSelected.emit(option)
+        self.hide()
+
+    def set_selected(self, option):
+        self._selected = option
+        for btn in self._buttons:
+            self._style_btn(btn, btn.text() == option)
+
+    def popup_below(self, trigger):
+        gpos = trigger.mapToGlobal(trigger.rect().bottomLeft())
+        self.setFixedWidth(max(trigger.width(), 160))
+        self.move(gpos)
+        self.show()
+        self.raise_()
+
+
+class CustomCombo(QFrame):
+    """
+    Drop-in QComboBox replacement. Uses Qt.Tool popup + app event filter
+    for outside-click detection (avoids Qt.Popup hide-before-click race).
+    """
+    currentTextChanged = Signal(str)
+
+    def __init__(self, items=None, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFixedHeight(32)
+        self._items           = list(items or [])
+        self._current         = self._items[0] if self._items else ""
+        self._dropdown        = None
+        self._is_open         = False
+        self._signals_blocked = False
+        self._build_ui()
+
+    def _build_ui(self):
+        self._apply_style(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 8, 0)
+        layout.setSpacing(6)
+
+        self._label = QLabel(self._current)
+        self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+        self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self._chevron = QLabel()
+        self._chevron.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._chevron.setStyleSheet("background: transparent; border: none;")
+        self._set_chevron(False)
+
+        layout.addWidget(self._label, 1)
+        layout.addWidget(self._chevron, 0)
+
+    def _apply_style(self, open_):
+        border = "#3B82F6" if open_ else "#E5E7EB"
+        bw     = "1.5"     if open_ else "1"
+        hover  = "#3B82F6" if open_ else "#D4D4D8"
+        self.setStyleSheet(f"""
+            CustomCombo {{
+                background: #FFFFFF;
+                border: {bw}px solid {border};
+                border-radius: 6px;
+            }}
+            CustomCombo:hover {{ border-color: {hover}; }}
+        """)
+
+    def _set_chevron(self, open_):
+        self._chevron.setPixmap(
+            qta.icon("fa5s.chevron-up" if open_ else "fa5s.chevron-down",
+                     color="#3B82F6" if open_ else "#71717A").pixmap(10, 10)
+        )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self._is_open:
+                self._close()
+            else:
+                self._open()
+        super().mousePressEvent(event)
+
+    def _open(self):
+        self._dropdown = _ComboDropdown(list(self._items), self._current, self.width())
+        self._dropdown.optionSelected.connect(self._on_selected)
+        self._dropdown.popup_below(self)
+        self._is_open = True
+        self._apply_style(True)
+        self._set_chevron(True)
+        # Install app-level event filter to detect outside clicks
+        QApplication.instance().installEventFilter(self)
+
+    def _close(self):
+        QApplication.instance().removeEventFilter(self)
+        if self._dropdown:
+            self._dropdown.hide()
+        self._is_open = False
+        self._apply_style(False)
+        self._set_chevron(False)
+
+    def _on_selected(self, option):
+        self._current = option
+        self._label.setText(option)
+        self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+        self._close()
+        if not self._signals_blocked:
+            self.currentTextChanged.emit(option)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            gpos = QCursor.pos()
+            # Close if click is outside both the trigger and the dropdown
+            in_trigger  = self.rect().contains(self.mapFromGlobal(gpos))
+            in_dropdown = (self._dropdown is not None and
+                           self._dropdown.isVisible() and
+                           self._dropdown.rect().contains(self._dropdown.mapFromGlobal(gpos)))
+            if not in_trigger and not in_dropdown:
+                self._close()
+        return False  # never consume the event
+
+    def hideEvent(self, event):
+        # Clean up if parent widget hides
+        if self._is_open:
+            self._close()
+        super().hideEvent(event)
+
+    # ── QComboBox-compatible API ──────────────────────────────────────
+
+    def currentText(self):
+        return self._current
+
+    def setCurrentText(self, text):
+        if text in self._items:
+            self._current = text
+            self._label.setText(text)
+            self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+            if self._dropdown:
+                self._dropdown.set_selected(text)
+
+    def setCurrentIndex(self, index):
+        if 0 <= index < len(self._items):
+            self.setCurrentText(self._items[index])
+
+    def currentIndex(self):
+        try:
+            return self._items.index(self._current)
+        except ValueError:
+            return -1
+
+    def findText(self, text):
+        try:
+            return self._items.index(text)
+        except ValueError:
+            return -1
+
+    def addItems(self, items):
+        self._items.extend(items)
+        if not self._current and self._items:
+            self._current = self._items[0]
+            self._label.setText(self._current)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemText(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else ""
+
+    def setPlaceholderText(self, text):
+        if not self._current:
+            self._label.setText(text)
+            self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
+
+    def blockSignals(self, block):
+        self._signals_blocked = block
+        return super().blockSignals(block)
 
 MODERN_INPUT_STYLE = """
     QLineEdit, QSpinBox, QComboBox, QDoubleSpinBox {
@@ -205,20 +453,9 @@ def make_spin(min_val=0, max_val=5000, value=0) -> ChevronSpinBox:
     return spin
 
 
-def make_chevron_combo(items: list, style: str = MODERN_INPUT_STYLE) -> QComboBox:
-    combo = QComboBox()
-    combo.addItems(items)
-    combo.setStyleSheet(style)
-    combo.setCursor(Qt.PointingHandCursor)
+def make_chevron_combo(items: list, style: str = MODERN_INPUT_STYLE) -> CustomCombo:
+    combo = CustomCombo(items)
     combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    inner = QHBoxLayout(combo)
-    inner.setContentsMargins(0, 0, 10, 0)
-    inner.addStretch()
-    chevron = QLabel()
-    chevron.setPixmap(qta.icon("fa5s.chevron-down", color="#64748B").pixmap(10, 10))
-    chevron.setAttribute(Qt.WA_TransparentForMouseEvents)
-    chevron.setStyleSheet("background: transparent; border: none;")
-    inner.addWidget(chevron)
     return combo
 
 
