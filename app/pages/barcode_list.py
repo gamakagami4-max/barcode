@@ -1,7 +1,7 @@
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidgetItem, QHeaderView,
-    QHBoxLayout, QPushButton, QMessageBox, QStackedWidget,
+    QHBoxLayout, QMessageBox, QStackedWidget,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics
@@ -95,7 +95,7 @@ def _fmt_date(value) -> str:
     if value is None:
         return "-"
     if isinstance(value, datetime):
-        return value.strftime("%d-%b-%Y")
+        return value.strftime("%Y-%m-%d %H:%M:%S")
     return str(value)
 
 
@@ -103,18 +103,23 @@ def _dict_to_row(d: dict) -> tuple:
     """Convert a mbarcd repo dict to the display tuple used by the table."""
     sticker_size = d.get("sticker_name") or f"{d.get('h_in', '')} X {d.get('w_in', '')}"
     status = "DISPLAY" if d.get("dp_fg") == 1 else "NOT DISPLAY"
+
+    # Only show change-tracking fields if the record has actually been edited
+    changed_no = d.get("changed_no", 0) or 0
+    has_been_edited = int(changed_no) > 0
+
     return (
-        d.get("pk", ""),                   # 0  CODE
-        d.get("name", ""),                 # 1  NAME
-        sticker_size,                      # 2  STICKER SIZE
-        status,                            # 3  STATUS
-        d.get("added_by", "-"),            # 4  ADDED BY
-        _fmt_date(d.get("added_at")),      # 5  ADDED AT
-        d.get("changed_by", "-"),          # 6  CHANGED BY
-        _fmt_date(d.get("changed_at")),    # 7  CHANGED AT
-        str(d.get("changed_no", 0)),       # 8  CHANGED NO
-        d.get("printed_by") or "-",        # 9  LAST PRINT BY
-        _fmt_date(d.get("printed_at")),    # 10 LAST PRINT AT
+        d.get("pk", ""),                                          # 0  CODE
+        d.get("name", ""),                                        # 1  NAME
+        sticker_size,                                             # 2  STICKER SIZE
+        status,                                                   # 3  STATUS
+        d.get("added_by", "-"),                                   # 4  ADDED BY
+        _fmt_date(d.get("added_at")),                             # 5  ADDED AT
+        d.get("changed_by", "-") if has_been_edited else "-",     # 6  CHANGED BY
+        _fmt_date(d.get("changed_at")) if has_been_edited else "-",  # 7  CHANGED AT
+        str(changed_no) if has_been_edited else "-",              # 8  CHANGED NO
+        d.get("printed_by") or "-",                               # 9  LAST PRINT BY
+        _fmt_date(d.get("printed_at")),                           # 10 LAST PRINT AT
     )
 
 
@@ -240,16 +245,19 @@ class BarcodeListPage(QWidget):
                     self.all_dicts[payload["pk"]] = record
             except Exception:
                 pass
-
-        # ── Persist canvas layout regardless of add/edit ──────────────
-        self._save_design_layout(payload)
+            # ── Persist canvas layout — new record, don't touch change fields
+            self._save_design_layout(payload, is_new=True)
+        else:
+            # ── Persist canvas layout — existing record, update change fields
+            self._save_design_layout(payload, is_new=False)
 
         self.load_data()
         self._show_list()
 
-    def _save_design_layout(self, payload: dict):
+    def _save_design_layout(self, payload: dict, is_new: bool = False):
         """
         Persist the serialised canvas JSON back to mbarcd (mbusrm / mbitrm).
+        When is_new=True, changed_no / changed_by / changed_at are NOT touched.
         Silently skips if the columns haven't been added yet via migration.
         """
         pk   = payload.get("pk", "").strip()
@@ -261,16 +269,17 @@ class BarcodeListPage(QWidget):
 
         try:
             from server.repositories.mbarcd_repo import update_mbarcd_layout
-            update_mbarcd_layout(pk=pk, usrm=usrm, itrm=itrm)
+            update_mbarcd_layout(pk=pk, usrm=usrm, itrm=itrm, is_new=is_new)
             print(f"[_save_design_layout] pk={pk!r}  usrm={len(usrm)}B  itrm={len(itrm)}B")
         except ImportError:
-            self._save_design_layout_direct(pk, usrm, itrm)
+            self._save_design_layout_direct(pk, usrm, itrm, is_new=is_new)
         except Exception as e:
             print(f"[_save_design_layout] Skipped — {e}")
 
-    def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str):
+    def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str, is_new: bool = False):
         """
         Direct DB fallback. Silently skips if mbusrm/mbitrm columns don't exist yet.
+        When is_new=True, mbchno / mbchby / mbchdt are NOT updated.
         Run this migration first to enable layout persistence:
             ALTER TABLE barcodesap.mbarcd
                 ADD COLUMN IF NOT EXISTS mbusrm text,
@@ -283,18 +292,33 @@ class BarcodeListPage(QWidget):
 
         try:
             cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE barcodesap.mbarcd
-                   SET mbusrm = %s,
-                       mbitrm = %s,
-                       mbchno = mbchno + 1
-                 WHERE mbbrcd = %s
-                """,
-                (usrm, itrm, pk),
-            )
+            if is_new:
+                # New record — only save the canvas JSON, don't touch change tracking fields
+                cur.execute(
+                    """
+                    UPDATE barcodesap.mbarcd
+                       SET mbusrm = %s,
+                           mbitrm = %s
+                     WHERE mbbrcd = %s
+                    """,
+                    (usrm, itrm, pk),
+                )
+            else:
+                # Edit — update canvas JSON and increment change tracking fields
+                cur.execute(
+                    """
+                    UPDATE barcodesap.mbarcd
+                       SET mbusrm = %s,
+                           mbitrm = %s,
+                           mbchno = mbchno + 1,
+                           mbchby = %s,
+                           mbchdt = NOW()
+                     WHERE mbbrcd = %s
+                    """,
+                    (usrm, itrm, self.current_user, pk),
+                )
             conn.commit()
-            print(f"[_save_design_layout_direct] Saved layout for pk={pk!r}")
+            print(f"[_save_design_layout_direct] Saved layout for pk={pk!r} (is_new={is_new})")
         except Exception as e:
             conn.rollback()
             print(f"[_save_design_layout_direct] Skipped — {e}")
@@ -366,7 +390,7 @@ class BarcodeListPage(QWidget):
         layout.addWidget(self.search_bar)
         layout.addSpacing(5)
 
-        # 3. Table
+        # 3. Table — 9 data columns
         column_labels = [
             "CODE", "NAME", "STICKER SIZE", "STATUS",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
@@ -382,12 +406,14 @@ class BarcodeListPage(QWidget):
         header_obj.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header_obj.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         header_obj.setSectionResizeMode(6, QHeaderView.Fixed)
+        header_obj.setSectionResizeMode(7, QHeaderView.ResizeToContents)
 
         self.table.setColumnWidth(0, 140)
         self.table.setColumnWidth(1, 360)
         self.table.setColumnWidth(2, 140)
         self.table.setColumnWidth(3, 110)
         self.table.setColumnWidth(6, 120)
+        self.table.setColumnWidth(8, 100)
 
         self.sort_bar = SortByWidget(self.table)
         self.sort_bar.sortChanged.connect(self.on_sort_changed)
@@ -484,30 +510,15 @@ class BarcodeListPage(QWidget):
                 status_item.setForeground(QColor(COLORS["status_green_text"]))
             self.table.setItem(r, 3, status_item)
 
-            self.table.setItem(r, 4, QTableWidgetItem(str(row_data[4])))
-            self.table.setItem(r, 5, QTableWidgetItem(str(row_data[5])))
+            # Columns 4–8: ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO
+            self.table.setItem(r, 4, QTableWidgetItem(str(row_data[4])))  # ADDED BY
+            self.table.setItem(r, 5, QTableWidgetItem(str(row_data[5])))  # ADDED AT
+            self.table.setItem(r, 6, QTableWidgetItem(str(row_data[6])))  # CHANGED BY
+            self.table.setItem(r, 7, QTableWidgetItem(str(row_data[7])))  # CHANGED AT
 
-            view_btn = QPushButton("View Detail")
-            view_btn.setCursor(Qt.PointingHandCursor)
-            view_btn.setFixedSize(95, 28)
-            view_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: white; border: 1px solid {COLORS['border']};
-                    border-radius: 6px; font-size: 11px; color: {COLORS['status_gray_text']};
-                }}
-                QPushButton:hover {{
-                    background: {COLORS['bg_main']}; border-color: {COLORS['link']};
-                    color: {COLORS['link']};
-                }}
-            """)
-            view_btn.clicked.connect(lambda _, d=row_data: self._open_view_detail_modal(d))
-
-            btn_container = QWidget()
-            btn_layout = QHBoxLayout(btn_container)
-            btn_layout.addWidget(view_btn)
-            btn_layout.setContentsMargins(0, 0, 0, 0)
-            btn_layout.setAlignment(Qt.AlignCenter)
-            self.table.setCellWidget(r, 6, btn_container)
+            changed_no_item = QTableWidgetItem(str(row_data[8]))          # CHANGED NO
+            changed_no_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(r, 8, changed_no_item)
 
             metrics = QFontMetrics(self.table.font())
             lines = self._row_line_count(r)
