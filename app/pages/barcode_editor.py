@@ -184,60 +184,200 @@ class TextPropertyEditor(QWidget):
         super().__init__()
         self.item = target_item
         self.update_callback = update_callback
-        
+
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-        
+        layout.setSpacing(8)
+
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
 
-        def create_label(text):
-            lbl = QLabel(text)
-            lbl.setStyleSheet(label_style)
-            return lbl
+        def lbl(text):
+            l = QLabel(text)
+            l.setStyleSheet(label_style)
+            return l
 
+        # ── ALIGNMENT ────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
-        layout.addRow(create_label("ALIGNMENT :"), self.align_combo)
+        layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
 
+        # ── FONT NAME ────────────────────────────────────────────────
         self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
-        layout.addRow(create_label("FONT NAME :"), self.font_combo)
+        layout.addRow(lbl("FONT NAME :"), self.font_combo)
 
+        # ── FONT SIZE ────────────────────────────────────────────────
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
-        layout.addRow(create_label("FONT SIZE :"), self.size_spin)
+        layout.addRow(lbl("FONT SIZE :"), self.size_spin)
 
-        self.top_spin  = make_spin(0, 1000, int(self.item.pos().y()))
-        self.left_spin = make_spin(0, 1000, int(self.item.pos().x()))
+        # ── TOP ──────────────────────────────────────────────────────
+        self.top_spin = make_spin(0, 5000, int(self.item.pos().y()))
         self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
-        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
-        layout.addRow(create_label("TOP :"), self.top_spin)
-        layout.addRow(create_label("LEFT :"), self.left_spin)
+        layout.addRow(lbl("TOP :"), self.top_spin)
 
+        # ── LEFT ─────────────────────────────────────────────────────
+        self.left_spin = make_spin(0, 5000, int(self.item.pos().x()))
+        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
+        layout.addRow(lbl("LEFT :"), self.left_spin)
+
+        # ── ANGLE ────────────────────────────────────────────────────
         self.angle_combo = make_chevron_combo(["0", "90", "180", "270"])
         angle_map = {"0": 0, "90": 270, "180": 180, "270": 90}
         self.angle_combo.currentTextChanged.connect(
             lambda v: self.item.setRotation(angle_map.get(v, 0))
         )
-        layout.addRow(create_label("ANGLE :"), self.angle_combo)
+        layout.addRow(lbl("ANGLE :"), self.angle_combo)
 
+        # ── INVERSE ──────────────────────────────────────────────────
+        self.inverse_combo = make_chevron_combo(["NO", "YES"])
+        self.inverse_combo.currentTextChanged.connect(self._apply_inverse)
+        layout.addRow(lbl("INVERSE :"), self.inverse_combo)
+
+        # ── TYPE ─────────────────────────────────────────────────────
         self.type_combo = make_chevron_combo(["FIX", "VAR"])
-        layout.addRow(create_label("TYPE :"), self.type_combo)
+        layout.addRow(lbl("TYPE :"), self.type_combo)
 
+        # ── EDITOR ───────────────────────────────────────────────────
+        self.editor_combo = make_chevron_combo(["INVISIBLE", "VISIBLE", "READONLY"])
+        layout.addRow(lbl("EDITOR :"), self.editor_combo)
+
+        # ── TEXT ─────────────────────────────────────────────────────
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.text_input.textChanged.connect(self.apply_text_changes)
-        layout.addRow(create_label("TEXT :"), self.text_input)
+        layout.addRow(lbl("TEXT :"), self.text_input)
 
+        # ── CAPTION ──────────────────────────────────────────────────
         self.caption_input = QLineEdit("LABEL 1")
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
-        layout.addRow(create_label("CAPTION :"), self.caption_input)
+        layout.addRow(lbl("CAPTION :"), self.caption_input)
 
+        # ── WRAP TEXT + WIDTH (inline) ────────────────────────────────
+        wrap_row = QWidget()
+        wrap_row.setStyleSheet("background: transparent; border: none;")
+        wrap_layout = QHBoxLayout(wrap_row)
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+        wrap_layout.setSpacing(6)
+
+        self.wrap_combo = make_chevron_combo(["NO", "YES"])
+        wrap_layout.addWidget(self.wrap_combo, stretch=2)
+
+        width_label = QLabel("WIDTH :")
+        width_label.setStyleSheet(label_style)
+        wrap_layout.addWidget(width_label)
+
+        self.wrap_width_spin = make_spin(0, 5000, 1)
+        wrap_layout.addWidget(self.wrap_width_spin, stretch=1)
+
+        layout.addRow(lbl("WRAP TEXT :"), wrap_row)
+
+        # ── GROUP ────────────────────────────────────────────────────
+        self.group_combo = make_chevron_combo([""])
+        layout.addRow(lbl("GROUP :"), self.group_combo)
+
+        # ── TABLE (combo + extra text field inline) ───────────────────
+        table_row = QWidget()
+        table_row.setStyleSheet("background: transparent; border: none;")
+        table_layout = QHBoxLayout(table_row)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(6)
+
+        self.table_combo = make_chevron_combo([""])
+        table_layout.addWidget(self.table_combo, stretch=2)
+
+        self.table_extra = QLineEdit()
+        self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
+        table_layout.addWidget(self.table_extra, stretch=1)
+
+        layout.addRow(lbl("TABLE :"), table_row)
+
+        # ── FIELD (taller multiline-style input) ─────────────────────
+        self.field_edit = QLineEdit()
+        self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
+        self.field_edit.setMinimumHeight(52)
+        layout.addRow(lbl("FIELD :"), self.field_edit)
+
+        # ── RESULT + TRIM checkbox (inline) ───────────────────────────
+        result_row = QWidget()
+        result_row.setStyleSheet("background: transparent; border: none;")
+        result_layout = QHBoxLayout(result_row)
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        result_layout.setSpacing(6)
+
+        self.result_combo = make_chevron_combo([""])
+        result_layout.addWidget(self.result_combo, stretch=2)
+
+        self._trim_checked = False
+        self.trim_box = QLabel()
+        self.trim_box.setFixedSize(14, 14)
+        self.trim_box.setCursor(Qt.PointingHandCursor)
+        self._set_trim_style(False)
+        self.trim_box.mousePressEvent = self._toggle_trim
+        result_layout.addWidget(self.trim_box)
+
+        trim_lbl = QLabel("TRIM")
+        trim_lbl.setStyleSheet(label_style)
+        result_layout.addWidget(trim_lbl)
+        result_layout.addStretch()
+
+        layout.addRow(lbl("RESULT :"), result_row)
+
+        # ── FORMAT ───────────────────────────────────────────────────
+        self.format_edit = QLineEdit()
+        self.format_edit.setStyleSheet(MODERN_INPUT_STYLE)
+        layout.addRow(lbl("FORMAT :"), self.format_edit)
+
+        # ── VISIBLE ──────────────────────────────────────────────────
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
         self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
-        layout.addRow(create_label("VISIBLE :"), self.visible_combo)
+        layout.addRow(lbl("VISIBLE :"), self.visible_combo)
 
+        # ── SAVE FIELD ───────────────────────────────────────────────
+        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
+        layout.addRow(lbl("SAVE FIELD :"), self.save_field_combo)
+
+        # ── COLUMN ───────────────────────────────────────────────────
+        self.column_spin = make_spin(1, 999, 1)
+        layout.addRow(lbl("COLUMN :"), self.column_spin)
+
+        # ── MANDATORY ────────────────────────────────────────────────
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
-        layout.addRow(create_label("MANDATORY :"), self.mandatory_combo)
+        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
+
+    # ── Internal helpers ─────────────────────────────────────────────
+
+    def _set_trim_style(self, checked: bool):
+        if checked:
+            self.trim_box.setText("✓")
+            self.trim_box.setAlignment(Qt.AlignCenter)
+            self.trim_box.setStyleSheet("""
+                QLabel {
+                    border: 1.5px solid #6366F1;
+                    border-radius: 3px;
+                    background: #6366F1;
+                    color: white;
+                    font-size: 9px;
+                    font-weight: bold;
+                }
+            """)
+        else:
+            self.trim_box.setText("")
+            self.trim_box.setStyleSheet("""
+                QLabel {
+                    border: 1.5px solid #CBD5E1;
+                    border-radius: 3px;
+                    background: white;
+                }
+            """)
+
+    def _toggle_trim(self, event):
+        self._trim_checked = not self._trim_checked
+        self._set_trim_style(self._trim_checked)
+
+    def _apply_inverse(self, value):
+        if value == "YES":
+            self.item.setDefaultTextColor(QColor("white"))
+        else:
+            self.item.setDefaultTextColor(QColor("black"))
 
     def apply_text_changes(self, text):
         self.item.setPlainText(text)
@@ -796,7 +936,6 @@ class BarcodeEditorPage(QWidget):
         self.reset_for_new()
 
         if row_dict:
-            # Canvas dimensions
             w = row_dict.get("w_px") or self._canvas_w
             h = row_dict.get("h_px") or self._canvas_h
             try:
@@ -809,7 +948,6 @@ class BarcodeEditorPage(QWidget):
             self._design_code = str(row_dict.get("pk", ""))
             self._design_name = str(row_dict.get("name", ""))
 
-            # Restore canvas elements from bsusrm JSON
             usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
             if usrm:
                 try:
@@ -817,7 +955,6 @@ class BarcodeEditorPage(QWidget):
                 except Exception as e:
                     print(f"[load_design] Could not deserialize canvas: {e}")
 
-            # Restore canvas size override from bsitrm if present
             itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
             if itrm:
                 try:
@@ -840,13 +977,9 @@ class BarcodeEditorPage(QWidget):
     # ------------------------------------------------------------------
 
     def serialize_canvas(self) -> list[dict]:
-        """
-        Convert every top-level scene item into a JSON-serialisable dict.
-        Returns a list of element dicts.
-        """
         elements = []
         for item in self.scene.items():
-            if item.group():          # skip children of groups
+            if item.group():
                 continue
             d = self._serialize_item(item)
             if d:
@@ -855,12 +988,12 @@ class BarcodeEditorPage(QWidget):
 
     def _serialize_item(self, item) -> dict | None:
         base = {
-            "x":      round(item.pos().x(), 2),
-            "y":      round(item.pos().y(), 2),
-            "z":      item.zValue(),
-            "visible": item.isVisible(),
+            "x":        round(item.pos().x(), 2),
+            "y":        round(item.pos().y(), 2),
+            "z":        item.zValue(),
+            "visible":  item.isVisible(),
             "rotation": item.rotation(),
-            "name":   getattr(item, "component_name", ""),
+            "name":     getattr(item, "component_name", ""),
         }
 
         if isinstance(item, BarcodeItem):
@@ -875,12 +1008,12 @@ class BarcodeEditorPage(QWidget):
         if isinstance(item, QGraphicsTextItem):
             font = item.font()
             base.update({
-                "type":      "text",
-                "text":      item.toPlainText(),
-                "font_size": font.pointSize(),
+                "type":        "text",
+                "text":        item.toPlainText(),
+                "font_size":   font.pointSize(),
                 "font_family": font.family(),
-                "bold":      font.bold(),
-                "italic":    font.italic(),
+                "bold":        font.bold(),
+                "italic":      font.italic(),
             })
             return base
 
@@ -909,7 +1042,6 @@ class BarcodeEditorPage(QWidget):
         return None
 
     def deserialize_canvas(self, elements: list[dict]):
-        """Reconstruct scene items from a serialised element list."""
         flags = (
             QGraphicsItem.ItemIsMovable |
             QGraphicsItem.ItemIsSelectable |
@@ -954,7 +1086,6 @@ class BarcodeEditorPage(QWidget):
                 item.container_width  = d.get("container_width",  160)
                 item.container_height = d.get("container_height", 80)
                 item.component_name   = d.get("name", "Barcode")
-                # resize the background rect to match saved dimensions
                 item.bg.setRect(0, 0, item.container_width, item.container_height)
 
             if item is None:
@@ -975,24 +1106,17 @@ class BarcodeEditorPage(QWidget):
         self.sync_z_order_from_list()
 
     def get_design_payload(self) -> dict:
-        """
-        Build the full save payload to hand back to BarcodeListPage.
-        Stored as:
-          bsusrm  — JSON list of canvas elements
-          bsitrm  — JSON dict with canvas dimensions and future metadata
-        """
         elements = self.serialize_canvas()
         canvas_meta = {
             "canvas_w": self._canvas_w,
             "canvas_h": self._canvas_h,
         }
         return {
-            "usrm": _json.dumps(elements,      separators=(",", ":")),
-            "itrm": _json.dumps(canvas_meta,   separators=(",", ":")),
+            "usrm": _json.dumps(elements,    separators=(",", ":")),
+            "itrm": _json.dumps(canvas_meta, separators=(",", ":")),
         }
 
     def _update_design_subtitle(self):
-        """Refresh the code/name pill next to the editor title."""
         code = getattr(self, "_design_code", "")
         name = getattr(self, "_design_name", "")
         if code or name:
@@ -1016,7 +1140,6 @@ class BarcodeEditorPage(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(0)
 
-        # Back button
         self.back_btn = StandardButton(
             "Back to List",
             icon_name="fa5s.arrow-left",
@@ -1026,7 +1149,6 @@ class BarcodeEditorPage(QWidget):
         header_layout.addWidget(self.back_btn)
         header_layout.addSpacing(16)
 
-        # Title + subtitle pill
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
 
@@ -1060,7 +1182,6 @@ class BarcodeEditorPage(QWidget):
         editor_toolbar.addWidget(self.btn_add_rect)
         editor_toolbar.addWidget(self.btn_add_line)
         editor_toolbar.addWidget(self.btn_add_code)
-
         editor_toolbar.addStretch()
         editor_toolbar.addWidget(self.save_btn)
         self.main_layout.addLayout(editor_toolbar)
@@ -1204,15 +1325,11 @@ class BarcodeEditorPage(QWidget):
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
     def _on_save_clicked(self):
-        """Serialize canvas and emit design_saved; BarcodeListPage handles DB write."""
         payload = self.get_design_payload()
         payload["pk"]   = self._design_code
         payload["name"] = self._design_name
         self.design_saved.emit(payload)
 
-    # ------------------------------------------------------------------
-    # Canvas Size Widget
-    # ------------------------------------------------------------------
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
