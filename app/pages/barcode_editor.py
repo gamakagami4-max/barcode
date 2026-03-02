@@ -743,20 +743,6 @@ class DeleteSignalList(QListWidget):
             p = p.parent()
 
 
-# ---------------------------------------------------------------------------
-# Canvas Size Presets  (width px, height px, label)
-# ---------------------------------------------------------------------------
-CANVAS_PRESETS = [
-    ("Custom",        None,  None),
-    ("50×25 mm",      189,   94),
-    ("100×50 mm",     378,  189),
-    ("100×100 mm",    378,  378),
-    ("A6 (105×148)", 397,  559),
-    ("A5 (148×210)", 559,  794),
-    ("A4 (210×297)", 794, 1123),
-]
-
-
 import json as _json
 
 # --- Main Page ---
@@ -802,8 +788,6 @@ class BarcodeEditorPage(QWidget):
             self._design_name = ""
 
         self._canvas_w, self._canvas_h = w, h
-        self.canvas_w_spin.setValue(w)
-        self.canvas_h_spin.setValue(h)
         self.scene.setSceneRect(QRectF(0, 0, w, h))
         self._update_design_subtitle()
 
@@ -818,8 +802,6 @@ class BarcodeEditorPage(QWidget):
             try:
                 w, h = int(w), int(h)
                 self._canvas_w, self._canvas_h = w, h
-                self.canvas_w_spin.setValue(w)
-                self.canvas_h_spin.setValue(h)
                 self.scene.setSceneRect(QRectF(0, 0, w, h))
             except (TypeError, ValueError):
                 pass
@@ -844,8 +826,6 @@ class BarcodeEditorPage(QWidget):
                     ch = int(meta.get("canvas_h", h))
                     if cw != w or ch != h:
                         self._canvas_w, self._canvas_h = cw, ch
-                        self.canvas_w_spin.setValue(cw)
-                        self.canvas_h_spin.setValue(ch)
                         self.scene.setSceneRect(QRectF(0, 0, cw, ch))
                 except Exception as e:
                     print(f"[load_design] Could not read itrm meta: {e}")
@@ -1080,10 +1060,6 @@ class BarcodeEditorPage(QWidget):
         editor_toolbar.addWidget(self.btn_add_rect)
         editor_toolbar.addWidget(self.btn_add_line)
         editor_toolbar.addWidget(self.btn_add_code)
-        editor_toolbar.addSpacing(12)
-
-        canvas_size_widget = self._build_canvas_size_widget()
-        editor_toolbar.addWidget(canvas_size_widget)
 
         editor_toolbar.addStretch()
         editor_toolbar.addWidget(self.save_btn)
@@ -1237,139 +1213,6 @@ class BarcodeEditorPage(QWidget):
     # ------------------------------------------------------------------
     # Canvas Size Widget
     # ------------------------------------------------------------------
-    def _build_canvas_size_widget(self) -> QWidget:
-        container = QWidget()
-        container.setStyleSheet("""
-            QWidget {
-                background: white;
-                border: 1px solid #CBD5E1;
-                border-radius: 6px;
-            }
-        """)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(6)
-
-        ruler_lbl = QLabel()
-        ruler_lbl.setPixmap(qta.icon("fa5s.ruler-combined", color="#6366F1").pixmap(14, 14))
-        ruler_lbl.setStyleSheet("background: transparent; border: none;")
-        layout.addWidget(ruler_lbl)
-
-        canvas_lbl = QLabel("CANVAS")
-        canvas_lbl.setStyleSheet(
-            "font-size: 9px; font-weight: 700; color: #64748B; "
-            "letter-spacing: 1px; background: transparent; border: none;"
-        )
-        layout.addWidget(canvas_lbl)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet("color: #E2E8F0; background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        sep.setFixedHeight(18)
-        layout.addWidget(sep)
-
-        w_lbl = QLabel("W")
-        w_lbl.setStyleSheet("font-size: 10px; color: #94A3B8; background: transparent; border: none;")
-        layout.addWidget(w_lbl)
-
-        self.canvas_w_spin = ChevronSpinBox()
-        self.canvas_w_spin.setRange(100, 3000)
-        self.canvas_w_spin.setValue(self._canvas_w)
-        self.canvas_w_spin.setFixedWidth(68)
-        self.canvas_w_spin.setStyleSheet(MODERN_INPUT_STYLE)
-        self.canvas_w_spin.setToolTip("Canvas width in pixels")
-        layout.addWidget(self.canvas_w_spin)
-
-        cross_lbl = QLabel("×")
-        cross_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; background: transparent; border: none;")
-        layout.addWidget(cross_lbl)
-
-        h_lbl = QLabel("H")
-        h_lbl.setStyleSheet("font-size: 10px; color: #94A3B8; background: transparent; border: none;")
-        layout.addWidget(h_lbl)
-
-        self.canvas_h_spin = ChevronSpinBox()
-        self.canvas_h_spin.setRange(100, 3000)
-        self.canvas_h_spin.setValue(self._canvas_h)
-        self.canvas_h_spin.setFixedWidth(68)
-        self.canvas_h_spin.setStyleSheet(MODERN_INPUT_STYLE)
-        self.canvas_h_spin.setToolTip("Canvas height in pixels")
-        layout.addWidget(self.canvas_h_spin)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.VLine)
-        sep2.setStyleSheet("color: #E2E8F0; background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        sep2.setFixedHeight(18)
-        layout.addWidget(sep2)
-
-        preset_labels = [p[0] for p in CANVAS_PRESETS]
-        self.preset_combo = make_chevron_combo(preset_labels, style=MODERN_INPUT_STYLE)
-        self.preset_combo.setFixedWidth(130)
-        self.preset_combo.setStyleSheet(
-            MODERN_INPUT_STYLE + "QComboBox { background: transparent; border: none; }"
-        )
-        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
-        layout.addWidget(self.preset_combo)
-
-        apply_btn = StandardButton("Apply", icon_name="fa5s.check", variant="primary")
-        apply_btn.setFixedHeight(28)
-        apply_btn.clicked.connect(self._apply_canvas_size)
-        layout.addWidget(apply_btn)
-
-        return container
-
-    # ------------------------------------------------------------------
-    # Canvas Resize Logic
-    # ------------------------------------------------------------------
-    def _on_preset_changed(self, index: int):
-        _, w, h = CANVAS_PRESETS[index]
-        if w is None:
-            return
-        self.canvas_w_spin.blockSignals(True)
-        self.canvas_h_spin.blockSignals(True)
-        self.canvas_w_spin.setValue(w)
-        self.canvas_h_spin.setValue(h)
-        self.canvas_w_spin.blockSignals(False)
-        self.canvas_h_spin.blockSignals(False)
-
-    def _apply_canvas_size(self):
-        new_w = self.canvas_w_spin.value()
-        new_h = self.canvas_h_spin.value()
-        self._canvas_w = new_w
-        self._canvas_h = new_h
-
-        new_rect = QRectF(0, 0, new_w, new_h)
-        self.scene.setSceneRect(new_rect)
-
-        matched = False
-        for i, (label, pw, ph) in enumerate(CANVAS_PRESETS):
-            if pw == new_w and ph == new_h:
-                self.preset_combo.blockSignals(True)
-                self.preset_combo.setCurrentIndex(i)
-                self.preset_combo.blockSignals(False)
-                matched = True
-                break
-        if not matched:
-            self.preset_combo.blockSignals(True)
-            self.preset_combo.setCurrentIndex(0)
-            self.preset_combo.blockSignals(False)
-
-        for graphics_item in self.scene.items():
-            if graphics_item.group():
-                continue
-            br = graphics_item.sceneBoundingRect()
-            x  = graphics_item.pos().x()
-            y  = graphics_item.pos().y()
-            nx = min(x, new_w  - br.width())
-            ny = min(y, new_h - br.height())
-            if nx != x or ny != y:
-                graphics_item.setPos(max(0, nx), max(0, ny))
-
-        self.scene.update()
-
-    def _update_canvas_info_label(self, w: int, h: int):
-        pass
-
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
