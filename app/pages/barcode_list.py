@@ -195,8 +195,6 @@ class BarcodeListPage(QWidget):
 
         if pending:
             # ── New design: insert row first, then save layout ──────────
-            # Propagate any sticker changes the user made in the editor back
-            # into pending so the DB row gets the correct dimensions.
             pending["sticker_name"] = payload.get("sticker_name") or pending.get("sticker_name")
             pending["w_px"]         = payload.get("w_px") or pending.get("w_px", 600)
             pending["h_px"]         = payload.get("h_px") or pending.get("h_px", 400)
@@ -221,11 +219,6 @@ class BarcodeListPage(QWidget):
         self._show_list()
 
     def _save_design_layout(self, payload: dict, is_new: bool = False):
-        """
-        Persist the serialised canvas JSON AND sticker/dimension fields back
-        to mbarcd.  When is_new=True, changed_no / changed_by / changed_at
-        are NOT touched.
-        """
         pk           = payload.get("pk", "").strip()
         usrm         = payload.get("usrm", "[]")
         itrm         = payload.get("itrm", "{}")
@@ -248,7 +241,6 @@ class BarcodeListPage(QWidget):
             )
             print(f"[_save_design_layout] pk={pk!r}  usrm={len(usrm)}B  itrm={len(itrm)}B")
         except (ImportError, TypeError):
-            # Repo function may not yet accept the extra kwargs — fall back to direct
             self._save_design_layout_direct(
                 pk, usrm, itrm, is_new=is_new,
                 sticker_name=sticker_name,
@@ -260,11 +252,6 @@ class BarcodeListPage(QWidget):
     def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str, is_new: bool = False,
                                     sticker_name: str = "", h_in: float = 0.0, w_in: float = 0.0,
                                     h_px: int = 0, w_px: int = 0):
-        """
-        Direct DB fallback.
-        Also updates sticker/dimension fields (mbstnm, mbheig, mbwidt, mbpixh, mbpixw).
-        When is_new=True, mbchno / mbchby / mbchdt are NOT updated.
-        """
         conn = self._get_db_connection()
         if conn is None:
             print("[_save_design_layout_direct] No DB connection found — layout not saved.")
@@ -273,7 +260,6 @@ class BarcodeListPage(QWidget):
         try:
             cur = conn.cursor()
             if is_new:
-                # New record — save canvas JSON + sticker/dims, skip change tracking
                 cur.execute(
                     """
                     UPDATE barcodesap.mbarcd
@@ -295,7 +281,6 @@ class BarcodeListPage(QWidget):
                      pk),
                 )
             else:
-                # Edit — update canvas JSON + sticker/dims AND increment change tracking
                 cur.execute(
                     """
                     UPDATE barcodesap.mbarcd
@@ -658,7 +643,7 @@ class BarcodeListPage(QWidget):
 
     def handle_add_action(self):
         sticker_data = _fetch_sticker_data()
-        sticker_options = [""] + list(sticker_data.keys())
+        sticker_options = list(sticker_data.keys())  # no empty string prefix
 
         modal = GenericFormModal(
             title="New Barcode Design",
