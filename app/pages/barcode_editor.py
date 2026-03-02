@@ -503,6 +503,10 @@ class RectanglePropertyEditor(QWidget):
         self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
         layout.addRow(create_label("VISIBLE :"), self.visible_combo)
 
+        # ── COLUMN ───────────────────────────────────────────────────
+        self.column_spin = make_spin(1, 999, 1)
+        layout.addRow(create_label("COLUMN :"), self.column_spin)
+
     def update_geometry(self):
         self.item.setRect(0, 0, self.width_spin.value(), self.height_spin.value())
         self.update_callback()
