@@ -2,6 +2,7 @@
 # FIXED: Checkbox display now correctly handles pre-formatted labels with " AS "
 # FIXED: _DropdownPanel.set_options uses synchronous destruction to prevent ghost widgets
 # FIXED: AnimatedCombo panel is fully destroyed and recreated on update_field_options
+# UPDATED: Dropdown styling matches barcode editor CustomCombo design
 
 import qtawesome as qta
 from PySide6.QtWidgets import (
@@ -16,11 +17,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QFont, QCursor
 
-# ------------------------------------------------------------------
-# Write a checkmark SVG to a temp file once at import time.
-# Qt on Windows does not support base64 data URIs in stylesheets,
-# but it does support file:// paths reliably.
-# ------------------------------------------------------------------
 import os as _os, tempfile as _tempfile
 _svg_check = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">'
@@ -56,14 +52,14 @@ COLORS = {
 }
 
 _DROPDOWN_ANIM_MS  = 180
-_OPTION_HEIGHT     = 34
-_DROPDOWN_MAX_H    = 240
+_OPTION_HEIGHT     = 32
+_DROPDOWN_MAX_H    = 260
 _MODAL_ANIM_MS     = 220
 _MODAL_SLIDE_PX    = 18
 
 
 # ==================================================================
-# Animated dropdown components
+# Animated dropdown components  —  restyled to match barcode editor
 # ==================================================================
 
 class _DropdownTrigger(QFrame):
@@ -78,22 +74,21 @@ class _DropdownTrigger(QFrame):
         self._build()
 
     def _build(self):
-        self.setStyleSheet(f"""
-            _DropdownTrigger {{
-                background: {COLORS['white']};
-                border: 1px solid {COLORS['border']};
+        self.setStyleSheet("""
+            _DropdownTrigger {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
                 border-radius: 6px;
-            }}
-            _DropdownTrigger:hover {{ border-color: #C7D2FE; }}
+            }
+            _DropdownTrigger:hover { border-color: #D4D4D8; }
         """)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 0, 8, 0)
+        lay.setContentsMargins(10, 0, 8, 0)
         lay.setSpacing(6)
 
         self._lbl = QLabel()
         self._lbl.setStyleSheet(
-            f"color: {COLORS['text_primary']}; font-size: 13px;"
-            " background: transparent; border: none;"
+            "color: #18181B; font-size: 12px; background: transparent; border: none;"
         )
         self._chevron = QLabel()
         self._chevron.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -104,10 +99,9 @@ class _DropdownTrigger(QFrame):
         lay.addWidget(self._chevron, 0)
 
     def _refresh_chevron(self):
-        icon = "fa5s.chevron-up" if self._is_open else "fa5s.chevron-down"
-        self._chevron.setPixmap(
-            qta.icon(icon, color=COLORS["text_muted"]).pixmap(10, 10)
-        )
+        icon  = "fa5s.chevron-up" if self._is_open else "fa5s.chevron-down"
+        color = "#3B82F6" if self._is_open else "#71717A"
+        self._chevron.setPixmap(qta.icon(icon, color=color).pixmap(10, 10))
 
     def set_text(self, text: str):
         self._lbl.setText(text)
@@ -118,15 +112,24 @@ class _DropdownTrigger(QFrame):
     def set_open(self, open_: bool):
         self._is_open = open_
         self._refresh_chevron()
-        border_color = COLORS["dd_accent"] if open_ else COLORS["border"]
-        self.setStyleSheet(f"""
-            _DropdownTrigger {{
-                background: {COLORS['white']};
-                border: 1px solid {border_color};
-                border-radius: 6px;
-            }}
-            _DropdownTrigger:hover {{ border-color: #C7D2FE; }}
-        """)
+        if open_:
+            self.setStyleSheet("""
+                _DropdownTrigger {
+                    background: #FFFFFF;
+                    border: 1.5px solid #3B82F6;
+                    border-radius: 6px;
+                }
+                _DropdownTrigger:hover { border-color: #3B82F6; }
+            """)
+        else:
+            self.setStyleSheet("""
+                _DropdownTrigger {
+                    background: #FFFFFF;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 6px;
+                }
+                _DropdownTrigger:hover { border-color: #D4D4D8; }
+            """)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -151,13 +154,13 @@ class _DropdownPanel(QFrame):
 
         self.setMaximumHeight(0)
         self.setMinimumHeight(0)
-        self.setStyleSheet(f"""
-            _DropdownPanel {{
-                background: {COLORS['white']};
-                border: 1px solid {COLORS['border_light']};
-                border-top: none;
-                border-radius: 0 0 6px 6px;
-            }}
+        # Full border-radius on all corners — no border-top:none hack
+        self.setStyleSheet("""
+            _DropdownPanel {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
         """)
         self._build_options()
 
@@ -171,11 +174,18 @@ class _DropdownPanel(QFrame):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }
-            QScrollBar::handle:vertical { background: #D1D5DB; border-radius: 3px; min-height: 20px; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar:vertical {
+                border: none; background: #F4F4F5; width: 6px;
+                margin: 4px 2px; border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D4D4D8; border-radius: 3px; min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover { background: #A1A1AA; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         """)
         inner = QWidget()
+        inner.setStyleSheet("background: transparent; border: none;")
         lay = QVBoxLayout(inner)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(2)
@@ -183,6 +193,7 @@ class _DropdownPanel(QFrame):
             btn = QPushButton(opt)
             btn.setFixedHeight(_OPTION_HEIGHT)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.clicked.connect(lambda _=False, o=opt: self._pick(o))
             self._style_btn(btn, opt == self._selected)
             lay.addWidget(btn)
@@ -195,22 +206,24 @@ class _DropdownPanel(QFrame):
 
     def _style_btn(self, btn: QPushButton, selected: bool):
         if selected:
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: {COLORS['dd_accent_bg']}; color: {COLORS['dd_accent']};
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #EFF6FF; color: #3B82F6;
                     border: none; border-radius: 4px;
-                    font-size: 12px; text-align: left; padding: 0 10px;
-                }}
-                QPushButton:hover {{ background: #E0E7FF; }}
+                    font-size: 12px; font-weight: 500;
+                    text-align: left; padding: 0 10px;
+                }
+                QPushButton:hover { background: #DBEAFE; color: #3B82F6; }
             """)
         else:
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {COLORS['text_primary']};
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent; color: #18181B;
                     border: none; border-radius: 4px;
-                    font-size: 12px; text-align: left; padding: 0 10px;
-                }}
-                QPushButton:hover {{ background: {COLORS['dd_hover']}; }}
+                    font-size: 12px; font-weight: 400;
+                    text-align: left; padding: 0 10px;
+                }
+                QPushButton:hover { background: #F4F4F5; color: #18181B; }
             """)
 
     def _pick(self, option: str):
@@ -225,20 +238,17 @@ class _DropdownPanel(QFrame):
             self._style_btn(btn, btn.text() == option)
 
     def set_options(self, options: list[str], selected: str = ""):
-        # Synchronously destroy old scroll area to prevent ghost widget corruption
         lay = self.layout()
         while lay.count():
             item = lay.takeAt(0)
             w = item.widget()
             if w:
                 w.hide()
-                w.setParent(None)   # synchronous destruction — no deleteLater()
+                w.setParent(None)
 
         self._buttons.clear()
         self._options  = options
         self._selected = selected
-
-        # Rebuild fresh
         self._build_options()
         print(f"[DropdownPanel.set_options] Rebuilt with {len(options)} options, selected={selected!r}")
 
@@ -340,8 +350,7 @@ class AnimatedCombo(QWidget):
         if placeholder:
             self._trigger.set_text(placeholder)
             self._trigger._lbl.setStyleSheet(
-                f"color: {COLORS['text_muted']}; font-size: 13px;"
-                " background: transparent; border: none;"
+                "color: #71717A; font-size: 12px; background: transparent; border: none;"
             )
         else:
             self._trigger.set_text(self._current)
@@ -359,8 +368,7 @@ class AnimatedCombo(QWidget):
             self._current = text
             self._trigger.set_text(text)
             self._trigger._lbl.setStyleSheet(
-                f"color: {COLORS['text_primary']}; font-size: 13px;"
-                " background: transparent; border: none;"
+                "color: #18181B; font-size: 12px; background: transparent; border: none;"
             )
             if self._panel:
                 self._panel.set_selected(text)
@@ -370,9 +378,9 @@ class AnimatedCombo(QWidget):
         self._current = ""
         display = self._placeholder or ""
         self._trigger.set_text(display)
+        color = "#71717A" if display else "#18181B"
         self._trigger._lbl.setStyleSheet(
-            f"color: {COLORS['text_muted'] if display else COLORS['text_primary']}; font-size: 13px;"
-            " background: transparent; border: none;"
+            f"color: {color}; font-size: 12px; background: transparent; border: none;"
         )
         if self._panel:
             self._panel.set_options([], "")
@@ -389,12 +397,12 @@ class AnimatedCombo(QWidget):
         super().setDisabled(disabled)
         self._trigger.setCursor(Qt.ArrowCursor if disabled else Qt.PointingHandCursor)
         if disabled:
-            self._trigger.setStyleSheet(f"""
-                _DropdownTrigger {{
-                    background: {COLORS['readonly_bg']};
-                    border: 1px solid {COLORS['border_light']};
+            self._trigger.setStyleSheet("""
+                _DropdownTrigger {
+                    background: #F3F4F6;
+                    border: 1px solid #E5E7EB;
                     border-radius: 6px;
-                }}
+                }
             """)
             if self._toggle_connected:
                 self._trigger.clicked.disconnect(self._toggle)
@@ -417,10 +425,9 @@ class AnimatedCombo(QWidget):
             print(f"[AnimatedCombo._ensure_panel] Created new panel with {len(self._options)} options")
 
     def _destroy_panel(self):
-        """Synchronously destroy the floating panel."""
         if self._panel is not None:
             self._panel.hide()
-            self._panel.setParent(None)  # synchronous destruction
+            self._panel.setParent(None)
             self._panel = None
             print("[AnimatedCombo._destroy_panel] Panel destroyed")
         if self._global_filter_installed:
@@ -436,7 +443,7 @@ class AnimatedCombo(QWidget):
             self._close()
 
     def _open(self):
-        pt_global = self._trigger.mapToGlobal(QPoint(0, self._trigger.height()))
+        pt_global = self._trigger.mapToGlobal(QPoint(0, self._trigger.height() + 4))
         w  = self._trigger.width()
         th = self._panel._target_height()
 
@@ -445,7 +452,7 @@ class AnimatedCombo(QWidget):
         if screen:
             screen_bottom = screen.availableGeometry().bottom()
             if pt_global.y() + th > screen_bottom:
-                pt_global = self._trigger.mapToGlobal(QPoint(0, -th))
+                pt_global = self._trigger.mapToGlobal(QPoint(0, -th - 4))
 
         self._panel.setGeometry(pt_global.x(), pt_global.y(), w, th)
         self._panel.show()
@@ -473,8 +480,7 @@ class AnimatedCombo(QWidget):
         self._current = option
         self._trigger.set_text(option)
         self._trigger._lbl.setStyleSheet(
-            f"color: {COLORS['text_primary']}; font-size: 13px;"
-            " background: transparent; border: none;"
+            "color: #18181B; font-size: 12px; background: transparent; border: none;"
         )
         self._close()
         if option != prev:
@@ -529,15 +535,12 @@ class _CheckboxListWidget(QWidget):
         self._scroll.setVisible(bool(options))
 
     def _rebuild_inner(self, options, checked_set: set):
-        """Fully replace the scroll widget — avoids layout corruption on repeated calls."""
-        # Destroy old inner widget completely (synchronous, not deleteLater)
         if self._inner is not None:
             old = self._inner
-            self._scroll.takeWidget()   # detach from scroll before destroying
+            self._scroll.takeWidget()
             old.hide()
-            old.setParent(None)         # synchronous destruction
+            old.setParent(None)
             self._inner = None
-            print(f"[_CheckboxListWidget._rebuild_inner] Destroyed old inner widget")
 
         self._checkboxes.clear()
 
@@ -553,7 +556,6 @@ class _CheckboxListWidget(QWidget):
         lay.setContentsMargins(10, 8, 10, 8)
         lay.setSpacing(4)
 
-        # Normalize into (value, label)
         normalized = []
         for opt in options:
             if isinstance(opt, dict):
@@ -607,30 +609,14 @@ class _CheckboxListWidget(QWidget):
 
         self._inner = inner
         self._scroll.setWidget(inner)
-        print(f"[_CheckboxListWidget._rebuild_inner] Built {len(normalized)} checkboxes, "
-              f"checked={[v for v in self._checkboxes if self._checkboxes[v].isChecked()][:5]}")
 
     def _build_checkboxes(self, options, checked_set: set):
-        """Alias kept for compatibility — delegates to _rebuild_inner."""
         self._rebuild_inner(options, checked_set)
 
     def get_value(self) -> list[str]:
         return [opt for opt, cb in self._checkboxes.items() if cb.isChecked()]
 
     def set_options(self, options, checked_options=None):
-        """
-        options:
-            ["col1", "col2"]
-            OR
-            [{"value": "col1", "label": "Column 1"}]
-
-        checked_options:
-            ["col1", "col2"]
-        """
-        print(f"[_CheckboxListWidget.set_options] {len(options)} options, "
-            f"checked_options={list(checked_options)[:5] if checked_options else None}")
-
-        # Normalize options into (value, label)
         normalized = []
         for opt in options:
             if isinstance(opt, dict):
@@ -641,7 +627,6 @@ class _CheckboxListWidget(QWidget):
                 label = opt
             normalized.append((value, label))
 
-        # Only hash values (never dicts) — resolve any dict/non-str items to plain strings
         if checked_options is not None:
             resolved = []
             for opt in checked_options:
@@ -657,7 +642,6 @@ class _CheckboxListWidget(QWidget):
         else:
             checked_set = {value for value, _ in normalized}
 
-        # Rebuild checkboxes using synchronous inner widget replacement
         self._rebuild_inner(normalized, checked_set)
 
         has_opts = bool(normalized)
@@ -686,7 +670,7 @@ class _CheckboxListWidget(QWidget):
 
 
 # ==================================================================
-# Tab select widget  (left / right pill-style toggle)
+# Tab select widget
 # ==================================================================
 
 class _TabSelectWidget(QWidget):
@@ -737,9 +721,7 @@ class _TabSelectWidget(QWidget):
         for i, opt in enumerate(options):
             btn = self._buttons[opt]
             selected = (opt == self._current)
-
             border_left = "none" if i > 0 else f"1px solid {COLORS['border']}"
-
             if i == 0:
                 radius = "6px 0 0 6px"
             elif i == n - 1:
@@ -757,9 +739,7 @@ class _TabSelectWidget(QWidget):
                         border-right:  1px solid {COLORS['dd_accent']};
                         border-left:   {border_left};
                         border-radius: {radius};
-                        font-size: 13px;
-                        font-weight: 600;
-                        padding: 0 16px;
+                        font-size: 13px; font-weight: 600; padding: 0 16px;
                     }}
                 """)
             else:
@@ -772,8 +752,7 @@ class _TabSelectWidget(QWidget):
                         border-right:  1px solid {COLORS['border']};
                         border-left:   {border_left};
                         border-radius: {radius};
-                        font-size: 13px;
-                        padding: 0 16px;
+                        font-size: 13px; padding: 0 16px;
                     }}
                     QPushButton:hover {{
                         background: {COLORS['bg_main']};
@@ -920,22 +899,17 @@ class GenericFormModal(QDialog):
                     }}
                     QTextEdit:focus {{ border-color: {COLORS['link']}; }}
                 """)
-
         elif isinstance(widget, QLineEdit):
             widget.setReadOnly(disabled)
             widget.setStyleSheet(
                 self._readonly_line_edit_style() if disabled else self._style_input_str()
             )
-
         elif isinstance(widget, AnimatedCombo):
             widget.setDisabled(disabled)
-
         elif isinstance(widget, _TabSelectWidget):
             widget.setDisabled(disabled)
-
         elif isinstance(widget, _CheckboxListWidget):
             widget.set_all_enabled(not disabled)
-
         elif hasattr(widget, '_checkbox_widget'):
             cbw: _CheckboxListWidget = widget._checkbox_widget
             cbw.set_all_enabled(not disabled)
@@ -947,7 +921,6 @@ class GenericFormModal(QDialog):
                         sub_item = sub.itemAt(j)
                         if sub_item and sub_item.widget():
                             sub_item.widget().setEnabled(not disabled)
-
         elif hasattr(widget, 'text_input'):
             widget.text_input.setReadOnly(disabled)
             widget.text_input.setStyleSheet(
@@ -963,42 +936,31 @@ class GenericFormModal(QDialog):
         if isinstance(widget, _TabSelectWidget):
             return
         if isinstance(widget, _CheckboxListWidget):
-            # checked may be a dict {name: bool} or a list — normalize to list of checked names
             if isinstance(checked, dict):
                 checked = [k for k, v in checked.items() if v]
             widget.set_options(options, checked)
         elif hasattr(widget, '_checkbox_widget'):
-            # checked may be a dict {name: bool} or a list — normalize to list of checked names
             if isinstance(checked, dict):
                 checked_list = [k for k, v in checked.items() if v]
             else:
                 checked_list = checked
             widget._checkbox_widget.set_options(options, checked_list)
         elif isinstance(widget, AnimatedCombo):
-            # Destroy old floating panel entirely to prevent ghost widget corruption
             widget._destroy_panel()
-
             widget._options = list(options)
             widget._current = ""
-
             if widget._placeholder:
                 widget._trigger.set_text(widget._placeholder)
                 widget._trigger._lbl.setStyleSheet(
-                    f"color: {COLORS['text_muted']}; font-size: 13px;"
-                    " background: transparent; border: none;"
+                    "color: #71717A; font-size: 12px; background: transparent; border: none;"
                 )
             else:
                 display = options[0] if options else ""
                 widget._current = display
                 widget._trigger.set_text(display)
                 widget._trigger._lbl.setStyleSheet(
-                    f"color: {COLORS['text_primary']}; font-size: 13px;"
-                    " background: transparent; border: none;"
+                    "color: #18181B; font-size: 12px; background: transparent; border: none;"
                 )
-
-            print(f"[update_field_options] '{name}' updated with {len(options)} options, "
-                  f"panel destroyed — will be recreated fresh on next open")
-
         elif isinstance(widget, QComboBox):
             widget.blockSignals(True)
             widget.clear()
@@ -1162,11 +1124,7 @@ class GenericFormModal(QDialog):
             if comment_text:
                 comment_label = QLabel(comment_text)
                 comment_label.setWordWrap(True)
-                comment_label.setStyleSheet("""
-                    font-size: 11px;
-                    color: #6B7280;
-                    margin-top: 2px;
-                """)
+                comment_label.setStyleSheet("font-size: 11px; color: #6B7280; margin-top: 2px;")
 
                 label_container = QVBoxLayout()
                 label_container.setSpacing(2)
@@ -1176,9 +1134,7 @@ class GenericFormModal(QDialog):
 
                 label_wrapper = QWidget()
                 label_wrapper.setLayout(label_container)
-
                 form_layout.addRow(label_wrapper, widget)
-
             else:
                 form_layout.addRow(label_widget, widget)
 
@@ -1197,11 +1153,8 @@ class GenericFormModal(QDialog):
             cancel_btn.setCursor(Qt.PointingHandCursor)
             cancel_btn.setStyleSheet(f"""
                 QPushButton {{
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    font-size: 13px;
-                    min-width: 100px;
+                    padding: 8px 16px; border-radius: 6px; font-weight: 600;
+                    font-size: 13px; min-width: 100px;
                     background-color: {COLORS['white']};
                     color: {COLORS['text_secondary']};
                     border: 1px solid {COLORS['border']};
@@ -1216,14 +1169,9 @@ class GenericFormModal(QDialog):
             submit_btn.setCursor(Qt.PointingHandCursor)
             submit_btn.setStyleSheet(f"""
                 QPushButton {{
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    font-size: 13px;
-                    min-width: 100px;
-                    background-color: {COLORS['link']};
-                    color: white;
-                    border: none;
+                    padding: 8px 16px; border-radius: 6px; font-weight: 600;
+                    font-size: 13px; min-width: 100px;
+                    background-color: {COLORS['link']}; color: white; border: none;
                 }}
                 QPushButton:hover {{ background-color: #4F46E5; }}
             """)
@@ -1281,12 +1229,9 @@ class GenericFormModal(QDialog):
                 w.setPlaceholderText(field.get("placeholder", ""))
                 w.setStyleSheet(f"""
                     QTextEdit {{
-                        padding: 8px 12px;
-                        border: 1px solid {COLORS['border']};
-                        border-radius: 6px;
-                        background-color: {COLORS['white']};
-                        color: {COLORS['text_primary']};
-                        font-size: 13px;
+                        padding: 8px 12px; border: 1px solid {COLORS['border']};
+                        border-radius: 6px; background-color: {COLORS['white']};
+                        color: {COLORS['text_primary']}; font-size: 13px;
                     }}
                     QTextEdit:focus {{ border-color: {COLORS['link']}; }}
                 """)
@@ -1294,12 +1239,9 @@ class GenericFormModal(QDialog):
                 w.setReadOnly(True)
                 w.setStyleSheet(f"""
                     QTextEdit {{
-                        padding: 8px 12px;
-                        border: 1px solid {COLORS['border_light']};
-                        border-radius: 6px;
-                        background-color: {COLORS['readonly_bg']};
-                        color: {COLORS['text_primary']};
-                        font-size: 13px;
+                        padding: 8px 12px; border: 1px solid {COLORS['border_light']};
+                        border-radius: 6px; background-color: {COLORS['readonly_bg']};
+                        color: {COLORS['text_primary']}; font-size: 13px;
                     }}
                 """)
             return w
@@ -1372,21 +1314,13 @@ class GenericFormModal(QDialog):
                     b.setCursor(Qt.PointingHandCursor)
                     b.setStyleSheet(f"""
                         QPushButton {{
-                            font-size: 11px;
-                            font-weight: 600;
+                            font-size: 11px; font-weight: 600;
                             color: {COLORS['dd_accent']};
                             background: {COLORS['dd_accent_bg']};
-                            border: 1px solid #C7D2FE;
-                            border-radius: 11px;
-                            padding: 0 10px;
+                            border: 1px solid #C7D2FE; border-radius: 11px; padding: 0 10px;
                         }}
-                        QPushButton:hover {{
-                            background: #E0E7FF;
-                            border-color: {COLORS['dd_accent']};
-                        }}
-                        QPushButton:pressed {{
-                            background: #C7D2FE;
-                        }}
+                        QPushButton:hover {{ background: #E0E7FF; border-color: {COLORS['dd_accent']}; }}
+                        QPushButton:pressed {{ background: #C7D2FE; }}
                     """)
                     b.clicked.connect(slot)
                     return b
@@ -1477,15 +1411,11 @@ class GenericFormModal(QDialog):
                 header_lbl = QLabel(label_text)
                 header_lbl.setFixedWidth(40)
                 header_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-                header_lbl.setStyleSheet(
-                    f"""
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: {COLORS['text_muted']};
-                    letter-spacing: 0.04em;
+                header_lbl.setStyleSheet(f"""
+                    font-size: 11px; font-weight: 600;
+                    color: {COLORS['text_muted']}; letter-spacing: 0.04em;
                     background: transparent;
-                    """
-                )
+                """)
 
                 err_lbl = QLabel("")
                 err_lbl.setStyleSheet("font-size: 11px; color: #EF4444; background: transparent;")
@@ -1593,12 +1523,9 @@ class GenericFormModal(QDialog):
         widget.setMinimumHeight(36)
         widget.setStyleSheet(f"""
             QLineEdit, QComboBox {{
-                padding: 8px 12px;
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                background-color: {COLORS['white']};
-                color: {COLORS['text_primary']};
-                font-size: 13px;
+                padding: 8px 12px; border: 1px solid {COLORS['border']};
+                border-radius: 6px; background-color: {COLORS['white']};
+                color: {COLORS['text_primary']}; font-size: 13px;
             }}
             QLineEdit:focus, QComboBox:focus {{ border-color: {COLORS['link']}; }}
         """)
@@ -1606,12 +1533,9 @@ class GenericFormModal(QDialog):
     def _style_input_str(self) -> str:
         return f"""
             QLineEdit {{
-                padding: 8px 12px;
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                background-color: {COLORS['white']};
-                color: {COLORS['text_primary']};
-                font-size: 13px;
+                padding: 8px 12px; border: 1px solid {COLORS['border']};
+                border-radius: 6px; background-color: {COLORS['white']};
+                color: {COLORS['text_primary']}; font-size: 13px;
             }}
             QLineEdit:focus {{ border-color: {COLORS['link']}; }}
         """
@@ -1619,25 +1543,18 @@ class GenericFormModal(QDialog):
     def _view_line_edit_style(self) -> str:
         return f"""
             QLineEdit {{
-                padding: 8px 12px;
-                border: 1px solid {COLORS['border_light']};
-                border-radius: 6px;
-                background-color: {COLORS['readonly_bg']};
-                color: {COLORS['text_primary']};
-                font-size: 13px;
+                padding: 8px 12px; border: 1px solid {COLORS['border_light']};
+                border-radius: 6px; background-color: {COLORS['readonly_bg']};
+                color: {COLORS['text_primary']}; font-size: 13px;
             }}
         """
 
     def _readonly_line_edit_style(self) -> str:
         return f"""
             QLineEdit {{
-                padding: 8px 12px;
-                border: 1px solid {COLORS['border_light']};
-                border-radius: 6px;
-                background-color: {COLORS['readonly_bg']};
-                color: {COLORS['readonly_text']};
-                font-size: 13px;
-                font-style: italic;
+                padding: 8px 12px; border: 1px solid {COLORS['border_light']};
+                border-radius: 6px; background-color: {COLORS['readonly_bg']};
+                color: {COLORS['readonly_text']}; font-size: 13px; font-style: italic;
             }}
         """
 
