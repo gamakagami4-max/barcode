@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsView, QGraphicsItem, QGraphicsRectItem, 
     QGraphicsTextItem, QGraphicsItemGroup, QGraphicsLineItem, QListWidget, 
     QListWidgetItem, QComboBox, QLineEdit, QSpinBox, QFormLayout, 
-    QApplication, QScrollArea, QStyledItemDelegate, QStyle
+    QApplication, QScrollArea, QStyledItemDelegate, QStyle, QSizePolicy
 )
 from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal
 from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QFontMetrics
@@ -103,6 +103,15 @@ MODERN_INPUT_STYLE = """
 """
 
 
+# ── Custom scroll area that clamps inner widget width to viewport ──────────────
+class ConstrainedScrollArea(QScrollArea):
+    """A QScrollArea that forces its widget to never exceed the viewport width."""
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.widget():
+            self.widget().setMaximumWidth(self.viewport().width())
+
+
 class ChevronSpinBox(QSpinBox):
     _BTN_W = 20
 
@@ -110,6 +119,7 @@ class ChevronSpinBox(QSpinBox):
         super().__init__(parent)
         self._px_up   = qta.icon("fa5s.chevron-up",   color="#64748B").pixmap(7, 7)
         self._px_down = qta.icon("fa5s.chevron-down",  color="#64748B").pixmap(7, 7)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -133,6 +143,7 @@ def make_spin(min_val: int = 0, max_val: int = 5000, value: int = 0) -> ChevronS
     spin.setRange(min_val, max_val)
     spin.setValue(value)
     spin.setStyleSheet(MODERN_INPUT_STYLE)
+    spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     return spin
 
 
@@ -141,6 +152,7 @@ def make_chevron_combo(items: list[str], style: str = MODERN_INPUT_STYLE) -> QCo
     combo.addItems(items)
     combo.setStyleSheet(style)
     combo.setCursor(Qt.PointingHandCursor)
+    combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     inner = QHBoxLayout(combo)
     inner.setContentsMargins(0, 0, 10, 0)
@@ -184,10 +196,12 @@ class TextPropertyEditor(QWidget):
         super().__init__()
         self.item = target_item
         self.update_callback = update_callback
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
+        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
 
@@ -196,30 +210,24 @@ class TextPropertyEditor(QWidget):
             l.setStyleSheet(label_style)
             return l
 
-        # ── ALIGNMENT ────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
 
-        # ── FONT NAME ────────────────────────────────────────────────
         self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
         layout.addRow(lbl("FONT NAME :"), self.font_combo)
 
-        # ── FONT SIZE ────────────────────────────────────────────────
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
         layout.addRow(lbl("FONT SIZE :"), self.size_spin)
 
-        # ── TOP ──────────────────────────────────────────────────────
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y()))
         self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
         layout.addRow(lbl("TOP :"), self.top_spin)
 
-        # ── LEFT ─────────────────────────────────────────────────────
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x()))
         self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
         layout.addRow(lbl("LEFT :"), self.left_spin)
 
-        # ── ANGLE ────────────────────────────────────────────────────
         self.angle_combo = make_chevron_combo(["0", "90", "180", "270"])
         angle_map = {"0": 0, "90": 270, "180": 180, "270": 90}
         self.angle_combo.currentTextChanged.connect(
@@ -227,33 +235,31 @@ class TextPropertyEditor(QWidget):
         )
         layout.addRow(lbl("ANGLE :"), self.angle_combo)
 
-        # ── INVERSE ──────────────────────────────────────────────────
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
         self.inverse_combo.currentTextChanged.connect(self._apply_inverse)
         layout.addRow(lbl("INVERSE :"), self.inverse_combo)
 
-        # ── TYPE ─────────────────────────────────────────────────────
         self.type_combo = make_chevron_combo(["FIX", "VAR"])
         layout.addRow(lbl("TYPE :"), self.type_combo)
 
-        # ── EDITOR ───────────────────────────────────────────────────
         self.editor_combo = make_chevron_combo(["INVISIBLE", "VISIBLE", "READONLY"])
         layout.addRow(lbl("EDITOR :"), self.editor_combo)
 
-        # ── TEXT ─────────────────────────────────────────────────────
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
+        self.text_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.text_input.textChanged.connect(self.apply_text_changes)
         layout.addRow(lbl("TEXT :"), self.text_input)
 
-        # ── CAPTION ──────────────────────────────────────────────────
         self.caption_input = QLineEdit("LABEL 1")
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
+        self.caption_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("CAPTION :"), self.caption_input)
 
         # ── WRAP TEXT + WIDTH (inline) ────────────────────────────────
         wrap_row = QWidget()
         wrap_row.setStyleSheet("background: transparent; border: none;")
+        wrap_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         wrap_layout = QHBoxLayout(wrap_row)
         wrap_layout.setContentsMargins(0, 0, 0, 0)
         wrap_layout.setSpacing(6)
@@ -263,6 +269,7 @@ class TextPropertyEditor(QWidget):
 
         width_label = QLabel("WIDTH :")
         width_label.setStyleSheet(label_style)
+        width_label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         wrap_layout.addWidget(width_label)
 
         self.wrap_width_spin = make_spin(0, 5000, 1)
@@ -270,13 +277,13 @@ class TextPropertyEditor(QWidget):
 
         layout.addRow(lbl("WRAP TEXT :"), wrap_row)
 
-        # ── GROUP ────────────────────────────────────────────────────
         self.group_combo = make_chevron_combo([""])
         layout.addRow(lbl("GROUP :"), self.group_combo)
 
         # ── TABLE (combo + extra text field inline) ───────────────────
         table_row = QWidget()
         table_row.setStyleSheet("background: transparent; border: none;")
+        table_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         table_layout = QHBoxLayout(table_row)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(6)
@@ -286,19 +293,21 @@ class TextPropertyEditor(QWidget):
 
         self.table_extra = QLineEdit()
         self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
+        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         table_layout.addWidget(self.table_extra, stretch=1)
 
         layout.addRow(lbl("TABLE :"), table_row)
 
-        # ── FIELD (taller multiline-style input) ─────────────────────
         self.field_edit = QLineEdit()
         self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
         self.field_edit.setMinimumHeight(52)
+        self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FIELD :"), self.field_edit)
 
-        # ── RESULT + TRIM checkbox (inline) ───────────────────────────
+        # ── RESULT + TRIM (inline) ────────────────────────────────────
         result_row = QWidget()
         result_row.setStyleSheet("background: transparent; border: none;")
+        result_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         result_layout = QHBoxLayout(result_row)
         result_layout.setContentsMargins(0, 0, 0, 0)
         result_layout.setSpacing(6)
@@ -321,29 +330,23 @@ class TextPropertyEditor(QWidget):
 
         layout.addRow(lbl("RESULT :"), result_row)
 
-        # ── FORMAT ───────────────────────────────────────────────────
         self.format_edit = QLineEdit()
         self.format_edit.setStyleSheet(MODERN_INPUT_STYLE)
+        self.format_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FORMAT :"), self.format_edit)
 
-        # ── VISIBLE ──────────────────────────────────────────────────
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
         self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
         layout.addRow(lbl("VISIBLE :"), self.visible_combo)
 
-        # ── SAVE FIELD ───────────────────────────────────────────────
         self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
         layout.addRow(lbl("SAVE FIELD :"), self.save_field_combo)
 
-        # ── COLUMN ───────────────────────────────────────────────────
         self.column_spin = make_spin(1, 999, 1)
         layout.addRow(lbl("COLUMN :"), self.column_spin)
 
-        # ── MANDATORY ────────────────────────────────────────────────
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
         layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
-
-    # ── Internal helpers ─────────────────────────────────────────────
 
     def _set_trim_style(self, checked: bool):
         if checked:
@@ -403,10 +406,12 @@ class LinePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item
         self.update_callback = update_callback
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
+        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
 
@@ -463,10 +468,12 @@ class RectanglePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item
         self.update_callback = update_callback
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
+        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
 
@@ -503,7 +510,6 @@ class RectanglePropertyEditor(QWidget):
         self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
         layout.addRow(create_label("VISIBLE :"), self.visible_combo)
 
-        # ── COLUMN ───────────────────────────────────────────────────
         self.column_spin = make_spin(1, 999, 1)
         layout.addRow(create_label("COLUMN :"), self.column_spin)
 
@@ -531,10 +537,12 @@ class BarcodePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item
         self.update_callback = update_callback
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
+        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase;"
 
@@ -892,7 +900,6 @@ import json as _json
 # --- Main Page ---
 
 class BarcodeEditorPage(QWidget):
-    # Emitted by Save button — carries the full serialised design payload
     design_saved = Signal(dict)
 
     def __init__(self):
@@ -903,12 +910,7 @@ class BarcodeEditorPage(QWidget):
         self._design_name = ""
         self.init_ui()
 
-    # ------------------------------------------------------------------
-    # Public API — called by BarcodeListPage
-    # ------------------------------------------------------------------
-
     def reset_for_new(self, form_data: dict | None = None):
-        """Clear the canvas and reset the editor for a brand-new design."""
         self.scene.clearSelection()
         for item in list(self.scene.items()):
             self.scene.removeItem(item)
@@ -936,7 +938,6 @@ class BarcodeEditorPage(QWidget):
         self._update_design_subtitle()
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
-        """Load an existing design from the DB record into the editor."""
         self.reset_for_new()
 
         if row_dict:
@@ -975,10 +976,6 @@ class BarcodeEditorPage(QWidget):
             self._design_name = str(row_data[1]) if row_data and len(row_data) > 1 else ""
 
         self._update_design_subtitle()
-
-    # ------------------------------------------------------------------
-    # Serialise / deserialise canvas
-    # ------------------------------------------------------------------
 
     def serialize_canvas(self) -> list[dict]:
         elements = []
@@ -1111,10 +1108,7 @@ class BarcodeEditorPage(QWidget):
 
     def get_design_payload(self) -> dict:
         elements = self.serialize_canvas()
-        canvas_meta = {
-            "canvas_w": self._canvas_w,
-            "canvas_h": self._canvas_h,
-        }
+        canvas_meta = {"canvas_w": self._canvas_w, "canvas_h": self._canvas_h}
         return {
             "usrm": _json.dumps(elements,    separators=(",", ":")),
             "itrm": _json.dumps(canvas_meta, separators=(",", ":")),
@@ -1129,9 +1123,6 @@ class BarcodeEditorPage(QWidget):
             text = "New Design"
         self._subtitle_lbl.setText(text)
 
-    # ------------------------------------------------------------------
-    # UI Construction
-    # ------------------------------------------------------------------
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
         self.main_layout = QVBoxLayout(self)
@@ -1144,11 +1135,7 @@ class BarcodeEditorPage(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(0)
 
-        self.back_btn = StandardButton(
-            "Back to List",
-            icon_name="fa5s.arrow-left",
-            variant="secondary"
-        )
+        self.back_btn = StandardButton("Back to List", icon_name="fa5s.arrow-left", variant="secondary")
         self.back_btn.setToolTip("Return to Barcode Design list")
         header_layout.addWidget(self.back_btn)
         header_layout.addSpacing(16)
@@ -1157,15 +1144,11 @@ class BarcodeEditorPage(QWidget):
         title_col.setSpacing(2)
 
         title_lbl = QLabel("Barcode Editor")
-        title_lbl.setStyleSheet(
-            "font-size: 22px; font-weight: 700; color: #111827; background: transparent;"
-        )
+        title_lbl.setStyleSheet("font-size: 22px; font-weight: 700; color: #111827; background: transparent;")
         title_col.addWidget(title_lbl)
 
         self._subtitle_lbl = QLabel("New Design")
-        self._subtitle_lbl.setStyleSheet(
-            "font-size: 11px; color: #6366F1; font-weight: 600; background: transparent;"
-        )
+        self._subtitle_lbl.setStyleSheet("font-size: 11px; color: #6366F1; font-weight: 600; background: transparent;")
         title_col.addWidget(self._subtitle_lbl)
 
         header_layout.addLayout(title_col)
@@ -1202,9 +1185,7 @@ class BarcodeEditorPage(QWidget):
 
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.Antialiasing)
-        self.view.setStyleSheet(
-            "background: #E8EDF3; border: 1px solid #CBD5E1; border-radius: 8px;"
-        )
+        self.view.setStyleSheet("background: #E8EDF3; border: 1px solid #CBD5E1; border-radius: 8px;")
         self.view.setAlignment(Qt.AlignCenter)
         workspace_layout.addWidget(self.view, stretch=3)
 
@@ -1228,18 +1209,14 @@ class BarcodeEditorPage(QWidget):
         comp_header_layout.addWidget(comp_icon)
 
         components_label = QLabel("COMPONENTS")
-        components_label.setStyleSheet(
-            "font-weight: 800; font-size: 9pt; color: #1E293B; letter-spacing: 1px;"
-        )
+        components_label.setStyleSheet("font-weight: 800; font-size: 9pt; color: #1E293B; letter-spacing: 1px;")
         comp_header_layout.addWidget(components_label)
         comp_header_layout.addStretch()
 
         self.comp_count_badge = QLabel("0")
         self.comp_count_badge.setAlignment(Qt.AlignCenter)
         self.comp_count_badge.setFixedSize(20, 20)
-        self.comp_count_badge.setStyleSheet(
-            "background: #6366F1; color: white; border-radius: 10px; font-weight: 700;"
-        )
+        self.comp_count_badge.setStyleSheet("background: #6366F1; color: white; border-radius: 10px; font-weight: 700;")
         comp_header_layout.addWidget(self.comp_count_badge)
         sidebar_layout.addWidget(comp_header)
 
@@ -1279,10 +1256,9 @@ class BarcodeEditorPage(QWidget):
         prop_header_layout.addWidget(prop_icon)
 
         prop_static_label = QLabel("PROPERTIES")
-        prop_static_label.setStyleSheet("""
-            font-weight: 700; font-size: 9pt; color: #64748B;
-            letter-spacing: 0.5px; background: transparent; padding: 0px;
-        """)
+        prop_static_label.setStyleSheet(
+            "font-weight: 700; font-size: 9pt; color: #64748B; letter-spacing: 0.5px; background: transparent; padding: 0px;"
+        )
         prop_header_layout.addWidget(prop_static_label)
 
         separator = QLabel("—")
@@ -1305,13 +1281,16 @@ class BarcodeEditorPage(QWidget):
         prop_header_layout.addWidget(self.prop_name_input, stretch=1)
         sidebar_layout.addWidget(prop_header)
 
-        self.scroll_area = QScrollArea()
+        # ── Use ConstrainedScrollArea to prevent horizontal overflow ──
+        self.scroll_area = ConstrainedScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet(f"background: {COLORS['prop_bg']}; border-radius: 8px;")
         self.apply_modern_scrollbar(self.scroll_area)
 
         self.inspector_widget = QWidget()
+        self.inspector_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.inspector_layout = QVBoxLayout(self.inspector_widget)
         self.inspector_layout.setAlignment(Qt.AlignTop)
         self.scroll_area.setWidget(self.inspector_widget)
@@ -1334,9 +1313,6 @@ class BarcodeEditorPage(QWidget):
         payload["name"] = self._design_name
         self.design_saved.emit(payload)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
     def apply_modern_scrollbar(self, scroll_area):
         scroll_area.verticalScrollBar().setStyleSheet("""
             QScrollBar:vertical { border: none; background: transparent; width: 6px; margin: 4px; }
