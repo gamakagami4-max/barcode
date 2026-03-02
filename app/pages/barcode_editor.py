@@ -488,7 +488,7 @@ class TextPropertyEditor(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
+        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(text):
             l = QLabel(text); l.setStyleSheet(label_style); return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
@@ -591,7 +591,7 @@ class LinePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
+        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         line = self.item.line(); pen = self.item.pen()
         self.thickness_spin = make_spin(1, 100, int(pen.width())); self.thickness_spin.valueChanged.connect(self.update_thickness); layout.addRow(lbl("THICKNESS :"), self.thickness_spin)
@@ -616,7 +616,7 @@ class RectanglePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase;"
+        label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         rect = self.item.rect(); pen = self.item.pen()
         self.height_spin = make_spin(0, 5000, int(rect.height())); self.height_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("HEIGHT :"), self.height_spin)
@@ -643,7 +643,7 @@ class BarcodePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase;"
+        label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase; background:transparent; border:none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         self.design_combo = make_chevron_combo(["CODE128","MINIMAL","EAN13","CODE39","QR MOCK"])
         self.design_combo.setCurrentText(self.item.design); self.design_combo.currentTextChanged.connect(self.update_design); layout.addRow(lbl("DESIGN :"), self.design_combo)
