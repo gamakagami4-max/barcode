@@ -26,11 +26,6 @@ from server.repositories.mbarcd_repo import (
 )
 
 def _fetch_sticker_data() -> dict:
-    """
-    Fetch all active sticker records from mstckr.
-    Returns a dict keyed by msstnm:
-      {"STK001": {"h_in": 2.0, "w_in": 3.0, "h_px": 192, "w_px": 288}, ...}
-    """
     try:
         from server.db import get_connection
         conn = get_connection()
@@ -70,10 +65,6 @@ COLORS = {
     "border": "#E2E8F0"
 }
 
-# Row tuple shape:
-# (CODE, NAME, STICKER SIZE, STATUS,
-#  ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO,
-#  LAST PRINT BY, LAST PRINT AT)
 VIEW_DETAIL_FIELDS = [
     ("Code",           0),
     ("Name",           1),
@@ -91,7 +82,6 @@ VIEW_DETAIL_FIELDS = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _fmt_date(value) -> str:
-    """Format a datetime / date / string value for display."""
     if value is None:
         return "-"
     if isinstance(value, datetime):
@@ -100,37 +90,28 @@ def _fmt_date(value) -> str:
 
 
 def _dict_to_row(d: dict) -> tuple:
-    """Convert a mbarcd repo dict to the display tuple used by the table."""
     sticker_size = d.get("sticker_name") or f"{d.get('h_in', '')} X {d.get('w_in', '')}"
     status = "DISPLAY" if d.get("dp_fg") == 1 else "NOT DISPLAY"
 
-    # Only show change-tracking fields if the record has actually been edited
     changed_no = d.get("changed_no", 0) or 0
     has_been_edited = int(changed_no) > 0
 
     return (
-        d.get("pk", ""),                                          # 0  CODE
-        d.get("name", ""),                                        # 1  NAME
-        sticker_size,                                             # 2  STICKER SIZE
-        status,                                                   # 3  STATUS
-        d.get("added_by", "-"),                                   # 4  ADDED BY
-        _fmt_date(d.get("added_at")),                             # 5  ADDED AT
-        d.get("changed_by", "-") if has_been_edited else "-",     # 6  CHANGED BY
-        _fmt_date(d.get("changed_at")) if has_been_edited else "-",  # 7  CHANGED AT
-        str(changed_no) if has_been_edited else "-",              # 8  CHANGED NO
-        d.get("printed_by") or "-",                               # 9  LAST PRINT BY
-        _fmt_date(d.get("printed_at")),                           # 10 LAST PRINT AT
+        d.get("pk", ""),
+        d.get("name", ""),
+        sticker_size,
+        status,
+        d.get("added_by", "-"),
+        _fmt_date(d.get("added_at")),
+        d.get("changed_by", "-") if has_been_edited else "-",
+        _fmt_date(d.get("changed_at")) if has_been_edited else "-",
+        str(changed_no) if has_been_edited else "-",
+        d.get("printed_by") or "-",
+        _fmt_date(d.get("printed_at")),
     )
 
 
 class BarcodeListPage(QWidget):
-    """
-    Single-tab page that hosts both the Barcode Design list view and the
-    Barcode Editor view in an internal QStackedWidget.  No separate tab or
-    sidebar entry is needed for the editor.
-    """
-
-    # Constants for the internal stack indices
     _VIEW_LIST   = 0
     _VIEW_EDITOR = 1
 
@@ -150,7 +131,6 @@ class BarcodeListPage(QWidget):
         self.selected_row_dict = None
         self.current_user = "YOSAFAT.YACOB"
 
-        # Root stacked widget — swaps between list and editor
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
@@ -158,26 +138,17 @@ class BarcodeListPage(QWidget):
         self._stack = QStackedWidget()
         root_layout.addWidget(self._stack)
 
-        # ── Page 0: List ──────────────────────────────────────────────
         self._list_page = QWidget()
         self._stack.addWidget(self._list_page)
 
-        # ── Page 1: Editor ────────────────────────────────────────────
         self._editor_page = BarcodeEditorPage()
-        # design_saved carries the serialized payload; back_btn navigates home
         self._editor_page.design_saved.connect(self._on_editor_save)
         self._editor_page.back_btn.clicked.connect(self._show_list)
         self._stack.addWidget(self._editor_page)
 
-        # Build the list UI inside _list_page
         self.init_ui()
-
-        # Start on the list
         self._stack.setCurrentIndex(self._VIEW_LIST)
-
-        # Ensure mbusrm/mbitrm columns exist — runs ALTER TABLE only if missing
         self._ensure_layout_columns()
-
         self.load_data()
 
     # ------------------------------------------------------------------
@@ -191,11 +162,6 @@ class BarcodeListPage(QWidget):
         self._stack.setCurrentIndex(self._VIEW_EDITOR)
 
     def _ensure_layout_columns(self):
-        """
-        Idempotent migration — adds mbusrm and mbitrm to mbarcd if they don't
-        exist yet.  Safe to call on every startup; IF NOT EXISTS makes it a no-op
-        once the columns are present.
-        """
         conn = self._get_db_connection()
         if conn is None:
             return
@@ -222,22 +188,23 @@ class BarcodeListPage(QWidget):
     def _on_editor_save(self, payload: dict):
         """
         Called when the editor emits design_saved.
-        payload contains: pk, name, usrm (JSON elements), itrm (JSON meta)
-
-        For a new design  (_pending_new_design is set):
-            1. create_mbarcd  — inserts the row
-            2. _save_design_layout — updates bsusrm / bsitrm
-
-        For an edit session:
-            1. _save_design_layout only — metadata was already in the DB
+        payload now contains: pk, name, usrm, itrm,
+                              sticker_name, w_px, h_px, h_in, w_in
         """
         pending = getattr(self, "_pending_new_design", None)
 
         if pending:
             # ── New design: insert row first, then save layout ──────────
+            # Propagate any sticker changes the user made in the editor back
+            # into pending so the DB row gets the correct dimensions.
+            pending["sticker_name"] = payload.get("sticker_name") or pending.get("sticker_name")
+            pending["w_px"]         = payload.get("w_px") or pending.get("w_px", 600)
+            pending["h_px"]         = payload.get("h_px") or pending.get("h_px", 400)
+            pending["w_in"]         = payload.get("w_in") or pending.get("w_in", 0.0)
+            pending["h_in"]         = payload.get("h_in") or pending.get("h_in", 0.0)
+
             self.on_barcode_added(pending)
             self._pending_new_design = None
-            # After insert, pick up the fresh record so we have changed_no
             try:
                 from server.repositories.mbarcd_repo import fetch_mbarcd_by_pk
                 record = fetch_mbarcd_by_pk(payload["pk"])
@@ -245,10 +212,9 @@ class BarcodeListPage(QWidget):
                     self.all_dicts[payload["pk"]] = record
             except Exception:
                 pass
-            # ── Persist canvas layout — new record, don't touch change fields
             self._save_design_layout(payload, is_new=True)
         else:
-            # ── Persist canvas layout — existing record, update change fields
+            # ── Existing design: update sticker/dims + canvas layout ────
             self._save_design_layout(payload, is_new=False)
 
         self.load_data()
@@ -256,34 +222,48 @@ class BarcodeListPage(QWidget):
 
     def _save_design_layout(self, payload: dict, is_new: bool = False):
         """
-        Persist the serialised canvas JSON back to mbarcd (mbusrm / mbitrm).
-        When is_new=True, changed_no / changed_by / changed_at are NOT touched.
-        Silently skips if the columns haven't been added yet via migration.
+        Persist the serialised canvas JSON AND sticker/dimension fields back
+        to mbarcd.  When is_new=True, changed_no / changed_by / changed_at
+        are NOT touched.
         """
-        pk   = payload.get("pk", "").strip()
-        usrm = payload.get("usrm", "[]")
-        itrm = payload.get("itrm", "{}")
+        pk           = payload.get("pk", "").strip()
+        usrm         = payload.get("usrm", "[]")
+        itrm         = payload.get("itrm", "{}")
+        sticker_name = payload.get("sticker_name") or ""
+        h_in         = float(payload.get("h_in") or 0)
+        w_in         = float(payload.get("w_in") or 0)
+        h_px         = int(payload.get("h_px") or 0)
+        w_px         = int(payload.get("w_px") or 0)
 
         if not pk:
             return
 
         try:
             from server.repositories.mbarcd_repo import update_mbarcd_layout
-            update_mbarcd_layout(pk=pk, usrm=usrm, itrm=itrm, is_new=is_new)
+            update_mbarcd_layout(
+                pk=pk, usrm=usrm, itrm=itrm,
+                sticker_name=sticker_name,
+                h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px,
+                is_new=is_new,
+            )
             print(f"[_save_design_layout] pk={pk!r}  usrm={len(usrm)}B  itrm={len(itrm)}B")
-        except ImportError:
-            self._save_design_layout_direct(pk, usrm, itrm, is_new=is_new)
+        except (ImportError, TypeError):
+            # Repo function may not yet accept the extra kwargs — fall back to direct
+            self._save_design_layout_direct(
+                pk, usrm, itrm, is_new=is_new,
+                sticker_name=sticker_name,
+                h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px,
+            )
         except Exception as e:
             print(f"[_save_design_layout] Skipped — {e}")
 
-    def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str, is_new: bool = False):
+    def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str, is_new: bool = False,
+                                    sticker_name: str = "", h_in: float = 0.0, w_in: float = 0.0,
+                                    h_px: int = 0, w_px: int = 0):
         """
-        Direct DB fallback. Silently skips if mbusrm/mbitrm columns don't exist yet.
+        Direct DB fallback.
+        Also updates sticker/dimension fields (mbstnm, mbheig, mbwidt, mbpixh, mbpixw).
         When is_new=True, mbchno / mbchby / mbchdt are NOT updated.
-        Run this migration first to enable layout persistence:
-            ALTER TABLE barcodesap.mbarcd
-                ADD COLUMN IF NOT EXISTS mbusrm text,
-                ADD COLUMN IF NOT EXISTS mbitrm text;
         """
         conn = self._get_db_connection()
         if conn is None:
@@ -293,32 +273,55 @@ class BarcodeListPage(QWidget):
         try:
             cur = conn.cursor()
             if is_new:
-                # New record — only save the canvas JSON, don't touch change tracking fields
-                cur.execute(
-                    """
-                    UPDATE barcodesap.mbarcd
-                       SET mbusrm = %s,
-                           mbitrm = %s
-                     WHERE mbbrcd = %s
-                    """,
-                    (usrm, itrm, pk),
-                )
-            else:
-                # Edit — update canvas JSON and increment change tracking fields
+                # New record — save canvas JSON + sticker/dims, skip change tracking
                 cur.execute(
                     """
                     UPDATE barcodesap.mbarcd
                        SET mbusrm = %s,
                            mbitrm = %s,
+                           mbstnm = %s,
+                           mbheig = %s,
+                           mbwidt = %s,
+                           mbpixh = %s,
+                           mbpixw = %s
+                     WHERE mbbrcd = %s
+                    """,
+                    (usrm, itrm,
+                     sticker_name or None,
+                     h_in if h_in else None,
+                     w_in if w_in else None,
+                     h_px if h_px else None,
+                     w_px if w_px else None,
+                     pk),
+                )
+            else:
+                # Edit — update canvas JSON + sticker/dims AND increment change tracking
+                cur.execute(
+                    """
+                    UPDATE barcodesap.mbarcd
+                       SET mbusrm = %s,
+                           mbitrm = %s,
+                           mbstnm = %s,
+                           mbheig = %s,
+                           mbwidt = %s,
+                           mbpixh = %s,
+                           mbpixw = %s,
                            mbchno = mbchno + 1,
                            mbchby = %s,
                            mbchdt = NOW()
                      WHERE mbbrcd = %s
                     """,
-                    (usrm, itrm, self.current_user, pk),
+                    (usrm, itrm,
+                     sticker_name or None,
+                     h_in if h_in else None,
+                     w_in if w_in else None,
+                     h_px if h_px else None,
+                     w_px if w_px else None,
+                     self.current_user,
+                     pk),
                 )
             conn.commit()
-            print(f"[_save_design_layout_direct] Saved layout for pk={pk!r} (is_new={is_new})")
+            print(f"[_save_design_layout_direct] Saved for pk={pk!r} sticker={sticker_name!r} (is_new={is_new})")
         except Exception as e:
             conn.rollback()
             print(f"[_save_design_layout_direct] Skipped — {e}")
@@ -366,7 +369,6 @@ class BarcodeListPage(QWidget):
         layout.setContentsMargins(40, 20, 40, 12)
         layout.setSpacing(0)
 
-        # 1. Header
         enabled = ["Add", "Excel", "Refresh", "View Detail"]
         self.header = StandardPageHeader(
             title="Barcode Design",
@@ -384,13 +386,11 @@ class BarcodeListPage(QWidget):
 
         layout.addSpacing(12)
 
-        # 2. Search Bar
         self.search_bar = StandardSearchBar()
         self.search_bar.searchChanged.connect(self.filter_table)
         layout.addWidget(self.search_bar)
         layout.addSpacing(5)
 
-        # 3. Table — 9 data columns
         column_labels = [
             "CODE", "NAME", "STICKER SIZE", "STATUS",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO"
@@ -428,8 +428,6 @@ class BarcodeListPage(QWidget):
         self.pagination.pageSizeChanged.connect(self.on_page_size_changed)
 
         self.sort_bar.initialize_default_sort()
-
-        # Initially disable selection-dependent buttons
         self._update_selection_dependent_state(False)
 
     # ------------------------------------------------------------------
@@ -444,7 +442,6 @@ class BarcodeListPage(QWidget):
 
     def on_row_selection_changed(self):
         selected_rows = self.table.selectionModel().selectedRows()
-
         if selected_rows:
             row = selected_rows[0].row()
             item = self.table.item(row, 0)
@@ -510,13 +507,12 @@ class BarcodeListPage(QWidget):
                 status_item.setForeground(QColor(COLORS["status_green_text"]))
             self.table.setItem(r, 3, status_item)
 
-            # Columns 4–8: ADDED BY, ADDED AT, CHANGED BY, CHANGED AT, CHANGED NO
-            self.table.setItem(r, 4, QTableWidgetItem(str(row_data[4])))  # ADDED BY
-            self.table.setItem(r, 5, QTableWidgetItem(str(row_data[5])))  # ADDED AT
-            self.table.setItem(r, 6, QTableWidgetItem(str(row_data[6])))  # CHANGED BY
-            self.table.setItem(r, 7, QTableWidgetItem(str(row_data[7])))  # CHANGED AT
+            self.table.setItem(r, 4, QTableWidgetItem(str(row_data[4])))
+            self.table.setItem(r, 5, QTableWidgetItem(str(row_data[5])))
+            self.table.setItem(r, 6, QTableWidgetItem(str(row_data[6])))
+            self.table.setItem(r, 7, QTableWidgetItem(str(row_data[7])))
 
-            changed_no_item = QTableWidgetItem(str(row_data[8]))          # CHANGED NO
+            changed_no_item = QTableWidgetItem(str(row_data[8]))
             changed_no_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(r, 8, changed_no_item)
 
@@ -661,25 +657,8 @@ class BarcodeListPage(QWidget):
     # ------------------------------------------------------------------
 
     def handle_add_action(self):
-        """
-        Show GenericFormModal. Sticker selection auto-fills the readonly
-        dimension fields — no manual dimension entry.
-        """
         sticker_data = _fetch_sticker_data()
         sticker_options = [""] + list(sticker_data.keys())
-
-        # Build initial display strings for dimension readonly fields
-        def _dim_text(sticker_key):
-            d = sticker_data.get(sticker_key)
-            if not d:
-                return ""
-            return f"{d['h_in']} in  ·  {d['h_px']} px"
-
-        def _wdim_text(sticker_key):
-            d = sticker_data.get(sticker_key)
-            if not d:
-                return ""
-            return f"{d['w_in']} in  ·  {d['w_px']} px"
 
         modal = GenericFormModal(
             title="New Barcode Design",
@@ -708,7 +687,6 @@ class BarcodeListPage(QWidget):
                     "options": sticker_options,
                     "placeholder": "— Select sticker —",
                 },
-                # Readonly display fields — auto-filled when sticker changes
                 {
                     "name": "height_display",
                     "label": "Height",
@@ -738,40 +716,25 @@ class BarcodeListPage(QWidget):
             min_width=520,
         )
 
-        # When sticker changes → update the readonly dimension display fields
         def _on_sticker_changed(field_name: str, value: str):
             if field_name != "sticker_name":
                 return
             d = sticker_data.get(value)
             if d:
-                modal.set_field_value(
-                    "height_display",
-                    f"{d['h_in']} in  ·  {d['h_px']} px"
-                )
-                modal.set_field_value(
-                    "width_display",
-                    f"{d['w_in']} in  ·  {d['w_px']} px"
-                )
+                modal.set_field_value("height_display", f"{d['h_in']} in  ·  {d['h_px']} px")
+                modal.set_field_value("width_display",  f"{d['w_in']} in  ·  {d['w_px']} px")
             else:
                 modal.set_field_value("height_display", "")
                 modal.set_field_value("width_display",  "")
 
         modal.fieldChanged.connect(_on_sticker_changed)
         modal.formSubmitted.connect(self._on_new_design_submitted)
-
-        # Attach sticker_data to modal so _on_new_design_submitted can read it
         modal._sticker_data = sticker_data
         modal.exec()
 
     def _on_new_design_submitted(self, data: dict):
-        """
-        Called by GenericFormModal.formSubmitted after the user clicks Create.
-        Validates the pk is unique, then opens the editor.
-        Dimensions come directly from the selected sticker record.
-        """
         pk = data.get("pk", "").strip()
 
-        # ── Duplicate key check ───────────────────────────────────────
         if fetch_mbarcd_by_pk(pk) is not None:
             QMessageBox.warning(
                 self, "Duplicate Code",
@@ -782,7 +745,6 @@ class BarcodeListPage(QWidget):
 
         sticker_key = data.get("sticker_name", "").strip()
 
-        # Pull dimensions from the sticker record attached to the modal
         sticker_data = getattr(
             self.sender(), "_sticker_data",
             getattr(self, "_last_sticker_data", {})
@@ -817,7 +779,6 @@ class BarcodeListPage(QWidget):
         self._show_editor()
 
     def handle_edit_action(self):
-        """Open the editor pre-loaded with the selected barcode design."""
         if not self.selected_row_data:
             QMessageBox.warning(self, "Edit", "Please select a row to edit.")
             return
@@ -825,7 +786,6 @@ class BarcodeListPage(QWidget):
         pk = self.selected_row_data[0]
         row_dict = dict(self.all_dicts.get(pk) or {})
 
-        # Fetch bsusrm/bsitrm layout columns — these are not in fetch_all_mbarcd
         try:
             from server.repositories.mbarcd_repo import fetch_mbarcd_layout
             layout = fetch_mbarcd_layout(pk)
@@ -833,7 +793,6 @@ class BarcodeListPage(QWidget):
                 row_dict["usrm"] = layout.get("usrm", "")
                 row_dict["itrm"] = layout.get("itrm", "")
         except ImportError:
-            # fetch_mbarcd_layout not yet added to repo — fall back to direct query
             try:
                 conn = self._get_db_connection()
                 if conn:
@@ -859,7 +818,6 @@ class BarcodeListPage(QWidget):
         self._show_editor()
 
     def _get_db_connection(self):
-        """Try common DB connection module names — returns a live connection or None."""
         for mod_path in ("server.db", "db", "database", "server.database", "core.db"):
             try:
                 import importlib
