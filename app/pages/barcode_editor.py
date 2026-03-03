@@ -578,8 +578,10 @@ class TextPropertyEditor(QWidget):
             l.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
             return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
+        self.align_combo.currentTextChanged.connect(self._apply_alignment)
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
         self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
+        self.font_combo.currentTextChanged.connect(self._apply_font_family)
         layout.addRow(lbl("FONT NAME :"), self.font_combo)
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
@@ -650,6 +652,41 @@ class TextPropertyEditor(QWidget):
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
         layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
 
+    def _apply_alignment(self, value):
+        align_map = {
+            "LEFT JUSTIFY":  Qt.AlignLeft,
+            "CENTER":        Qt.AlignCenter,
+            "RIGHT JUSTIFY": Qt.AlignRight,
+        }
+        from PySide6.QtGui import QTextCursor, QTextBlockFormat
+        alignment = align_map.get(value, Qt.AlignLeft)
+        
+        # Set text width so alignment has a container to work within
+        if value == "LEFT JUSTIFY":
+            self.item.setTextWidth(-1)
+        else:
+            w = self.item.boundingRect().width()
+            self.item.setTextWidth(w if w > 0 else 200)
+
+        cursor = self.item.textCursor()
+        cursor.select(QTextCursor.SelectionType.Document)
+        fmt = QTextBlockFormat()
+        fmt.setAlignment(alignment)
+        cursor.mergeBlockFormat(fmt)
+        self.item.setTextCursor(cursor)
+        self.update_callback()
+
+    def _apply_font_family(self, value):
+        font_map = {
+            "STANDARD":  "Arial",
+            "MONOSPACE": "Courier New",
+            "SERIF":     "Times New Roman",
+        }
+        font = self.item.font()
+        font.setFamily(font_map.get(value, "Arial"))
+        self.item.setFont(font)
+        self.update_callback()
+        
     def _set_trim_style(self, checked):
         if checked:
             self.trim_box.setText("✓"); self.trim_box.setAlignment(Qt.AlignCenter)
