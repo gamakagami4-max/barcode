@@ -563,10 +563,15 @@ class TextPropertyEditor(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        LABEL_W = 90  # fixed width so all labels align perfectly
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(text):
-            l = QLabel(text); l.setStyleSheet(label_style); return l
+            l = QLabel(text)
+            l.setStyleSheet(label_style)
+            l.setFixedWidth(LABEL_W)
+            l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
         self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
@@ -600,40 +605,45 @@ class TextPropertyEditor(QWidget):
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.caption_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("CAPTION :"), self.caption_input)
-        wrap_row = QWidget(); wrap_row.setStyleSheet("background: transparent; border: none;")
-        wrap_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        wrap_layout = QHBoxLayout(wrap_row); wrap_layout.setContentsMargins(0,0,0,0); wrap_layout.setSpacing(6)
-        self.wrap_combo = make_chevron_combo(["NO", "YES"]); wrap_layout.addWidget(self.wrap_combo, stretch=2)
-        wl = QLabel("WIDTH :"); wl.setStyleSheet(label_style); wl.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed); wrap_layout.addWidget(wl)
-        self.wrap_width_spin = make_spin(0, 5000, 1); wrap_layout.addWidget(self.wrap_width_spin, stretch=1)
-        layout.addRow(lbl("WRAP TEXT :"), wrap_row)
-        self.group_combo = make_chevron_combo([""]); layout.addRow(lbl("GROUP :"), self.group_combo)
-        table_row = QWidget(); table_row.setStyleSheet("background: transparent; border: none;")
-        table_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        table_layout = QHBoxLayout(table_row); table_layout.setContentsMargins(0,0,0,0); table_layout.setSpacing(6)
-        self.table_combo = make_chevron_combo([""]); table_layout.addWidget(self.table_combo, stretch=2)
+        # WRAP TEXT and WIDTH on separate rows
+        self.wrap_combo = make_chevron_combo(["NO", "YES"])
+        layout.addRow(lbl("WRAP TEXT :"), self.wrap_combo)
+        self.wrap_width_spin = make_spin(0, 5000, 1)
+        layout.addRow(lbl("WRAP WIDTH :"), self.wrap_width_spin)
+        self.group_combo = make_chevron_combo([""])
+        layout.addRow(lbl("GROUP :"), self.group_combo)
+        # TABLE and extra on separate rows
+        self.table_combo = make_chevron_combo([""])
+        layout.addRow(lbl("TABLE :"), self.table_combo)
         self.table_extra = QLineEdit(); self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
-        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed); table_layout.addWidget(self.table_extra, stretch=1)
-        layout.addRow(lbl("TABLE :"), table_row)
+        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addRow(lbl("TABLE EXTRA :"), self.table_extra)
         self.field_edit = QLineEdit(); self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
         self.field_edit.setMinimumHeight(52); self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FIELD :"), self.field_edit)
-        result_row = QWidget(); result_row.setStyleSheet("background: transparent; border: none;")
-        result_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        result_layout = QHBoxLayout(result_row); result_layout.setContentsMargins(0,0,0,0); result_layout.setSpacing(6)
-        self.result_combo = make_chevron_combo([""]); result_layout.addWidget(self.result_combo, stretch=2)
+        # RESULT and TRIM on separate rows
+        self.result_combo = make_chevron_combo([""])
+        layout.addRow(lbl("RESULT :"), self.result_combo)
         self._trim_checked = False
+        trim_row = QWidget(); trim_row.setStyleSheet("background: transparent; border: none;")
+        trim_layout = QHBoxLayout(trim_row); trim_layout.setContentsMargins(0,0,0,0); trim_layout.setSpacing(6)
         self.trim_box = QLabel(); self.trim_box.setFixedSize(14, 14); self.trim_box.setCursor(Qt.PointingHandCursor)
-        self._set_trim_style(False); self.trim_box.mousePressEvent = self._toggle_trim; result_layout.addWidget(self.trim_box)
-        trim_lbl = QLabel("TRIM"); trim_lbl.setStyleSheet(label_style); result_layout.addWidget(trim_lbl); result_layout.addStretch()
-        layout.addRow(lbl("RESULT :"), result_row)
+        self._set_trim_style(False); self.trim_box.mousePressEvent = self._toggle_trim
+        trim_layout.addWidget(self.trim_box)
+        trim_lbl = QLabel("TRIM"); trim_lbl.setStyleSheet(label_style); trim_layout.addWidget(trim_lbl); trim_layout.addStretch()
+        layout.addRow(lbl(""), trim_row)
         self.format_edit = QLineEdit(); self.format_edit.setStyleSheet(MODERN_INPUT_STYLE)
-        self.format_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed); layout.addRow(lbl("FORMAT :"), self.format_edit)
+        self.format_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addRow(lbl("FORMAT :"), self.format_edit)
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
-        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE")); layout.addRow(lbl("VISIBLE :"), self.visible_combo)
-        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"]); layout.addRow(lbl("SAVE FIELD :"), self.save_field_combo)
-        self.column_spin = make_spin(1, 999, 1); layout.addRow(lbl("COLUMN :"), self.column_spin)
-        self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"]); layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
+        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
+        layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
+        layout.addRow(lbl("SAVE FIELD :"), self.save_field_combo)
+        self.column_spin = make_spin(1, 999, 1)
+        layout.addRow(lbl("COLUMN :"), self.column_spin)
+        self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
+        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
 
     def _set_trim_style(self, checked):
         if checked:
@@ -667,9 +677,12 @@ class LinePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
-        def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
+        LABEL_W = 90
+        def lbl(t):
+            l = QLabel(t); l.setStyleSheet(label_style)
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
         line = self.item.line(); pen = self.item.pen()
         self.thickness_spin = make_spin(1, 100, int(pen.width())); self.thickness_spin.valueChanged.connect(self.update_thickness); layout.addRow(lbl("THICKNESS :"), self.thickness_spin)
         self.width_spin = make_spin(0, 5000, int(abs(line.dx()))); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -693,9 +706,12 @@ class RectanglePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
-        def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
+        LABEL_W = 90
+        def lbl(t):
+            l = QLabel(t); l.setStyleSheet(label_style)
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
         rect = self.item.rect(); pen = self.item.pen()
         self.height_spin = make_spin(0, 5000, int(rect.height())); self.height_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("HEIGHT :"), self.height_spin)
         self.width_spin = make_spin(0, 5000, int(rect.width())); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -721,9 +737,12 @@ class BarcodePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase; background:transparent; border:none;"
-        def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
+        LABEL_W = 90
+        def lbl(t):
+            l = QLabel(t); l.setStyleSheet(label_style)
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
         self.design_combo = make_chevron_combo(["CODE128","MINIMAL","EAN13","CODE39","QR MOCK"])
         self.design_combo.setCurrentText(self.item.design); self.design_combo.currentTextChanged.connect(self.update_design); layout.addRow(lbl("DESIGN :"), self.design_combo)
         self.width_spin = make_spin(20, 1000, self.item.container_width); self.width_spin.valueChanged.connect(self.update_size); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -1384,16 +1403,17 @@ class BarcodeEditorPage(QWidget):
 
         header_bar_layout.addStretch()
 
+        # Save + Cancel side by side on the right
+        self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
+        self.save_btn.setFixedHeight(34)
+        header_bar_layout.addWidget(self.save_btn)
+
+        header_bar_layout.addSpacing(8)
+
         self.back_btn = StandardButton("Cancel", icon_name="fa5s.times", variant="secondary")
         self.back_btn.setToolTip("Cancel and return to list")
         self.back_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.back_btn)
-
-        header_bar_layout.addSpacing(8)
-
-        self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
-        self.save_btn.setFixedHeight(34)
-        header_bar_layout.addWidget(self.save_btn)
 
         self.main_layout.addWidget(header_bar)
 
