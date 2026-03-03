@@ -975,8 +975,8 @@ class GeneralTab(QWidget):
         self._sticker_data: dict = _fetch_sticker_data()
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 12, 20, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(40, 20, 40, 20)
+        root.setSpacing(0)
 
         label_style = (
             f"color: {COLORS['legacy_blue']}; font-size: 9px; font-weight: 700; "
@@ -1020,13 +1020,13 @@ class GeneralTab(QWidget):
         # ── Card ──────────────────────────────────────────────────────
         card = QFrame()
         card.setStyleSheet(
-            "QFrame { background: white; border: none; border-radius: 8px; }"
+            "QFrame { background: white; border: 1px solid #E2E8F0; border-radius: 10px; }"
         )
 
         card_layout = QGridLayout(card)
-        card_layout.setContentsMargins(16, 14, 16, 14)
-        card_layout.setHorizontalSpacing(10)
-        card_layout.setVerticalSpacing(10)
+        card_layout.setContentsMargins(28, 22, 28, 22)
+        card_layout.setHorizontalSpacing(14)
+        card_layout.setVerticalSpacing(14)
         card_layout.setColumnStretch(3, 1)  # stretch between left block and jenis cetak
 
         # ── LEFT TOP: Code / Name / Display Status ────────────────────
@@ -1049,7 +1049,7 @@ class GeneralTab(QWidget):
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("background: #E2E8F0; border: none; min-height: 1px; max-height: 1px;")
         card_layout.addWidget(sep, 3, 0, 1, 2)
-        card_layout.setRowMinimumHeight(3, 10)
+        card_layout.setRowMinimumHeight(3, 18)
 
         # ── LEFT BOTTOM: Sticker / Height / Width ─────────────────────
         sticker_keys = list(self._sticker_data.keys())
@@ -1404,16 +1404,20 @@ class BarcodeEditorPage(QWidget):
         header_bar_layout.addStretch()
 
         # Save + Cancel side by side on the right
-        self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
-        self.save_btn.setFixedHeight(34)
-        header_bar_layout.addWidget(self.save_btn)
-
-        header_bar_layout.addSpacing(8)
 
         self.back_btn = StandardButton("Cancel", icon_name="fa5s.times", variant="secondary")
         self.back_btn.setToolTip("Cancel and return to list")
         self.back_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.back_btn)
+
+        header_bar_layout.addSpacing(8)
+
+        self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
+        self.save_btn.setFixedHeight(34)
+        header_bar_layout.addWidget(self.save_btn)
+
+        
+
 
         self.main_layout.addWidget(header_bar)
 
