@@ -709,29 +709,11 @@ class TextPropertyEditor(QWidget):
     def _apply_visible(self, value):
         # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
-        self._update_visibility_indicator()
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Add visual indicator that item is set to invisible in final output"""
-        is_design_visible = getattr(self.item, "design_visible", True)
-        
-        # Remove existing indicator if any
-        for child in self.item.childItems():
-            if getattr(child, "is_visibility_indicator", False):
-                child.setParentItem(None)
-                if child.scene():
-                    child.scene().removeItem(child)
-                del child
-        
-        if not is_design_visible:
-            # Add a red dashed border to indicate "hidden in output"
-            rect = self.item.boundingRect()
-            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
-            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
-            indicator.setBrush(Qt.NoBrush)
-            indicator.setEnabled(False)  # Don't interfere with mouse events
-            indicator.is_visibility_indicator = True
+        """Visual indicator removed - keeping it simple"""
+        pass
 
     def apply_text_changes(self, text):
         self.item.setPlainText(text); self.update_callback()
@@ -783,28 +765,11 @@ class LinePropertyEditor(QWidget):
     def _apply_visible(self, value):
         # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
-        self._update_visibility_indicator()
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Add visual indicator that item is set to invisible in final output"""
-        is_design_visible = getattr(self.item, "design_visible", True)
-        
-        # Remove existing indicator if any
-        for child in self.item.childItems():
-            if getattr(child, "is_visibility_indicator", False):
-                child.setParentItem(None)
-                if child.scene():
-                    child.scene().removeItem(child)
-        
-        if not is_design_visible:
-            # Add a red dashed border to indicate "hidden in output"
-            rect = self.item.boundingRect()
-            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
-            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
-            indicator.setBrush(Qt.NoBrush)
-            indicator.setEnabled(False)
-            indicator.is_visibility_indicator = True
+        """Visual indicator removed - keeping it simple"""
+        pass
 
 
 class RectanglePropertyEditor(QWidget):
@@ -849,28 +814,11 @@ class RectanglePropertyEditor(QWidget):
     def _apply_visible(self, value):
         # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
-        self._update_visibility_indicator()
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Add visual indicator that item is set to invisible in final output"""
-        is_design_visible = getattr(self.item, "design_visible", True)
-        
-        # Remove existing indicator if any
-        for child in self.item.childItems():
-            if getattr(child, "is_visibility_indicator", False):
-                child.setParentItem(None)
-                if child.scene():
-                    child.scene().removeItem(child)
-        
-        if not is_design_visible:
-            # Add a red dashed border to indicate "hidden in output"
-            rect = self.item.rect()
-            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
-            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
-            indicator.setBrush(Qt.NoBrush)
-            indicator.setEnabled(False)
-            indicator.is_visibility_indicator = True
+        """Visual indicator removed - keeping it simple"""
+        pass
 
 
 class BarcodePropertyEditor(QWidget):
@@ -938,29 +886,11 @@ class BarcodePropertyEditor(QWidget):
     def _apply_visible(self, value):
         # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
-        self._update_visibility_indicator()
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Add visual indicator that item is set to invisible in final output"""
-        is_design_visible = getattr(self.item, "design_visible", True)
-        
-        # Remove existing indicator if any (check child items of the group)
-        for child in self.item.childItems():
-            if getattr(child, "is_visibility_indicator", False):
-                self.item.removeFromGroup(child)
-                if child.scene():
-                    child.scene().removeItem(child)
-        
-        if not is_design_visible:
-            # Add a red dashed border around the barcode background
-            rect = self.item.bg.rect()
-            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3))
-            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
-            indicator.setBrush(Qt.NoBrush)
-            indicator.setEnabled(False)
-            indicator.is_visibility_indicator = True
-            self.item.addToGroup(indicator)
+        """Visual indicator removed - keeping it simple"""
+        pass
 
 
 # --- Custom Scene Items ---
