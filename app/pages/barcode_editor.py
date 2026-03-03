@@ -565,16 +565,17 @@ class TextPropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
-        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        LABEL_W = 90  # fixed width so all labels align perfectly
+        layout.setVerticalSpacing(8)
+        layout.setHorizontalSpacing(4)
+        layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignLeft)
+        LABEL_W = 70  # fixed width so all labels align perfectly
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(text):
             l = QLabel(text)
             l.setStyleSheet(label_style)
             l.setFixedWidth(LABEL_W)
-            l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            l.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
             return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
@@ -679,14 +680,14 @@ class LinePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item; self.update_callback = update_callback
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
-        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setVerticalSpacing(10); layout.setHorizontalSpacing(4)
+        layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignLeft)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
-        LABEL_W = 90
+        LABEL_W = 70
         def lbl(t):
             l = QLabel(t); l.setStyleSheet(label_style)
-            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignBottom); return l
         line = self.item.line(); pen = self.item.pen()
         self.thickness_spin = make_spin(1, 100, int(pen.width())); self.thickness_spin.valueChanged.connect(self.update_thickness); layout.addRow(lbl("THICKNESS :"), self.thickness_spin)
         self.width_spin = make_spin(0, 5000, int(abs(line.dx()))); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -708,14 +709,14 @@ class RectanglePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item; self.update_callback = update_callback
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
-        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setVerticalSpacing(10); layout.setHorizontalSpacing(4)
+        layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignLeft)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
-        LABEL_W = 90
+        LABEL_W = 70
         def lbl(t):
             l = QLabel(t); l.setStyleSheet(label_style)
-            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignBottom); return l
         rect = self.item.rect(); pen = self.item.pen()
         self.height_spin = make_spin(0, 5000, int(rect.height())); self.height_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("HEIGHT :"), self.height_spin)
         self.width_spin = make_spin(0, 5000, int(rect.width())); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -739,14 +740,14 @@ class BarcodePropertyEditor(QWidget):
         super().__init__()
         self.item = target_item; self.update_callback = update_callback
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
-        layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setVerticalSpacing(10); layout.setHorizontalSpacing(4)
+        layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignLeft)
         label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase; background:transparent; border:none;"
-        LABEL_W = 90
+        LABEL_W = 70
         def lbl(t):
             l = QLabel(t); l.setStyleSheet(label_style)
-            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter); return l
+            l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignBottom); return l
         self.design_combo = make_chevron_combo(["CODE128","MINIMAL","EAN13","CODE39","QR MOCK"])
         self.design_combo.setCurrentText(self.item.design); self.design_combo.currentTextChanged.connect(self.update_design); layout.addRow(lbl("DESIGN :"), self.design_combo)
         self.width_spin = make_spin(20, 1000, self.item.container_width); self.width_spin.valueChanged.connect(self.update_size); layout.addRow(lbl("WIDTH :"), self.width_spin)
