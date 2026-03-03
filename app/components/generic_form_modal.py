@@ -1484,7 +1484,12 @@ class GenericFormModal(QDialog):
             if editable:
                 from PySide6.QtCore import QLocale
                 inch_validator = QDoubleValidator(0.0001, 99999.0, 4)
-                inch_validator.setLocale(QLocale(QLocale.English))
+                inch_validator.setNotation(QDoubleValidator.StandardNotation)
+
+                locale = QLocale(QLocale.C)
+                locale.setNumberOptions(QLocale.RejectGroupSeparator)  # 🔥 important
+                inch_validator.setLocale(locale)
+
                 inch_input.setValidator(inch_validator)
                 px_input.setValidator(QIntValidator(1, 999999))
 
