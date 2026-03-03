@@ -714,9 +714,11 @@ class RectanglePropertyEditor(QWidget):
         layout.setLabelAlignment(Qt.AlignLeft)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         LABEL_W = 70
+
         def lbl(t):
             l = QLabel(t); l.setStyleSheet(label_style)
             l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignBottom); return l
+        
         rect = self.item.rect(); pen = self.item.pen()
         self.height_spin = make_spin(0, 5000, int(rect.height())); self.height_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("HEIGHT :"), self.height_spin)
         self.width_spin = make_spin(0, 5000, int(rect.width())); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
