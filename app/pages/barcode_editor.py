@@ -1211,17 +1211,24 @@ class BarcodeEditorPage(QWidget):
 
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
+        
+        # Disable toolbar buttons until sticker is selected
+        self._update_toolbar_buttons_state(False)
 
         if form_data:
             w = int(form_data.get("w_px") or 600)
             h = int(form_data.get("h_px") or 400)
             self._design_code  = form_data.get("pk", "")
-            self._original_pk  = self._design_code  # pk as it exists in DB
+            self._original_pk  = self._design_code
             self._design_name  = form_data.get("name", "")
             self._sticker_name = str(form_data.get("sticker_name") or "")
             self._h_in         = float(form_data.get("h_in") or 0.0)
             self._w_in         = float(form_data.get("w_in") or 0.0)
             self._dp_fg        = int(form_data.get("dp_fg") or 0)
+            
+            # If sticker is already provided in form_data, enable buttons
+            if self._sticker_name:
+                self._update_toolbar_buttons_state(True)
         else:
             w, h = 600, 400
             self._design_code  = ""
@@ -1244,7 +1251,8 @@ class BarcodeEditorPage(QWidget):
             w_px         = w,
             dp_fg        = self._dp_fg,
         )
-        self._switch_tab(0)  # always open on General tab
+        self._switch_tab(0)
+
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
         self.reset_for_new()
@@ -1263,7 +1271,7 @@ class BarcodeEditorPage(QWidget):
                 pass
 
             self._design_code  = str(row_dict.get("pk", ""))
-            self._original_pk  = self._design_code  # pk as it exists in DB
+            self._original_pk  = self._design_code
             self._design_name  = str(row_dict.get("name", ""))
             self._sticker_name = sticker_name
             self._h_in = h_in
@@ -1306,14 +1314,16 @@ class BarcodeEditorPage(QWidget):
             w_px         = self._canvas_w,
             dp_fg        = self._dp_fg,
         )
-        self._switch_tab(0)  # always open on General tab
+        self._switch_tab(0)
 
         if self._sticker_name:
             self.view.setVisible(True)
             self._canvas_placeholder.setVisible(False)
+            self._update_toolbar_buttons_state(True)  # Enable if sticker exists
         else:
             self.view.setVisible(False)
             self._canvas_placeholder.setVisible(True)
+            self._update_toolbar_buttons_state(False)  # Disable if no sticker
 
     def serialize_canvas(self) -> list[dict]:
         elements = []
@@ -1385,6 +1395,7 @@ class BarcodeEditorPage(QWidget):
         self._sticker_name = self.general_tab.sticker_combo.currentText()
         self.view.setVisible(True)
         self._canvas_placeholder.setVisible(False)
+        self._update_toolbar_buttons_state(True)
 
     def _switch_tab(self, index: int):
         self._tab_stack.setCurrentIndex(index)
@@ -1623,6 +1634,55 @@ class BarcodeEditorPage(QWidget):
             if getattr(li, 'graphics_item', None) == item:
                 self.delete_component(i)
                 break
+
+
+    def _update_toolbar_buttons_state(self, enabled: bool):
+        """Enable or disable toolbar buttons based on sticker selection."""
+        self.btn_add_text.setEnabled(enabled)
+        self.btn_add_rect.setEnabled(enabled)
+        self.btn_add_line.setEnabled(enabled)
+        self.btn_add_code.setEnabled(enabled)
+        
+        # Update visual appearance when disabled
+        opacity = "1.0" if enabled else "0.4"
+        cursor = "pointer" if enabled else "not-allowed"
+        
+        disabled_style = f"""
+            QPushButton {{
+                background: #F1F5F9;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+                color: #94A3B8;
+                opacity: {opacity};
+            }}
+            QPushButton:hover {{
+                background: #F1F5F9;
+                border: 1px solid #CBD5E1;
+            }}
+        """
+        
+        enabled_style = """
+            QPushButton {
+                background: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+                color: #334155;
+            }
+            QPushButton:hover {
+                background: #F8FAFC;
+                border: 1px solid #94A3B8;
+            }
+        """
+        
+        style = enabled_style if enabled else disabled_style
+        
+        for btn in [self.btn_add_text, self.btn_add_rect, self.btn_add_line, self.btn_add_code]:
+            btn.setStyleSheet(style)
+            btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
     def _copy_selected(self):
         """Copy currently selected item to internal clipboard."""
