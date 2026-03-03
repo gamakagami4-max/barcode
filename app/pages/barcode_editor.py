@@ -1209,6 +1209,9 @@ class BarcodeEditorPage(QWidget):
             child = self.inspector_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
 
+        self.view.setVisible(False)
+        self._canvas_placeholder.setVisible(True)
+
         if form_data:
             w = int(form_data.get("w_px") or 600)
             h = int(form_data.get("h_px") or 400)
@@ -1571,6 +1574,140 @@ class BarcodeEditorPage(QWidget):
         self.btn_add_code.clicked.connect(lambda: self.add_element("barcode"))
         self.save_btn.clicked.connect(self._on_save_clicked)
         self.scene.selectionChanged.connect(self.on_selection_changed)
+
+        # Add clipboard for copy-paste (add at the end of init_ui)
+        self._clipboard_item = None
+        
+        # Enable focus for key events
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.view.setFocusPolicy(Qt.StrongFocus)
+
+    def keyPressEvent(self, event):
+        """Handle copy-paste keyboard shortcuts."""
+        if event.modifiers() == Qt.ControlModifier:
+            if event.key() == Qt.Key_C:
+                self._copy_selected()
+                event.accept()
+                return
+            elif event.key() == Qt.Key_V:
+                self._paste_clipboard()
+                event.accept()
+                return
+            elif event.key() == Qt.Key_D:
+                self._duplicate_selected()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def _copy_selected(self):
+        """Copy currently selected item to internal clipboard."""
+        selected = self.scene.selectedItems()
+        if not selected:
+            return
+        
+        item = selected[0]
+        self._clipboard_item = self._serialize_item(item)
+        print(f"[Copy] Copied {self._clipboard_item.get('type', 'unknown')} to clipboard")
+
+    def _paste_clipboard(self):
+        """Paste item from clipboard with offset."""
+        if not self._clipboard_item:
+            return
+        
+        # Check if we have a valid sticker/canvas
+        if not self._sticker_name:
+            QMessageBox.information(self, "Paste", "Please select a sticker first before pasting.")
+            return
+        
+        data = self._clipboard_item.copy()
+        
+        # Offset position to avoid exact overlap
+        offset = 20
+        data['x'] = data.get('x', 0) + offset
+        data['y'] = data.get('y', 0) + offset
+        
+        # Ensure within bounds
+        data['x'] = max(0, min(data['x'], self._canvas_w - 50))
+        data['y'] = max(0, min(data['y'], self._canvas_h - 50))
+        
+        # Create new item from data
+        item = self._create_item_from_data(data)
+        if not item:
+            return
+        
+        # Add to scene
+        self.scene.addItem(item)
+        
+        # Add to component list
+        li = QListWidgetItem(self.get_component_display_name(item))
+        li.graphics_item = item
+        self.component_list.insertItem(0, li)
+        self.comp_count_badge.setText(str(self.component_list.count()))
+        
+        # Select the new item
+        self.scene.clearSelection()
+        item.setSelected(True)
+        
+        # Update z-order
+        self.sync_z_order_from_list()
+        
+        print(f"[Paste] Pasted {data.get('type', 'unknown')} at ({data['x']}, {data['y']})")
+
+    def _duplicate_selected(self):
+        """Duplicate currently selected item (Ctrl+D)."""
+        self._copy_selected()
+        self._paste_clipboard()
+
+    def _create_item_from_data(self, data: dict):
+        """Create a graphics item from serialized data."""
+        kind = data.get('type')
+        flags = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges
+        
+        if kind == 'text':
+            item = QGraphicsTextItem(data.get('text', ''))
+            font = QFont(data.get('font_family', 'Arial'), data.get('font_size', 10))
+            font.setBold(data.get('bold', False))
+            font.setItalic(data.get('italic', False))
+            item.setFont(font)
+            item.component_name = data.get('name', 'Text')
+            item.setDefaultTextColor(QColor(data.get('color', '#000000')))
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+            
+        elif kind == 'line':
+            item = QGraphicsLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
+            pen = QPen(QColor(data.get('color', '#000000')), data.get('thickness', 2))
+            item.setPen(pen)
+            item.component_name = data.get('name', 'Line')
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+            
+        elif kind == 'rect':
+            item = QGraphicsRectItem(0, 0, data.get('width', 100), data.get('height', 50))
+            pen = QPen(QColor(data.get('border_color', '#000000')), data.get('border_width', 2))
+            item.setPen(pen)
+            item.component_name = data.get('name', 'Rectangle')
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+            
+        elif kind == 'barcode':
+            item = BarcodeItem(self.update_pos_label, design=data.get('design', 'CODE128'))
+            item.container_width = data.get('container_width', 160)
+            item.container_height = data.get('container_height', 80)
+            item.component_name = data.get('name', 'Barcode')
+            # Recreate barcode with new dimensions
+            item.bg.setRect(0, 0, item.container_width, item.container_height)
+            
+        else:
+            return None
+        
+        # Set common properties
+        item.setPos(data.get('x', 0), data.get('y', 0))
+        item.setZValue(data.get('z', 0))
+        item.setVisible(data.get('visible', True))
+        item.setRotation(data.get('rotation', 0))
+        
+        return item
 
     def _on_save_clicked(self):
         # Read all fields from the General tab
