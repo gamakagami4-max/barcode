@@ -194,13 +194,35 @@ class BarcodeListPage(QWidget):
         pending = getattr(self, "_pending_new_design", None)
 
         if pending:
-            # ── New design: insert row first, then save layout ──────────
+            # ── New design: validate pk then insert ────────────────────
+            pk_from_editor = (payload.get("pk") or "").strip()
+            if not pk_from_editor:
+                QMessageBox.warning(
+                    self, "Code Required",
+                    "Please enter a Code in the General tab before saving."
+                )
+                return
+            if not (payload.get("name") or "").strip():
+                QMessageBox.warning(
+                    self, "Name Required",
+                    "Please enter a Name in the General tab before saving."
+                )
+                return
+            if fetch_mbarcd_by_pk(pk_from_editor) is not None:
+                QMessageBox.warning(
+                    self, "Duplicate Code",
+                    f"A barcode design with code '{pk_from_editor}' already exists."
+                    "Please choose a different code."
+                )
+                return
+
+            # Merge editor values into pending
+            pending["pk"]           = pk_from_editor
             pending["sticker_name"] = payload.get("sticker_name") or pending.get("sticker_name")
             pending["w_px"]         = payload.get("w_px") or pending.get("w_px", 600)
             pending["h_px"]         = payload.get("h_px") or pending.get("h_px", 400)
             pending["w_in"]         = payload.get("w_in") or pending.get("w_in", 0.0)
             pending["h_in"]         = payload.get("h_in") or pending.get("h_in", 0.0)
-            # Carry through name and dp_fg from editor
             if payload.get("name"):
                 pending["name"] = payload["name"]
             if payload.get("dp_fg") is not None:
@@ -210,9 +232,9 @@ class BarcodeListPage(QWidget):
             self._pending_new_design = None
             try:
                 from server.repositories.mbarcd_repo import fetch_mbarcd_by_pk
-                record = fetch_mbarcd_by_pk(payload["pk"])
+                record = fetch_mbarcd_by_pk(pk_from_editor)
                 if record:
-                    self.all_dicts[payload["pk"]] = record
+                    self.all_dicts[pk_from_editor] = record
             except Exception:
                 pass
             self._save_design_layout(payload, is_new=True)
@@ -668,125 +690,21 @@ class BarcodeListPage(QWidget):
     # ------------------------------------------------------------------
 
     def handle_add_action(self):
-        sticker_data = _fetch_sticker_data()
-        sticker_options = list(sticker_data.keys())
-
-        modal = GenericFormModal(
-            title="New Barcode Design",
-            subtitle="Enter the design details before opening the editor.",
-            mode="add",
-            fields=[
-                {
-                    "name": "pk",
-                    "label": "Code",
-                    "type": "text",
-                    "required": True,
-                    "placeholder": "e.g. BRCD-001",
-                },
-                {
-                    "name": "name",
-                    "label": "Name",
-                    "type": "text",
-                    "required": True,
-                    "placeholder": "e.g. Shipping Label A4",
-                },
-                {
-                    "name": "sticker_name",
-                    "label": "Sticker",
-                    "type": "select",
-                    "required": True,
-                    "options": sticker_options,
-                    "placeholder": "— Select sticker —",
-                },
-                {
-                    "name": "height_display",
-                    "label": "Height",
-                    "type": "readonly",
-                },
-                {
-                    "name": "width_display",
-                    "label": "Width",
-                    "type": "readonly",
-                },
-                {
-                    "name": "dp_fg",
-                    "label": "Display Flag",
-                    "type": "select",
-                    "options": ["0 — Not Display", "1 — Display"],
-                    "placeholder": "Select display status",
-                },
-                {
-                    "name": "db_fg",
-                    "label": "DB Flag",
-                    "type": "select",
-                    "options": ["0 — No", "1 — Yes"],
-                    "placeholder": "Select DB flag",
-                },
-            ],
-            parent=self,
-            min_width=520,
-        )
-
-        def _on_sticker_changed(field_name: str, value: str):
-            if field_name != "sticker_name":
-                return
-            d = sticker_data.get(value)
-            if d:
-                modal.set_field_value("height_display", f"{d['h_in']} in  ·  {d['h_px']} px")
-                modal.set_field_value("width_display",  f"{d['w_in']} in  ·  {d['w_px']} px")
-            else:
-                modal.set_field_value("height_display", "")
-                modal.set_field_value("width_display",  "")
-
-        modal.fieldChanged.connect(_on_sticker_changed)
-        modal.formSubmitted.connect(self._on_new_design_submitted)
-        modal._sticker_data = sticker_data
-        modal.exec()
-
-    def _on_new_design_submitted(self, data: dict):
-        pk = data.get("pk", "").strip()
-
-        if fetch_mbarcd_by_pk(pk) is not None:
-            QMessageBox.warning(
-                self, "Duplicate Code",
-                f"A barcode design with code '{pk}' already exists.\n"
-                "Please choose a different code."
-            )
-            return
-
-        sticker_key = data.get("sticker_name", "").strip()
-
-        sticker_data = getattr(
-            self.sender(), "_sticker_data",
-            getattr(self, "_last_sticker_data", {})
-        )
-        dims = sticker_data.get(sticker_key) or {}
-
-        h_in = float(dims.get("h_in", 0))
-        w_in = float(dims.get("w_in", 0))
-        h_px = int(dims.get("h_px", 400))
-        w_px = int(dims.get("w_px", 600))
-
-        dp_raw = data.get("dp_fg", "0")
-        db_raw = data.get("db_fg", "0")
-        dp_fg  = 1 if str(dp_raw).startswith("1") else 0
-        db_fg  = 1 if str(db_raw).startswith("1") else 0
-
-        form_data = {
-            "pk":           pk,
-            "name":         data.get("name", "").strip(),
-            "sticker_name": sticker_key or None,
-            "h_in":         h_in,
-            "w_in":         w_in,
-            "h_px":         h_px,
-            "w_px":         w_px,
-            "dp_fg":        dp_fg,
-            "db_fg":        db_fg,
+        # Open the editor directly with a blank form — no modal needed
+        blank = {
+            "pk":           "",
+            "name":         "",
+            "sticker_name": "",
+            "h_in":         0.0,
+            "w_in":         0.0,
+            "h_px":         400,
+            "w_px":         600,
+            "dp_fg":        0,
+            "db_fg":        0,
             "flag": 0, "cont": 0, "print_": 0, "print_flag": 0, "ad_fg": 0,
         }
-
-        self._pending_new_design = form_data
-        self._editor_page.reset_for_new(form_data)
+        self._pending_new_design = blank
+        self._editor_page.reset_for_new(blank)
         self._show_editor()
 
     def handle_edit_action(self):

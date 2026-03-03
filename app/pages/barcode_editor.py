@@ -1217,6 +1217,7 @@ class BarcodeEditorPage(QWidget):
             w_px         = w,
             dp_fg        = self._dp_fg,
         )
+        self._switch_tab(0)  # always open on General tab
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
         self.reset_for_new()
@@ -1278,6 +1279,7 @@ class BarcodeEditorPage(QWidget):
             w_px         = self._canvas_w,
             dp_fg        = self._dp_fg,
         )
+        self._switch_tab(0)  # always open on General tab
 
     def serialize_canvas(self) -> list[dict]:
         elements = []
