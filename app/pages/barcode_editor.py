@@ -578,10 +578,8 @@ class TextPropertyEditor(QWidget):
             l.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
             return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
-        self.align_combo.currentTextChanged.connect(self._apply_alignment)
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
         self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
-        self.font_combo.currentTextChanged.connect(self._apply_font_family)
         layout.addRow(lbl("FONT NAME :"), self.font_combo)
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
@@ -597,7 +595,6 @@ class TextPropertyEditor(QWidget):
         self.angle_combo.currentTextChanged.connect(lambda v: self.item.setRotation(angle_map.get(v, 0)))
         layout.addRow(lbl("ANGLE :"), self.angle_combo)
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
-        self.inverse_combo.currentTextChanged.connect(self._apply_inverse)
         layout.addRow(lbl("INVERSE :"), self.inverse_combo)
         self.type_combo = make_chevron_combo(["FIX", "VAR"])
         layout.addRow(lbl("TYPE :"), self.type_combo)
@@ -643,7 +640,11 @@ class TextPropertyEditor(QWidget):
         self.format_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FORMAT :"), self.format_edit)
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
-        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE"))
+        # Get stored visibility or default to True
+        current_visible = getattr(self.item, "design_visible", None)
+        visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
+        self.visible_combo.setCurrentText(visible_val)
+        self.visible_combo.currentTextChanged.connect(self._apply_visible)
         layout.addRow(lbl("VISIBLE :"), self.visible_combo)
         self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
         layout.addRow(lbl("SAVE FIELD :"), self.save_field_combo)
@@ -651,6 +652,11 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("COLUMN :"), self.column_spin)
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
         layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
+
+        self.align_combo.currentTextChanged.connect(self._apply_alignment)
+        self.font_combo.currentTextChanged.connect(self._apply_font_family)
+                # Apply initial visual indicator for visibility state
+        self._update_visibility_indicator()
 
     def _apply_alignment(self, value):
         align_map = {
@@ -700,6 +706,33 @@ class TextPropertyEditor(QWidget):
     def _apply_inverse(self, value):
         self.item.setDefaultTextColor(QColor("white") if value == "YES" else QColor("black"))
 
+    def _apply_visible(self, value):
+        # Store visibility for backend, don't actually hide on canvas
+        self.item.design_visible = (value == "TRUE")
+        self._update_visibility_indicator()
+        self.update_callback()
+
+    def _update_visibility_indicator(self):
+        """Add visual indicator that item is set to invisible in final output"""
+        is_design_visible = getattr(self.item, "design_visible", True)
+        
+        # Remove existing indicator if any
+        for child in self.item.childItems():
+            if getattr(child, "is_visibility_indicator", False):
+                child.setParentItem(None)
+                if child.scene():
+                    child.scene().removeItem(child)
+                del child
+        
+        if not is_design_visible:
+            # Add a red dashed border to indicate "hidden in output"
+            rect = self.item.boundingRect()
+            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
+            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
+            indicator.setBrush(Qt.NoBrush)
+            indicator.setEnabled(False)  # Don't interfere with mouse events
+            indicator.is_visibility_indicator = True
+
     def apply_text_changes(self, text):
         self.item.setPlainText(text); self.update_callback()
 
@@ -730,8 +763,15 @@ class LinePropertyEditor(QWidget):
         self.width_spin = make_spin(0, 5000, int(abs(line.dx()))); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y())); self.top_spin.valueChanged.connect(lambda v: self.item.setY(v)); layout.addRow(lbl("TOP :"), self.top_spin)
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
-        self.visible_combo = make_chevron_combo(["TRUE", "FALSE"]); self.visible_combo.setCurrentText("TRUE" if self.item.isVisible() else "FALSE")
-        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE")); layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
+        # Get stored visibility or default to True
+        current_visible = getattr(self.item, "design_visible", None)
+        visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
+        self.visible_combo.setCurrentText(visible_val)
+        self.visible_combo.currentTextChanged.connect(self._apply_visible)
+        layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        # Apply initial visual indicator
+        self._update_visibility_indicator()
 
     def update_geometry(self): self.item.setLine(0, 0, self.width_spin.value(), 0); self.update_callback()
     def update_thickness(self, value): pen = self.item.pen(); pen.setWidth(value); self.item.setPen(pen); self.update_callback()
@@ -739,6 +779,32 @@ class LinePropertyEditor(QWidget):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
+
+    def _apply_visible(self, value):
+        # Store visibility for backend, don't actually hide on canvas
+        self.item.design_visible = (value == "TRUE")
+        self._update_visibility_indicator()
+        self.update_callback()
+
+    def _update_visibility_indicator(self):
+        """Add visual indicator that item is set to invisible in final output"""
+        is_design_visible = getattr(self.item, "design_visible", True)
+        
+        # Remove existing indicator if any
+        for child in self.item.childItems():
+            if getattr(child, "is_visibility_indicator", False):
+                child.setParentItem(None)
+                if child.scene():
+                    child.scene().removeItem(child)
+        
+        if not is_design_visible:
+            # Add a red dashed border to indicate "hidden in output"
+            rect = self.item.boundingRect()
+            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
+            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
+            indicator.setBrush(Qt.NoBrush)
+            indicator.setEnabled(False)
+            indicator.is_visibility_indicator = True
 
 
 class RectanglePropertyEditor(QWidget):
@@ -762,8 +828,15 @@ class RectanglePropertyEditor(QWidget):
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y())); self.top_spin.valueChanged.connect(lambda v: self.item.setY(v)); layout.addRow(lbl("TOP :"), self.top_spin)
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
         self.border_spin = make_spin(0, 20, int(pen.width())); self.border_spin.valueChanged.connect(self.update_border); layout.addRow(lbl("BORDER WIDTH :"), self.border_spin)
-        self.visible_combo = make_chevron_combo(["TRUE", "FALSE"]); self.visible_combo.setCurrentText("TRUE" if self.item.isVisible() else "FALSE")
-        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE")); layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
+        # Get stored visibility or default to True
+        current_visible = getattr(self.item, "design_visible", None)
+        visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
+        self.visible_combo.setCurrentText(visible_val)
+        self.visible_combo.currentTextChanged.connect(self._apply_visible)
+        layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        # Apply initial visual indicator
+        self._update_visibility_indicator()
         self.column_spin = make_spin(1, 999, 1); layout.addRow(lbl("COLUMN :"), self.column_spin)
 
     def update_geometry(self): self.item.setRect(0, 0, self.width_spin.value(), self.height_spin.value()); self.update_callback()
@@ -772,6 +845,32 @@ class RectanglePropertyEditor(QWidget):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
+    
+    def _apply_visible(self, value):
+        # Store visibility for backend, don't actually hide on canvas
+        self.item.design_visible = (value == "TRUE")
+        self._update_visibility_indicator()
+        self.update_callback()
+
+    def _update_visibility_indicator(self):
+        """Add visual indicator that item is set to invisible in final output"""
+        is_design_visible = getattr(self.item, "design_visible", True)
+        
+        # Remove existing indicator if any
+        for child in self.item.childItems():
+            if getattr(child, "is_visibility_indicator", False):
+                child.setParentItem(None)
+                if child.scene():
+                    child.scene().removeItem(child)
+        
+        if not is_design_visible:
+            # Add a red dashed border to indicate "hidden in output"
+            rect = self.item.rect()
+            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3), self.item)
+            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
+            indicator.setBrush(Qt.NoBrush)
+            indicator.setEnabled(False)
+            indicator.is_visibility_indicator = True
 
 
 class BarcodePropertyEditor(QWidget):
@@ -793,8 +892,15 @@ class BarcodePropertyEditor(QWidget):
         self.height_spin = make_spin(20, 1000, self.item.container_height); self.height_spin.valueChanged.connect(self.update_size); layout.addRow(lbl("HEIGHT :"), self.height_spin)
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y())); self.top_spin.valueChanged.connect(lambda v: self.item.setY(v)); layout.addRow(lbl("TOP :"), self.top_spin)
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
-        self.visible_combo = make_chevron_combo(["TRUE","FALSE"]); self.visible_combo.setCurrentText("TRUE" if self.item.isVisible() else "FALSE")
-        self.visible_combo.currentTextChanged.connect(lambda v: self.item.setVisible(v == "TRUE")); layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        self.visible_combo = make_chevron_combo(["TRUE","FALSE"])
+        # Get stored visibility or default to True
+        current_visible = getattr(self.item, "design_visible", None)
+        visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
+        self.visible_combo.setCurrentText(visible_val)
+        self.visible_combo.currentTextChanged.connect(self._apply_visible)
+        layout.addRow(lbl("VISIBLE :"), self.visible_combo)
+        # Apply initial visual indicator
+        self._update_visibility_indicator()
 
     def update_design(self, new_design):
         old_scene_pos = self.item.scenePos()
@@ -827,6 +933,34 @@ class BarcodePropertyEditor(QWidget):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
+
+    
+    def _apply_visible(self, value):
+        # Store visibility for backend, don't actually hide on canvas
+        self.item.design_visible = (value == "TRUE")
+        self._update_visibility_indicator()
+        self.update_callback()
+
+    def _update_visibility_indicator(self):
+        """Add visual indicator that item is set to invisible in final output"""
+        is_design_visible = getattr(self.item, "design_visible", True)
+        
+        # Remove existing indicator if any (check child items of the group)
+        for child in self.item.childItems():
+            if getattr(child, "is_visibility_indicator", False):
+                self.item.removeFromGroup(child)
+                if child.scene():
+                    child.scene().removeItem(child)
+        
+        if not is_design_visible:
+            # Add a red dashed border around the barcode background
+            rect = self.item.bg.rect()
+            indicator = QGraphicsRectItem(rect.adjusted(-3, -3, 3, 3))
+            indicator.setPen(QPen(QColor("#EF4444"), 1, Qt.DashLine))
+            indicator.setBrush(Qt.NoBrush)
+            indicator.setEnabled(False)
+            indicator.is_visibility_indicator = True
+            self.item.addToGroup(indicator)
 
 
 # --- Custom Scene Items ---
@@ -1374,13 +1508,17 @@ class BarcodeEditorPage(QWidget):
         return elements
 
     def _serialize_item(self, item) -> dict | None:
+        # Get the design visibility (stored property) rather than actual visibility
+        design_visible = getattr(item, "design_visible", True)
+        
         base = {"x": round(item.pos().x(),2), "y": round(item.pos().y(),2), "z": item.zValue(),
-                "visible": item.isVisible(), "rotation": item.rotation(), "name": getattr(item,"component_name","")}
+                "visible": design_visible, "rotation": item.rotation(), "name": getattr(item,"component_name","")}
         if isinstance(item, BarcodeItem):
             base.update({"type":"barcode","design":item.design,"container_width":item.container_width,"container_height":item.container_height}); return base
         if isinstance(item, QGraphicsTextItem):
             font = item.font()
-            base.update({"type":"text","text":item.toPlainText(),"font_size":font.pointSize(),"font_family":font.family(),"bold":font.bold(),"italic":font.italic()}); return base
+            color = item.defaultTextColor().name()
+            base.update({"type":"text","text":item.toPlainText(),"font_size":font.pointSize(),"font_family":font.family(),"bold":font.bold(),"italic":font.italic(),"color":color}); return base
         if isinstance(item, QGraphicsLineItem):
             line = item.line(); pen = item.pen()
             base.update({"type":"line","x2":round(line.x2(),2),"y2":round(line.y2(),2),"thickness":pen.width()}); return base
@@ -1397,8 +1535,11 @@ class BarcodeEditorPage(QWidget):
                 item = QGraphicsTextItem(d.get("text",""))
                 font = QFont(d.get("font_family","Arial"), d.get("font_size",10))
                 font.setBold(d.get("bold",False)); font.setItalic(d.get("italic",False))
-                item.setFont(font); item.component_name = d.get("name","Text")
+                item.setFont(font)
+                item.setDefaultTextColor(QColor(d.get("color","#000000")))
+                item.component_name = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
+
             elif kind == "line":
                 item = QGraphicsLineItem(0, 0, d.get("x2",100), d.get("y2",0))
                 item.setPen(QPen(Qt.black, d.get("thickness",2))); item.component_name = d.get("name","Line")
@@ -1413,7 +1554,11 @@ class BarcodeEditorPage(QWidget):
                 item.component_name = d.get("name","Barcode"); item.bg.setRect(0,0,item.container_width,item.container_height)
             if item is None: continue
             item.setPos(d.get("x",0), d.get("y",0)); item.setZValue(d.get("z",0))
-            item.setVisible(d.get("visible",True)); item.setRotation(d.get("rotation",0))
+            # Store the design visibility as a property, don't actually hide on canvas
+            item.design_visible = d.get("visible", True)
+            # Always show on canvas for editing
+            item.setVisible(True)
+            item.setRotation(d.get("rotation",0))
             self.scene.addItem(item)
             li = QListWidgetItem(self.get_component_display_name(item)); li.graphics_item = item
             self.component_list.addItem(li)
@@ -1827,9 +1972,12 @@ class BarcodeEditorPage(QWidget):
             return None
         
         # Set common properties
+                # Set common properties
         item.setPos(data.get('x', 0), data.get('y', 0))
         item.setZValue(data.get('z', 0))
-        item.setVisible(data.get('visible', True))
+        # Store visibility for backend, always show on canvas
+        item.design_visible = data.get('visible', True)
+        item.setVisible(True)  # Always visible on canvas
         item.setRotation(data.get('rotation', 0))
         
         return item
