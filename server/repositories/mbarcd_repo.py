@@ -130,61 +130,123 @@ def fetch_mbarcd_by_pk(pk: str) -> dict | None:
 
 
 # ── Layout (Canvas Design Persistence) ───────────────────────────────────────
-#
-# IMPORTANT: Run this migration once on your database before using these functions:
-#
-#   ALTER TABLE barcodesap.mbarcd
-#       ADD COLUMN IF NOT EXISTS mbusrm text,
-#       ADD COLUMN IF NOT EXISTS mbitrm text;
-#
-# mbusrm stores the canvas element list as JSON:
-#   [{"type":"text","x":50,"y":30,"text":"LABEL","font_size":10,...}, ...]
-#
-# mbitrm stores canvas metadata as JSON:
-#   {"canvas_w": 600, "canvas_h": 400}
-#
-# Both are used to restore the visual design when the user clicks Edit.
-# Later, mbusrm elements can be converted to ZPL commands for printing.
-# ─────────────────────────────────────────────────────────────────────────────
 
-def update_mbarcd_layout(pk: str, usrm: str, itrm: str, is_new: bool = False) -> None:
+def update_mbarcd_layout(
+    pk: str,
+    usrm: str,
+    itrm: str,
+    is_new: bool = False,
+    sticker_name: str = "",
+    h_in: float = 0.0,
+    w_in: float = 0.0,
+    h_px: int = 0,
+    w_px: int = 0,
+    name: str = "",
+    dp_fg: int | None = None,
+    user: str = "SYSTEM",
+    new_pk: str = "",
+) -> None:
     """
     Persist the barcode canvas design to mbarcd.
       mbusrm — JSON list of canvas elements (positions, types, properties)
       mbitrm — JSON dict of canvas metadata  {"canvas_w": 600, "canvas_h": 400}
-
-    Run this migration once before calling this function:
-        ALTER TABLE barcodesap.mbarcd
-            ADD COLUMN IF NOT EXISTS mbusrm text,
-            ADD COLUMN IF NOT EXISTS mbitrm text;
+      mbbrnm — barcode name
+      mbdpfg — display flag (1 = display, 0 = not display)
     """
+    pk = pk.strip()  # guard against accidental whitespace (this is the DB key)
+    new_pk = (new_pk or pk).strip()  # rename target; defaults to same pk
+    print(f"[update_mbarcd_layout] Saving pk={pk!r} -> new_pk={new_pk!r} name={name!r} dp_fg={dp_fg!r} is_new={is_new}")
     conn = get_connection()
     try:
         cur = conn.cursor()
+
+        # ── Guarantee layout columns exist (idempotent migration) ─────
+        cur.execute(
+            """
+            ALTER TABLE barcodesap.mbarcd
+                ADD COLUMN IF NOT EXISTS mbusrm text,
+                ADD COLUMN IF NOT EXISTS mbitrm text
+            """
+        )
+        conn.commit()  # commit DDL separately so columns are visible to DML
+
+        # ── Verify record exists and log nearby keys if not ───────────
+        cur.execute(
+            "SELECT mbbrcd FROM barcodesap.mbarcd WHERE mbbrcd = %s", (pk,)
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "SELECT mbbrcd FROM barcodesap.mbarcd ORDER BY mbaddt DESC LIMIT 10"
+            )
+            recent = [r[0] for r in cur.fetchall()]
+            raise Exception(
+                f"pk={pk!r} NOT FOUND. Recent pks: {recent}"
+            )
+
         if is_new:
             cur.execute(
                 """
                 UPDATE barcodesap.mbarcd
-                SET mbusrm = %s,
-                    mbitrm = %s
+                SET mbbrcd = %s,
+                    mbusrm = %s,
+                    mbitrm = %s,
+                    mbstnm = %s,
+                    mbheig = %s,
+                    mbwidt = %s,
+                    mbpixh = %s,
+                    mbpixw = %s,
+                    mbbrnm = CASE WHEN %s <> '' THEN %s ELSE mbbrnm END,
+                    mbdpfg = CASE WHEN %s IS NOT NULL THEN %s ELSE mbdpfg END
                 WHERE mbbrcd = %s
                 """,
-                (usrm, itrm, pk),
+                (
+                    new_pk,
+                    usrm, itrm,
+                    sticker_name or None,
+                    h_in if h_in else None,
+                    w_in if w_in else None,
+                    h_px if h_px else None,
+                    w_px if w_px else None,
+                    name, name,
+                    dp_fg, dp_fg,
+                    pk,
+                ),
             )
         else:
             cur.execute(
                 """
                 UPDATE barcodesap.mbarcd
-                SET mbusrm = %s,
+                SET mbbrcd = %s,
+                    mbusrm = %s,
                     mbitrm = %s,
-                    mbchno = mbchno + 1
+                    mbstnm = %s,
+                    mbheig = %s,
+                    mbwidt = %s,
+                    mbpixh = %s,
+                    mbpixw = %s,
+                    mbbrnm = CASE WHEN %s <> '' THEN %s ELSE mbbrnm END,
+                    mbdpfg = CASE WHEN %s IS NOT NULL THEN %s ELSE mbdpfg END,
+                    mbchno = mbchno + 1,
+                    mbchby = %s,
+                    mbchdt = NOW()
                 WHERE mbbrcd = %s
                 """,
-                (usrm, itrm, pk),
+                (
+                    new_pk,
+                    usrm, itrm,
+                    sticker_name or None,
+                    h_in if h_in else None,
+                    w_in if w_in else None,
+                    h_px if h_px else None,
+                    w_px if w_px else None,
+                    name, name,
+                    dp_fg, dp_fg,
+                    user,
+                    pk,
+                ),
             )
-        if cur.rowcount == 0:
-            raise Exception(f"Record '{pk}' not found or already deleted.")
         conn.commit()
+        print(f"[update_mbarcd_layout] pk={pk!r} rowcount={cur.rowcount} is_new={is_new}")
     except Exception:
         conn.rollback()
         raise

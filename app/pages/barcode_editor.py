@@ -930,20 +930,17 @@ class GeneralTab(QWidget):
 
         muted_style = f"color:{COLORS['text_mute']}; font-size:10px; background:transparent; border:none;"
 
-        # ── Card with no border ───────────────────────────────────────
+        # ── Card ──────────────────────────────────────────────────────
         card = QFrame()
         card.setStyleSheet(
             "QFrame { background: white; border: none; border-radius: 8px; }"
         )
 
-        # ── Single QGridLayout for perfect row alignment ───────────────
-        # Columns: 0=left labels, 1=left values, 2=vdiv, 3=mid labels,
-        #          4=mid values, 5=vdiv2, 6=right content, 7=stretch
         card_layout = QGridLayout(card)
         card_layout.setContentsMargins(16, 14, 16, 14)
         card_layout.setHorizontalSpacing(10)
         card_layout.setVerticalSpacing(10)
-        card_layout.setColumnStretch(7, 1)  # trailing stretch
+        card_layout.setColumnStretch(7, 1)
 
         # ── LEFT: Sticker / Height / Width ────────────────────────────
         sticker_keys = list(self._sticker_data.keys())
@@ -953,7 +950,6 @@ class GeneralTab(QWidget):
         card_layout.addWidget(lbl("STICKER :"), 0, 0, Qt.AlignVCenter | Qt.AlignLeft)
         card_layout.addWidget(self.sticker_combo, 0, 1, Qt.AlignVCenter)
 
-        # Height row
         h_row_w = QWidget(); h_row_w.setStyleSheet("background: transparent; border: none;")
         h_hl = QHBoxLayout(h_row_w); h_hl.setContentsMargins(0, 0, 0, 0); h_hl.setSpacing(4)
         self.height_inch = make_readonly(); self.height_inch.setFixedWidth(70)
@@ -966,7 +962,6 @@ class GeneralTab(QWidget):
         card_layout.addWidget(lbl("HEIGHT :"), 1, 0, Qt.AlignVCenter | Qt.AlignLeft)
         card_layout.addWidget(h_row_w, 1, 1, Qt.AlignVCenter)
 
-        # Width row
         w_row_w = QWidget(); w_row_w.setStyleSheet("background: transparent; border: none;")
         w_hl = QHBoxLayout(w_row_w); w_hl.setContentsMargins(0, 0, 0, 0); w_hl.setSpacing(4)
         self.width_inch = make_readonly(); self.width_inch.setFixedWidth(70)
@@ -983,7 +978,7 @@ class GeneralTab(QWidget):
         vdiv = QFrame()
         vdiv.setFrameShape(QFrame.VLine)
         vdiv.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        card_layout.addWidget(vdiv, 0, 2, 3, 1)  # span all 3 rows
+        card_layout.addWidget(vdiv, 0, 2, 3, 1)
         card_layout.setColumnMinimumWidth(2, 32)
 
         # ── MIDDLE: Code / Name / Display Status ──────────────────────
@@ -991,7 +986,8 @@ class GeneralTab(QWidget):
         self.code_input.setFixedWidth(160)
         self.name_input = make_input("e.g. Member Label A4")
         self.name_input.setFixedWidth(220)
-        self.status_combo = make_chevron_combo(["ACTIVE", "INACTIVE", "DRAFT"])
+        # Display status: maps to dp_fg (1 = DISPLAY, 0 = NOT DISPLAY)
+        self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
         self.status_combo.setFixedWidth(160)
 
         card_layout.addWidget(lbl("CODE :"),           0, 3, Qt.AlignVCenter | Qt.AlignLeft)
@@ -1028,7 +1024,6 @@ class GeneralTab(QWidget):
 
         card_layout.addWidget(right_w, 0, 6, 3, 1, Qt.AlignTop | Qt.AlignLeft)
 
-        # Trailing stretch column
         card_layout.addItem(
             QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum),
             0, 7, 3, 1
@@ -1037,7 +1032,6 @@ class GeneralTab(QWidget):
         root.addWidget(card)
         root.addStretch()
 
-        # Wire sticker combo → auto-fill dimensions
         self.sticker_combo.currentTextChanged.connect(self._on_sticker_changed)
 
     # ── Sticker selection handler ─────────────────────────────────────
@@ -1060,9 +1054,16 @@ class GeneralTab(QWidget):
 
     def sync_from_design(self, code: str, name: str, sticker_name: str = "",
                          h_in: float = 0.0, w_in: float = 0.0,
-                         h_px: int = 0, w_px: int = 0):
+                         h_px: int = 0, w_px: int = 0,
+                         dp_fg: int = 0):
         self.code_input.setText(code)
         self.name_input.setText(name)
+
+        # Sync display status combo
+        self.status_combo.blockSignals(True)
+        self.status_combo.setCurrentText("DISPLAY" if dp_fg == 1 else "NOT DISPLAY")
+        self.status_combo.blockSignals(False)
+
         self.sticker_combo.blockSignals(True)
         if sticker_name and sticker_name in self._sticker_data:
             idx = self.sticker_combo.findText(sticker_name)
@@ -1091,6 +1092,10 @@ class GeneralTab(QWidget):
             h = 400
         return w, h
 
+    def get_dp_fg(self) -> int:
+        """Return 1 if DISPLAY, 0 otherwise."""
+        return 1 if self.status_combo.currentText() == "DISPLAY" else 0
+
 
 # --- Main Page ---
 
@@ -1103,6 +1108,9 @@ class BarcodeEditorPage(QWidget):
         self._canvas_h = 400
         self._design_code = ""
         self._design_name = ""
+        self._sticker_name = ""
+        self._h_in = 0.0
+        self._w_in = 0.0
         self.init_ui()
 
     def reset_for_new(self, form_data: dict | None = None):
@@ -1118,17 +1126,21 @@ class BarcodeEditorPage(QWidget):
         if form_data:
             w = int(form_data.get("w_px") or 600)
             h = int(form_data.get("h_px") or 400)
-            self._design_code    = form_data.get("pk", "")
-            self._design_name    = form_data.get("name", "")
-            self._sticker_name   = str(form_data.get("sticker_name") or "")
-            self._h_in           = float(form_data.get("h_in") or 0.0)
-            self._w_in           = float(form_data.get("w_in") or 0.0)
+            self._design_code  = form_data.get("pk", "")
+            self._original_pk  = self._design_code  # pk as it exists in DB
+            self._design_name  = form_data.get("name", "")
+            self._sticker_name = str(form_data.get("sticker_name") or "")
+            self._h_in         = float(form_data.get("h_in") or 0.0)
+            self._w_in         = float(form_data.get("w_in") or 0.0)
+            self._dp_fg        = int(form_data.get("dp_fg") or 0)
         else:
             w, h = 600, 400
             self._design_code  = ""
+            self._original_pk  = ""
             self._design_name  = ""
             self._sticker_name = ""
             self._h_in = self._w_in = 0.0
+            self._dp_fg = 0
 
         self._canvas_w, self._canvas_h = w, h
         self.scene.setSceneRect(QRectF(0, 0, w, h))
@@ -1141,6 +1153,7 @@ class BarcodeEditorPage(QWidget):
             w_in         = self._w_in,
             h_px         = h,
             w_px         = w,
+            dp_fg        = self._dp_fg,
         )
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
@@ -1151,6 +1164,7 @@ class BarcodeEditorPage(QWidget):
             h = int(row_dict.get("h_px") or self._canvas_h)
             h_in = float(row_dict.get("h_in") or 0.0)
             w_in = float(row_dict.get("w_in") or 0.0)
+            dp_fg = int(row_dict.get("dp_fg") or 0)
 
             try:
                 self._canvas_w, self._canvas_h = w, h
@@ -1159,10 +1173,12 @@ class BarcodeEditorPage(QWidget):
                 pass
 
             self._design_code  = str(row_dict.get("pk", ""))
+            self._original_pk  = self._design_code  # pk as it exists in DB
             self._design_name  = str(row_dict.get("name", ""))
             self._sticker_name = sticker_name
             self._h_in = h_in
             self._w_in = w_in
+            self._dp_fg = dp_fg
 
             usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
             if usrm:
@@ -1182,9 +1198,11 @@ class BarcodeEditorPage(QWidget):
                     print(f"[load_design] Could not read itrm meta: {e}")
         else:
             self._design_code  = str(row_data[0]) if row_data else ""
+            self._original_pk  = self._design_code
             self._design_name  = str(row_data[1]) if row_data and len(row_data) > 1 else ""
             self._sticker_name = ""
-            h_in = w_in = 0.0
+            self._h_in = self._w_in = 0.0
+            self._dp_fg = 0
             w, h = self._canvas_w, self._canvas_h
 
         self._update_design_subtitle()
@@ -1192,10 +1210,11 @@ class BarcodeEditorPage(QWidget):
             code         = self._design_code,
             name         = self._design_name,
             sticker_name = self._sticker_name,
-            h_in         = getattr(self, "_h_in", 0.0),
-            w_in         = getattr(self, "_w_in", 0.0),
+            h_in         = self._h_in,
+            w_in         = self._w_in,
             h_px         = self._canvas_h,
             w_px         = self._canvas_w,
+            dp_fg        = self._dp_fg,
         )
 
     def serialize_canvas(self) -> list[dict]:
@@ -1436,13 +1455,10 @@ class BarcodeEditorPage(QWidget):
 
         self.main_layout.addWidget(self._tab_stack)
 
-        # Default to General tab
         self._switch_tab(0)
 
-        # Wire general tab sticker selection → canvas resize
         self.general_tab.stickerChanged.connect(self._on_sticker_canvas_resize)
 
-        # Wire buttons
         self.btn_add_text.clicked.connect(lambda: self.add_element("text"))
         self.btn_add_rect.clicked.connect(lambda: self.add_element("rect"))
         self.btn_add_line.clicked.connect(lambda: self.add_element("line"))
@@ -1451,15 +1467,21 @@ class BarcodeEditorPage(QWidget):
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
     def _on_save_clicked(self):
+        # Read all fields from the General tab
         selected_sticker = self.general_tab.sticker_combo.currentText()
         if selected_sticker:
             self._sticker_name = selected_sticker
+
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
         if code_val:
             self._design_code = code_val
         if name_val:
             self._design_name = name_val
+
+        # Read dp_fg from status combo (DISPLAY = 1, NOT DISPLAY = 0)
+        dp_fg = self.general_tab.get_dp_fg()
+
         try:
             self._canvas_w = int(self.general_tab.width_px.text())
         except (ValueError, AttributeError):
@@ -1479,7 +1501,9 @@ class BarcodeEditorPage(QWidget):
 
         payload = self.get_design_payload()
         payload["pk"]           = self._design_code
+        payload["original_pk"]  = getattr(self, "_original_pk", self._design_code)
         payload["name"]         = self._design_name
+        payload["dp_fg"]        = dp_fg          # ← now included
         payload["sticker_name"] = self._sticker_name
         payload["w_px"]         = self._canvas_w
         payload["h_px"]         = self._canvas_h

@@ -188,8 +188,8 @@ class BarcodeListPage(QWidget):
     def _on_editor_save(self, payload: dict):
         """
         Called when the editor emits design_saved.
-        payload now contains: pk, name, usrm, itrm,
-                              sticker_name, w_px, h_px, h_in, w_in
+        payload contains: pk, name, dp_fg, usrm, itrm,
+                          sticker_name, w_px, h_px, h_in, w_in
         """
         pending = getattr(self, "_pending_new_design", None)
 
@@ -200,6 +200,11 @@ class BarcodeListPage(QWidget):
             pending["h_px"]         = payload.get("h_px") or pending.get("h_px", 400)
             pending["w_in"]         = payload.get("w_in") or pending.get("w_in", 0.0)
             pending["h_in"]         = payload.get("h_in") or pending.get("h_in", 0.0)
+            # Carry through name and dp_fg from editor
+            if payload.get("name"):
+                pending["name"] = payload["name"]
+            if payload.get("dp_fg") is not None:
+                pending["dp_fg"] = payload["dp_fg"]
 
             self.on_barcode_added(pending)
             self._pending_new_design = None
@@ -219,7 +224,10 @@ class BarcodeListPage(QWidget):
         self._show_list()
 
     def _save_design_layout(self, payload: dict, is_new: bool = False):
-        pk           = payload.get("pk", "").strip()
+        # Use original_pk (the key that exists in DB) for WHERE clause.
+        # payload["pk"] may have been edited by the user in the General tab.
+        new_pk       = payload.get("pk", "").strip()
+        original_pk  = payload.get("original_pk", new_pk).strip() or new_pk
         usrm         = payload.get("usrm", "[]")
         itrm         = payload.get("itrm", "{}")
         sticker_name = payload.get("sticker_name") or ""
@@ -227,31 +235,41 @@ class BarcodeListPage(QWidget):
         w_in         = float(payload.get("w_in") or 0)
         h_px         = int(payload.get("h_px") or 0)
         w_px         = int(payload.get("w_px") or 0)
+        name         = payload.get("name", "")
+        dp_fg        = payload.get("dp_fg")  # may be None — treated as "don't change"
 
-        if not pk:
+        if not original_pk:
             return
+
+        print(f"[_save_design_layout] original_pk={original_pk!r} new_pk={new_pk!r} name={name!r} dp_fg={dp_fg!r}")
 
         try:
             from server.repositories.mbarcd_repo import update_mbarcd_layout
             update_mbarcd_layout(
-                pk=pk, usrm=usrm, itrm=itrm,
+                pk=original_pk, new_pk=new_pk, usrm=usrm, itrm=itrm,
                 sticker_name=sticker_name,
                 h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px,
                 is_new=is_new,
+                name=name,
+                dp_fg=dp_fg,
+                user=self.current_user,
             )
-            print(f"[_save_design_layout] pk={pk!r}  usrm={len(usrm)}B  itrm={len(itrm)}B")
+            print(f"[_save_design_layout] pk={original_pk!r}  name={name!r}  dp_fg={dp_fg!r}  usrm={len(usrm)}B  itrm={len(itrm)}B")
         except (ImportError, TypeError):
             self._save_design_layout_direct(
-                pk, usrm, itrm, is_new=is_new,
+                original_pk, usrm, itrm, is_new=is_new,
                 sticker_name=sticker_name,
                 h_in=h_in, w_in=w_in, h_px=h_px, w_px=w_px,
+                name=name,
+                dp_fg=dp_fg,
             )
         except Exception as e:
             print(f"[_save_design_layout] Skipped — {e}")
 
     def _save_design_layout_direct(self, pk: str, usrm: str, itrm: str, is_new: bool = False,
                                     sticker_name: str = "", h_in: float = 0.0, w_in: float = 0.0,
-                                    h_px: int = 0, w_px: int = 0):
+                                    h_px: int = 0, w_px: int = 0,
+                                    name: str = "", dp_fg=None):
         conn = self._get_db_connection()
         if conn is None:
             print("[_save_design_layout_direct] No DB connection found — layout not saved.")
@@ -269,7 +287,9 @@ class BarcodeListPage(QWidget):
                            mbheig = %s,
                            mbwidt = %s,
                            mbpixh = %s,
-                           mbpixw = %s
+                           mbpixw = %s,
+                           mbbrnm = CASE WHEN %s <> '' THEN %s ELSE mbbrnm END,
+                           mbdpfg = CASE WHEN %s IS NOT NULL THEN %s ELSE mbdpfg END
                      WHERE mbbrcd = %s
                     """,
                     (usrm, itrm,
@@ -278,6 +298,8 @@ class BarcodeListPage(QWidget):
                      w_in if w_in else None,
                      h_px if h_px else None,
                      w_px if w_px else None,
+                     name, name,
+                     dp_fg, dp_fg,
                      pk),
                 )
             else:
@@ -291,6 +313,8 @@ class BarcodeListPage(QWidget):
                            mbwidt = %s,
                            mbpixh = %s,
                            mbpixw = %s,
+                           mbbrnm = CASE WHEN %s <> '' THEN %s ELSE mbbrnm END,
+                           mbdpfg = CASE WHEN %s IS NOT NULL THEN %s ELSE mbdpfg END,
                            mbchno = mbchno + 1,
                            mbchby = %s,
                            mbchdt = NOW()
@@ -302,11 +326,13 @@ class BarcodeListPage(QWidget):
                      w_in if w_in else None,
                      h_px if h_px else None,
                      w_px if w_px else None,
+                     name, name,
+                     dp_fg, dp_fg,
                      self.current_user,
                      pk),
                 )
             conn.commit()
-            print(f"[_save_design_layout_direct] Saved for pk={pk!r} sticker={sticker_name!r} (is_new={is_new})")
+            print(f"[_save_design_layout_direct] Saved for pk={pk!r} name={name!r} dp_fg={dp_fg!r} sticker={sticker_name!r} (is_new={is_new})")
         except Exception as e:
             conn.rollback()
             print(f"[_save_design_layout_direct] Skipped — {e}")
@@ -643,7 +669,7 @@ class BarcodeListPage(QWidget):
 
     def handle_add_action(self):
         sticker_data = _fetch_sticker_data()
-        sticker_options = list(sticker_data.keys())  # no empty string prefix
+        sticker_options = list(sticker_data.keys())
 
         modal = GenericFormModal(
             title="New Barcode Design",
