@@ -57,6 +57,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter English value",
             "required":    True,
+            "max_length": 50
         },
         {
             "name":        "span",
@@ -64,6 +65,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter Spanish translation",
             "required":    False,
+            "max_length": 50
         },
         {
             "name":        "fren",
@@ -71,6 +73,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter French translation",
             "required":    False,
+            "max_length": 50
         },
         {
             "name":        "germ",
@@ -78,6 +81,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter German translation",
             "required":    False,
+            "max_length": 50
         },
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},
         {"name": "added_at",   "label": "Added At",   "type": "readonly"},

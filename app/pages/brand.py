@@ -46,6 +46,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter brand code (max 10 chars)",
             "required":    True,
+            "max_length": 10
         },
         {
             "name":        "name",
@@ -53,6 +54,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter brand name",
             "required":    True,
+            "max_length": 50
         },
         {
             "name":     "case_",
@@ -60,6 +62,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter case status",
             "required":    False,
+            "max_length": 20
         },
         # Audit fields — always present, always readonly
         {"name": "added_by",   "label": "Added By",   "type": "readonly"},

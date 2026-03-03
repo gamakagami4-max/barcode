@@ -45,18 +45,21 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
             "label": "System Code",
             "type": "readonly" if readonly_pk else "text",
             "required": True,
+            "max_length": 20
         },
         {
             "name": "system_name",
             "label": "System Name",
             "type": "readonly" if readonly_pk else "text",
             "required": True,
+            "max_length": 30
         },
         {
             "name": "description",
             "label": "Description",
             "type": "textarea",
             "required": False,
+            "max_length": 2000
         },
         {"name": "added_by", "label": "Added By", "type": "readonly"},
         {"name": "added_at", "label": "Added At", "type": "readonly"},
