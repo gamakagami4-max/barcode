@@ -332,7 +332,11 @@ class CustomCombo(QFrame):
                 self._dropdown.set_selected(text)
 
     def setCurrentIndex(self, index):
-        if 0 <= index < len(self._items):
+        if index == -1:
+            self._current = ""
+            self._label.setText("— Please select a sticker —")
+            self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
+        elif 0 <= index < len(self._items):
             self.setCurrentText(self._items[index])
 
     def currentIndex(self):
@@ -1053,8 +1057,9 @@ class GeneralTab(QWidget):
 
         # ── LEFT BOTTOM: Sticker / Height / Width ─────────────────────
         sticker_keys = list(self._sticker_data.keys())
-        self.sticker_combo = make_chevron_combo(["— Please select a sticker —"] + sticker_keys)
-        self.sticker_combo.setCurrentIndex(0)
+        self.sticker_combo = make_chevron_combo(sticker_keys)
+        self.sticker_combo.setPlaceholderText("— Please select a sticker —")
+        self.sticker_combo.setCurrentIndex(-1)
         self.sticker_combo.setFixedWidth(220)
         card_layout.addWidget(lbl("STICKER :"), 4, 0, Qt.AlignVCenter | Qt.AlignLeft)
         card_layout.addWidget(self.sticker_combo, 4, 1, Qt.AlignVCenter)
@@ -1155,7 +1160,7 @@ class GeneralTab(QWidget):
             self.width_px.setText(str(d["w_px"]))
         else:
             # No sticker — reset to placeholder
-            self.sticker_combo.setCurrentIndex(0)
+            self.sticker_combo.setCurrentIndex(-1)
             self.height_inch.setText(f"{h_in:.2f}" if h_in else "")
             self.height_px.setText(str(h_px) if h_px else "")
             self.width_inch.setText(f"{w_in:.2f}" if w_in else "")
@@ -1300,6 +1305,13 @@ class BarcodeEditorPage(QWidget):
         )
         self._switch_tab(0)  # always open on General tab
 
+        if self._sticker_name:
+            self.view.setVisible(True)
+            self._canvas_placeholder.setVisible(False)
+        else:
+            self.view.setVisible(False)
+            self._canvas_placeholder.setVisible(True)
+
     def serialize_canvas(self) -> list[dict]:
         elements = []
         for item in self.scene.items():
@@ -1368,6 +1380,8 @@ class BarcodeEditorPage(QWidget):
         self._canvas_w, self._canvas_h = w_px, h_px
         self.scene.setSceneRect(QRectF(0, 0, w_px, h_px))
         self._sticker_name = self.general_tab.sticker_combo.currentText()
+        self.view.setVisible(True)
+        self._canvas_placeholder.setVisible(False)
 
     def _switch_tab(self, index: int):
         self._tab_stack.setCurrentIndex(index)
@@ -1462,7 +1476,27 @@ class BarcodeEditorPage(QWidget):
         self.view.setAlignment(Qt.AlignCenter)
         self.view.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         self.view.horizontalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
+
+        self._canvas_placeholder = QFrame()
+        self._canvas_placeholder.setStyleSheet(
+            "QFrame { background: #F8FAFC; border: 2px dashed #CBD5E1; border-radius: 8px; }"
+        )
+        placeholder_layout = QVBoxLayout(self._canvas_placeholder)
+        placeholder_layout.setAlignment(Qt.AlignCenter)
+        ph_icon = QLabel()
+        ph_icon.setPixmap(qta.icon("fa5s.image", color="#CBD5E1").pixmap(40, 40))
+        ph_icon.setAlignment(Qt.AlignCenter)
+        ph_text = QLabel("Please select a sticker first\nfrom the General tab to enable the canvas.")
+        ph_text.setAlignment(Qt.AlignCenter)
+        ph_text.setStyleSheet("color: #94A3B8; font-size: 12px; background: transparent; border: none;")
+        placeholder_layout.addWidget(ph_icon)
+        placeholder_layout.addSpacing(8)
+        placeholder_layout.addWidget(ph_text)
+
         workspace_layout.addWidget(self.view, stretch=3)
+        workspace_layout.addWidget(self._canvas_placeholder, stretch=3)
+        self.view.setVisible(False)
+        self._canvas_placeholder.setVisible(True)
 
         self.sidebar = QFrame()
         self.sidebar.setMinimumWidth(280)

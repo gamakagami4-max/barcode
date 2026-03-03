@@ -231,7 +231,6 @@ class BarcodeListPage(QWidget):
             self.on_barcode_added(pending)
             self._pending_new_design = None
             try:
-                from server.repositories.mbarcd_repo import fetch_mbarcd_by_pk
                 record = fetch_mbarcd_by_pk(pk_from_editor)
                 if record:
                     self.all_dicts[pk_from_editor] = record
