@@ -1576,28 +1576,53 @@ class BarcodeEditorPage(QWidget):
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
         # Add clipboard for copy-paste (add at the end of init_ui)
+                # Add clipboard for copy-paste (add at the end of init_ui)
         self._clipboard_item = None
+        
+        # Setup global shortcuts that work even when child widgets have focus
+        self._setup_copy_paste_shortcuts()
         
         # Enable focus for key events
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
 
-    def keyPressEvent(self, event):
-        """Handle copy-paste keyboard shortcuts."""
-        if event.modifiers() == Qt.ControlModifier:
-            if event.key() == Qt.Key_C:
-                self._copy_selected()
-                event.accept()
-                return
-            elif event.key() == Qt.Key_V:
-                self._paste_clipboard()
-                event.accept()
-                return
-            elif event.key() == Qt.Key_D:
-                self._duplicate_selected()
-                event.accept()
-                return
-        super().keyPressEvent(event)
+    def _setup_copy_paste_shortcuts(self):
+        """Setup global shortcuts for copy/paste/duplicate that work everywhere."""
+        from PySide6.QtGui import QShortcut, QKeySequence
+        
+        # Copy - Ctrl+C
+        self._shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
+        self._shortcut_copy.setContext(Qt.ApplicationShortcut)
+        self._shortcut_copy.activated.connect(self._copy_selected)
+        
+        # Paste - Ctrl+V
+        self._shortcut_paste = QShortcut(QKeySequence("Ctrl+V"), self)
+        self._shortcut_paste.setContext(Qt.ApplicationShortcut)
+        self._shortcut_paste.activated.connect(self._paste_clipboard)
+        
+        # Duplicate - Ctrl+D
+        self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
+        self._shortcut_duplicate.setContext(Qt.ApplicationShortcut)
+        self._shortcut_duplicate.activated.connect(self._duplicate_selected)
+        
+        # Also handle Delete key for removing items
+        self._shortcut_delete = QShortcut(QKeySequence("Delete"), self)
+        self._shortcut_delete.setContext(Qt.ApplicationShortcut)
+        self._shortcut_delete.activated.connect(self._delete_selected_item)
+
+    def _delete_selected_item(self):
+        """Delete currently selected item."""
+        selected = self.scene.selectedItems()
+        if not selected:
+            return
+        
+        item = selected[0]
+        # Find the item in the component list and delete it
+        for i in range(self.component_list.count()):
+            li = self.component_list.item(i)
+            if getattr(li, 'graphics_item', None) == item:
+                self.delete_component(i)
+                break
 
     def _copy_selected(self):
         """Copy currently selected item to internal clipboard."""
