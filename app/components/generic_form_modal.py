@@ -1208,6 +1208,9 @@ class GenericFormModal(QDialog):
         if field_type in ("text", "readonly"):
             w = QLineEdit()
             w.setMinimumHeight(36)
+            max_length = field.get("max_length")
+            if editable and max_length:
+                w.setMaxLength(max_length)
             if editable:
                 w.setPlaceholderText(field.get("placeholder", ""))
                 self._style_input(w)
@@ -1225,7 +1228,20 @@ class GenericFormModal(QDialog):
             w = QTextEdit()
             height = field.get("height", 120)
             w.setFixedHeight(height)
+            max_length = field.get("max_length")
             if editable:
+                if max_length:
+                    def _limit_text():
+                        text = w.toPlainText()
+                        if len(text) > max_length:
+                            w.blockSignals(True)
+                            w.setPlainText(text[:max_length])
+                            cursor = w.textCursor()
+                            cursor.movePosition(cursor.End)
+                            w.setTextCursor(cursor)
+                            w.blockSignals(False)
+
+                    w.textChanged.connect(_limit_text)
                 w.setPlaceholderText(field.get("placeholder", ""))
                 w.setStyleSheet(f"""
                     QTextEdit {{
@@ -1356,6 +1372,9 @@ class GenericFormModal(QDialog):
 
             text_input = QLineEdit()
             text_input.setMinimumHeight(36)
+            max_length = field.get("max_length")
+            if editable and max_length:
+                text_input.setMaxLength(max_length)
             if editable:
                 text_input.setPlaceholderText(field.get("placeholder", ""))
                 self._style_input(text_input)
@@ -1435,6 +1454,14 @@ class GenericFormModal(QDialog):
 
             inch_cell, inch_input, inch_err = _labeled_input("INCH", "e.g. 2.5")
             px_cell,   px_input,   px_err   = _labeled_input("PX",   "e.g. 240")
+            max_inch = field.get("max_length_inch")
+            max_px   = field.get("max_length_px")
+
+            if editable:
+                if max_inch:
+                    inch_input.setMaxLength(max_inch)
+                if max_px:
+                    px_input.setMaxLength(max_px)
 
             outer.addWidget(inch_cell, stretch=1)
             outer.addWidget(px_cell,   stretch=1)

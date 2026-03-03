@@ -75,6 +75,7 @@ def _build_form_schema() -> list[dict]:
             "type":        "text",
             "placeholder": "Enter sticker name (max 20 chars)",
             "required":    True,
+            "max_length": 20
         },
         {
             "name":     "width",
