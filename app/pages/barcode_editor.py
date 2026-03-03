@@ -17,6 +17,81 @@ import shiboken6
 # Local Imports
 from components.standard_button import StandardButton
 
+
+# ── Checkbox with checkmark (not solid fill) ─────────────────────────────────
+
+class CheckmarkCheckBox(QCheckBox):
+    """QCheckBox that draws a dark tick on white, matching the reference UI."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setStyleSheet("""
+            QCheckBox {
+                font-size: 11px;
+                color: #334155;
+                spacing: 6px;
+                background: transparent;
+            }
+            QCheckBox::indicator {
+                width: 0px;
+                height: 0px;
+            }
+        """)
+
+    def sizeHint(self):
+        sh = super().sizeHint()
+        return QSize(sh.width(), max(sh.height(), 18))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        box_size = 14
+        y_offset = (self.height() - box_size) // 2
+
+        # ── Box ──────────────────────────────────────────────────────
+        box_rect = QRect(0, y_offset, box_size, box_size)
+        painter.setPen(QPen(QColor("#94A3B8" if not self.isChecked() else "#334155"), 1.5))
+        painter.setBrush(QBrush(QColor("white")))
+        painter.drawRoundedRect(box_rect, 3, 3)
+
+        # ── Checkmark ────────────────────────────────────────────────
+        if self.isChecked():
+            pen = QPen(QColor("#334155"), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            painter.setPen(pen)
+            # tick: bottom-left corner → mid-bottom → top-right
+            x, y = box_rect.x(), box_rect.y()
+            s = box_size
+            painter.drawLine(
+                QPointF(x + s * 0.18, y + s * 0.52),
+                QPointF(x + s * 0.42, y + s * 0.76),
+            )
+            painter.drawLine(
+                QPointF(x + s * 0.42, y + s * 0.76),
+                QPointF(x + s * 0.82, y + s * 0.24),
+            )
+
+        # ── Label ─────────────────────────────────────────────────────
+        text_x = box_size + 6
+        painter.setPen(QColor("#334155"))
+        font = self.font()
+        font.setPixelSize(11)
+        painter.setFont(font)
+        painter.drawText(
+            QRect(text_x, 0, self.width() - text_x, self.height()),
+            Qt.AlignVCenter | Qt.AlignLeft,
+            self.text(),
+        )
+        painter.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setChecked(not self.isChecked())
+            self.update()
+            event.accept()  # consume event so Qt doesn't toggle again
+        else:
+            super().mousePressEvent(event)
+
 COLORS = {
     "bg_main": "#F8FAFC",
     "link": "#6366F1",
@@ -915,18 +990,7 @@ class GeneralTab(QWidget):
             le.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             return le
 
-        check_style = """
-            QCheckBox {
-                font-size: 11px; color: #334155;
-                spacing: 6px; background: transparent;
-            }
-            QCheckBox::indicator {
-                width: 13px; height: 13px;
-                border: 1.5px solid #CBD5E1; border-radius: 3px; background: white;
-            }
-            QCheckBox::indicator:checked { background: #6366F1; border-color: #6366F1; }
-            QCheckBox::indicator:hover   { border-color: #6366F1; }
-        """
+        check_style = ""  # handled by CheckmarkCheckBox class below
 
         muted_style = f"color:{COLORS['text_mute']}; font-size:10px; background:transparent; border:none;"
 
@@ -1015,10 +1079,8 @@ class GeneralTab(QWidget):
         jenis_lbl.setStyleSheet(label_style)
         right_layout.addWidget(jenis_lbl)
 
-        self.chk_barcode_printer = QCheckBox("KE BARCODE PRINTER")
-        self.chk_barcode_printer.setStyleSheet(check_style)
-        self.chk_report = QCheckBox("KE REPORT")
-        self.chk_report.setStyleSheet(check_style)
+        self.chk_barcode_printer = CheckmarkCheckBox("KE BARCODE PRINTER")
+        self.chk_report = CheckmarkCheckBox("KE REPORT")
         right_layout.addWidget(self.chk_barcode_printer)
         right_layout.addWidget(self.chk_report)
 
