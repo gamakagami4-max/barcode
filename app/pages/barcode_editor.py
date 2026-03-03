@@ -100,7 +100,7 @@ COLORS = {
     "text_mute": "#64748B",
     "white": "#FFFFFF",
     "prop_bg": "#F1F5F9",
-    "canvas_bg": "#F1F5F9",
+    "canvas_bg": "#E1E7EF",
     "legacy_blue": "#1E3A8A" 
 }
 
