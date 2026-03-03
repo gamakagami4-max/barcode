@@ -563,6 +563,7 @@ class TextPropertyEditor(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(text):
             l = QLabel(text); l.setStyleSheet(label_style); return l
@@ -666,6 +667,7 @@ class LinePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         line = self.item.line(); pen = self.item.pen()
@@ -691,6 +693,7 @@ class RectanglePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         rect = self.item.rect(); pen = self.item.pen()
@@ -718,6 +721,7 @@ class BarcodePropertyEditor(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QFormLayout(self); layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         label_style = f"color:{COLORS['legacy_blue']}; font-size:9px; text-transform:uppercase; background:transparent; border:none;"
         def lbl(t): l = QLabel(t); l.setStyleSheet(label_style); return l
         self.design_combo = make_chevron_combo(["CODE128","MINIMAL","EAN13","CODE39","QR MOCK"])
@@ -1004,15 +1008,37 @@ class GeneralTab(QWidget):
         card_layout.setContentsMargins(16, 14, 16, 14)
         card_layout.setHorizontalSpacing(10)
         card_layout.setVerticalSpacing(10)
-        card_layout.setColumnStretch(7, 1)
+        card_layout.setColumnStretch(3, 1)  # stretch between left block and jenis cetak
 
-        # ── LEFT: Sticker / Height / Width ────────────────────────────
+        # ── LEFT TOP: Code / Name / Display Status ────────────────────
+        self.code_input = make_input("e.g. BC001")
+        self.code_input.setFixedWidth(160)
+        self.name_input = make_input("e.g. Member Label A4")
+        self.name_input.setFixedWidth(220)
+        self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
+        self.status_combo.setFixedWidth(160)
+
+        card_layout.addWidget(lbl("CODE :"),           0, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.code_input,          0, 1, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("NAME :"),            1, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.name_input,          1, 1, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("DISPLAY STATUS :"), 2, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.status_combo,        2, 1, Qt.AlignVCenter)
+
+        # ── Separator row ─────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("background: #E2E8F0; border: none; min-height: 1px; max-height: 1px;")
+        card_layout.addWidget(sep, 3, 0, 1, 2)
+        card_layout.setRowMinimumHeight(3, 10)
+
+        # ── LEFT BOTTOM: Sticker / Height / Width ─────────────────────
         sticker_keys = list(self._sticker_data.keys())
-        self.sticker_combo = make_chevron_combo(sticker_keys)
-        self.sticker_combo.setPlaceholderText("— Select sticker —")
-        self.sticker_combo.setFixedWidth(200)
-        card_layout.addWidget(lbl("STICKER :"), 0, 0, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(self.sticker_combo, 0, 1, Qt.AlignVCenter)
+        self.sticker_combo = make_chevron_combo(["— Please select a sticker —"] + sticker_keys)
+        self.sticker_combo.setCurrentIndex(0)
+        self.sticker_combo.setFixedWidth(220)
+        card_layout.addWidget(lbl("STICKER :"), 4, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(self.sticker_combo, 4, 1, Qt.AlignVCenter)
 
         h_row_w = QWidget(); h_row_w.setStyleSheet("background: transparent; border: none;")
         h_hl = QHBoxLayout(h_row_w); h_hl.setContentsMargins(0, 0, 0, 0); h_hl.setSpacing(4)
@@ -1023,8 +1049,8 @@ class GeneralTab(QWidget):
         h_hl.addWidget(self.height_px)
         px_lbl1 = QLabel("PIXEL"); px_lbl1.setStyleSheet(muted_style); h_hl.addWidget(px_lbl1)
         h_hl.addStretch()
-        card_layout.addWidget(lbl("HEIGHT :"), 1, 0, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(h_row_w, 1, 1, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("HEIGHT :"), 5, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(h_row_w, 5, 1, Qt.AlignVCenter)
 
         w_row_w = QWidget(); w_row_w.setStyleSheet("background: transparent; border: none;")
         w_hl = QHBoxLayout(w_row_w); w_hl.setContentsMargins(0, 0, 0, 0); w_hl.setSpacing(4)
@@ -1035,40 +1061,17 @@ class GeneralTab(QWidget):
         w_hl.addWidget(self.width_px)
         px_lbl2 = QLabel("PIXEL"); px_lbl2.setStyleSheet(muted_style); w_hl.addWidget(px_lbl2)
         w_hl.addStretch()
-        card_layout.addWidget(lbl("WIDTH :"), 2, 0, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(w_row_w, 2, 1, Qt.AlignVCenter)
+        card_layout.addWidget(lbl("WIDTH :"), 6, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        card_layout.addWidget(w_row_w, 6, 1, Qt.AlignVCenter)
 
-        # ── Vertical divider 1 ────────────────────────────────────────
-        vdiv = QFrame()
-        vdiv.setFrameShape(QFrame.VLine)
-        vdiv.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        card_layout.addWidget(vdiv, 0, 2, 3, 1)
-        card_layout.setColumnMinimumWidth(2, 32)
-
-        # ── MIDDLE: Code / Name / Display Status ──────────────────────
-        self.code_input = make_input("e.g. BC001")
-        self.code_input.setFixedWidth(160)
-        self.name_input = make_input("e.g. Member Label A4")
-        self.name_input.setFixedWidth(220)
-        # Display status: maps to dp_fg (1 = DISPLAY, 0 = NOT DISPLAY)
-        self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
-        self.status_combo.setFixedWidth(160)
-
-        card_layout.addWidget(lbl("CODE :"),           0, 3, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(self.code_input,          0, 4, Qt.AlignVCenter)
-        card_layout.addWidget(lbl("NAME :"),            1, 3, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(self.name_input,          1, 4, Qt.AlignVCenter)
-        card_layout.addWidget(lbl("DISPLAY STATUS :"), 2, 3, Qt.AlignVCenter | Qt.AlignLeft)
-        card_layout.addWidget(self.status_combo,        2, 4, Qt.AlignVCenter)
-
-        # ── Vertical divider 2 ────────────────────────────────────────
+        # ── Vertical divider (left block | empty middle | jenis cetak) ─
         vdiv2 = QFrame()
         vdiv2.setFrameShape(QFrame.VLine)
         vdiv2.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
-        card_layout.addWidget(vdiv2, 0, 5, 3, 1)
-        card_layout.setColumnMinimumWidth(5, 32)
+        card_layout.addWidget(vdiv2, 0, 2, 7, 1)
+        card_layout.setColumnMinimumWidth(2, 24)
 
-        # ── RIGHT: Jenis Cetak ────────────────────────────────────────
+        # ── RIGHT: Jenis Cetak — pinned to far right via col stretch ──
         right_w = QWidget()
         right_w.setStyleSheet("background: transparent; border: none;")
         right_layout = QVBoxLayout(right_w)
@@ -1084,12 +1087,7 @@ class GeneralTab(QWidget):
         right_layout.addWidget(self.chk_barcode_printer)
         right_layout.addWidget(self.chk_report)
 
-        card_layout.addWidget(right_w, 0, 6, 3, 1, Qt.AlignTop | Qt.AlignLeft)
-
-        card_layout.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum),
-            0, 7, 3, 1
-        )
+        card_layout.addWidget(right_w, 0, 4, 3, 1, Qt.AlignTop | Qt.AlignRight)
 
         root.addWidget(card)
         root.addStretch()
@@ -1137,6 +1135,8 @@ class GeneralTab(QWidget):
             self.width_inch.setText(f"{d['w_in']:.2f}")
             self.width_px.setText(str(d["w_px"]))
         else:
+            # No sticker — reset to placeholder
+            self.sticker_combo.setCurrentIndex(0)
             self.height_inch.setText(f"{h_in:.2f}" if h_in else "")
             self.height_px.setText(str(h_px) if h_px else "")
             self.width_inch.setText(f"{w_in:.2f}" if w_in else "")
@@ -1372,29 +1372,6 @@ class BarcodeEditorPage(QWidget):
         header_bar_layout.setContentsMargins(24, 0, 24, 0)
         header_bar_layout.setSpacing(0)
 
-        self.back_btn = StandardButton("Back to List", icon_name="fa5s.arrow-left", variant="secondary")
-        self.back_btn.setToolTip("Return to Barcode Design list")
-        header_bar_layout.addWidget(self.back_btn)
-        header_bar_layout.addSpacing(20)
-
-        vdiv = QFrame()
-        vdiv.setFrameShape(QFrame.VLine)
-        vdiv.setFixedWidth(1)
-        vdiv.setStyleSheet("background: #E2E8F0; border: none;")
-        header_bar_layout.addWidget(vdiv)
-        header_bar_layout.addSpacing(20)
-
-        title_col = QVBoxLayout()
-        title_col.setSpacing(1)
-        title_col.setContentsMargins(0, 0, 0, 0)
-        title_lbl = QLabel("Barcode Editor")
-        title_lbl.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: #111827; background: transparent;"
-        )
-        title_col.addWidget(title_lbl)
-        header_bar_layout.addLayout(title_col)
-        header_bar_layout.addSpacing(32)
-
         self._tab_btns = []
         for i, label in enumerate(["GENERAL", "EDITOR"]):
             btn = QPushButton(label)
@@ -1406,6 +1383,13 @@ class BarcodeEditorPage(QWidget):
             self._tab_btns.append(btn)
 
         header_bar_layout.addStretch()
+
+        self.back_btn = StandardButton("Cancel", icon_name="fa5s.times", variant="secondary")
+        self.back_btn.setToolTip("Cancel and return to list")
+        self.back_btn.setFixedHeight(34)
+        header_bar_layout.addWidget(self.back_btn)
+
+        header_bar_layout.addSpacing(8)
 
         self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
         self.save_btn.setFixedHeight(34)
@@ -1533,8 +1517,11 @@ class BarcodeEditorPage(QWidget):
     def _on_save_clicked(self):
         # Read all fields from the General tab
         selected_sticker = self.general_tab.sticker_combo.currentText()
-        if selected_sticker:
+        # Ignore the placeholder item
+        if selected_sticker and not selected_sticker.startswith("—"):
             self._sticker_name = selected_sticker
+        elif selected_sticker and selected_sticker.startswith("—"):
+            self._sticker_name = ""
 
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
