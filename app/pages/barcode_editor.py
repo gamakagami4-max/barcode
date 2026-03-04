@@ -1418,7 +1418,21 @@ class SelectableTextItem(QGraphicsTextItem):
 
     def paint(self, painter, option, widget=None):
         option.state &= ~QStyle.State_Selected
-        super().paint(painter, option, widget)
+        if getattr(self, "design_inverse", False):
+            painter.save()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor("#000000")))
+            painter.drawRect(self.boundingRect())
+            painter.restore()
+            # Draw text in white when inverse
+            original_color = self.defaultTextColor()
+            if not self.isSelected():
+                self.setDefaultTextColor(QColor("#FFFFFF"))
+            super().paint(painter, option, widget)
+            if not self.isSelected():
+                self.setDefaultTextColor(original_color)
+        else:
+            super().paint(painter, option, widget)
 
 
 class SelectableLineItem(QGraphicsLineItem):
