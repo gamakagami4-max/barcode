@@ -691,43 +691,43 @@ class TextPropertyEditor(QWidget):
 
         def _on_type_changed(val):
             is_input = val == "INPUT"
-            
+            is_lookup = val == "LOOKUP"
+
+            # ── INPUT-only: DATA TYPE + MAX LENGTH ────────────────────────
             if not is_input:
-                # Disable and grey out
                 self.data_type_combo.setEnabled(False)
                 self.max_length_spin.setEnabled(False)
-                
-                # Clear values
                 self.data_type_combo.blockSignals(True)
                 self.data_type_combo.setCurrentIndex(-1)
                 self.data_type_combo.blockSignals(False)
                 self.max_length_spin.setValue(0)
-                
-                # Apply disabled style to spinbox
                 self.max_length_spin.setStyleSheet(DISABLED_STYLE)
             else:
-                # Enable and restore modern style
                 self.data_type_combo.setEnabled(True)
                 self.max_length_spin.setEnabled(True)
-                
                 self.max_length_spin.setStyleSheet(MODERN_INPUT_STYLE)
-                
-                # Set defaults if empty
                 if self.data_type_combo.currentIndex() == -1:
                     self.data_type_combo.setCurrentIndex(0)
                 if self.max_length_spin.value() == 0:
                     self.max_length_spin.setValue(1)
-        
-        self.type_combo.currentTextChanged.connect(_on_type_changed)
-        
-        # Initialize state based on stored design_type
-        initial_type = getattr(self.item, "design_type", "FIX")
-        _on_type_changed(initial_type)
-        
 
-                
-        self.type_combo.currentTextChanged.connect(_on_type_changed)
-        _on_type_changed(getattr(self.item, "design_type", "FIX"))
+            # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP ───────────────────
+            for widget in [self.table_combo, self.table_extra, self.field_edit, self.group_combo]:
+                widget.setEnabled(is_lookup)
+                if isinstance(widget, QLineEdit):
+                    widget.setStyleSheet(
+                        MODERN_INPUT_STYLE if is_lookup else """
+                            QLineEdit {
+                                background-color: #F8FAFC;
+                                border: 1px solid #E2E8F0;
+                                border-radius: 4px;
+                                padding: 5px;
+                                font-size: 11px;
+                                color: #94A3B8;
+                            }
+                        """
+                    )
+        
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.text_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -749,7 +749,7 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("TABLE :"), self.table_combo)
         self.table_extra = QLineEdit(); self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
         self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addRow(lbl("TABLE EXTRA :"), self.table_extra)
+        layout.addRow(lbl("QUERY :"), self.table_extra)
         self.field_edit = QLineEdit(); self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
         self.field_edit.setMinimumHeight(52); self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FIELD :"), self.field_edit)
@@ -779,10 +779,12 @@ class TextPropertyEditor(QWidget):
         self.column_spin = make_spin(1, 999, 1)
         layout.addRow(lbl("COLUMN :"), self.column_spin)
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
-        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
+        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo) 
 
         self.align_combo.currentTextChanged.connect(self._apply_alignment)
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
+        self.type_combo.currentTextChanged.connect(_on_type_changed)
+        _on_type_changed(getattr(self.item, "design_type", "FIX"))
         self._update_visibility_indicator()
 
     def _apply_alignment(self, value):
