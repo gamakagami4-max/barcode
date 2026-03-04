@@ -282,6 +282,10 @@ class CustomCombo(QFrame):
             }}
             CustomCombo:hover {{ border-color: {hover}; }}
         """)
+        # Ensure chevron is visible when enabled
+        # AFTER
+        if self.isEnabled() and hasattr(self, '_chevron'):
+            self._chevron.setVisible(True)
 
     def _set_chevron(self, open_):
         self._chevron.setPixmap(
@@ -289,7 +293,34 @@ class CustomCombo(QFrame):
                      color="#3B82F6" if open_ else "#71717A").pixmap(10, 10)
         )
 
+    def setEnabled(self, enabled):
+        super().setEnabled(enabled)
+        self._apply_enabled_style(enabled)
+    
+    def _apply_enabled_style(self, enabled):
+        if enabled:
+            self._apply_style(self._is_open)
+            # Restore normal chevron
+            self._set_chevron(self._is_open)
+        else:
+            # Disabled style - grey out background and border
+            self.setStyleSheet("""
+                CustomCombo {
+                    background: #F8FAFC;
+                    border: 1px solid #E2E8F0;
+                    border-radius: 6px;
+                }
+                CustomCombo:hover { border-color: #E2E8F0; }
+            """)
+            # Hide chevron when disabled
+            self._chevron.setVisible(False)
+
+
+
     def mousePressEvent(self, event):
+        if not self.isEnabled():
+            event.ignore()
+            return
         if event.button() == Qt.LeftButton:
             if self._is_open:
                 self._close()
@@ -354,7 +385,7 @@ class CustomCombo(QFrame):
     def setCurrentIndex(self, index):
         if index == -1:
             self._current = ""
-            self._label.setText("— Please select a sticker —")
+            self._label.setText("")
             self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
         elif 0 <= index < len(self._items):
             self.setCurrentText(self._items[index])
@@ -630,9 +661,73 @@ class TextPropertyEditor(QWidget):
             "FIX", "INPUT", "LOOKUP", "SAME WITH", "LINK", "SYSTEM", "BATCH NO", "MERGE",
             "TIMBANGAN", "DUPLIKASI", "RUNNING NO", "KONVERSI TIMBANGAN",
         ])
+        stored_type = getattr(self.item, "design_type", "FIX")
+        self.type_combo.setCurrentText(stored_type)
+        self.type_combo.currentTextChanged.connect(lambda v: setattr(self.item, "design_type", v))
         layout.addRow(lbl("TYPE :"), self.type_combo)
         self.editor_combo = make_chevron_combo(["ENABLED", "DISABLED", "INVISIBLE"])
         layout.addRow(lbl("EDITOR :"), self.editor_combo)
+
+        # ── INPUT-only fields: DATA TYPE + MAX LENGTH ─────────────────
+        self.data_type_combo = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
+        self.data_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addRow(lbl("DATA TYPE :"), self.data_type_combo)
+
+        self.max_length_spin = make_spin(0, 9999, 1)
+        self.max_length_spin.setSpecialValueText("")  # shows blank-like when value=0/minimum
+        layout.addRow(lbl("MAX LENGTH :"), self.max_length_spin)
+
+        DISABLED_STYLE = """
+            QComboBox, QSpinBox {
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 11px;
+                color: #94A3B8;
+            }
+            QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button { background: transparent; border: none; }
+        """
+
+        def _on_type_changed(val):
+            is_input = val == "INPUT"
+            
+            if not is_input:
+                # Disable and grey out
+                self.data_type_combo.setEnabled(False)
+                self.max_length_spin.setEnabled(False)
+                
+                # Clear values
+                self.data_type_combo.blockSignals(True)
+                self.data_type_combo.setCurrentIndex(-1)
+                self.data_type_combo.blockSignals(False)
+                self.max_length_spin.setValue(0)
+                
+                # Apply disabled style to spinbox
+                self.max_length_spin.setStyleSheet(DISABLED_STYLE)
+            else:
+                # Enable and restore modern style
+                self.data_type_combo.setEnabled(True)
+                self.max_length_spin.setEnabled(True)
+                
+                self.max_length_spin.setStyleSheet(MODERN_INPUT_STYLE)
+                
+                # Set defaults if empty
+                if self.data_type_combo.currentIndex() == -1:
+                    self.data_type_combo.setCurrentIndex(0)
+                if self.max_length_spin.value() == 0:
+                    self.max_length_spin.setValue(1)
+        
+        self.type_combo.currentTextChanged.connect(_on_type_changed)
+        
+        # Initialize state based on stored design_type
+        initial_type = getattr(self.item, "design_type", "FIX")
+        _on_type_changed(initial_type)
+        
+
+                
+        self.type_combo.currentTextChanged.connect(_on_type_changed)
+        _on_type_changed(getattr(self.item, "design_type", "FIX"))
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.text_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
