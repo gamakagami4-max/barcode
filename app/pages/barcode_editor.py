@@ -599,7 +599,14 @@ class TextPropertyEditor(QWidget):
             return l
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
-        self.font_combo = make_chevron_combo(["STANDARD", "MONOSPACE", "SERIF"])
+        self.font_combo = make_chevron_combo([
+            "STANDARD", "ARIAL", "ARIAL BLACK", "ARIAL BLACK (GT)", "ARIAL BLACK NEW",
+            "ARIAL BOLD", "ARIAL NARROW BOLD", "EUROSTILE BOLD OLD",
+            "FUTURA-CONDENSED-BOL", "FUTURA-NORMAL", "GLORIOLA STD BOLD", "GLORIOLA STD LIGHT",
+            "HELVETICANEUE", "MONTSERRAT BOLD", "MONTSERRAT SBOLD-CAE", "MONTSERRAT SEMI BOLD",
+            "MYRIAD PRO", "NEO SANS", "NEO SANS BOLD", "OCR-B", "SWIS721", "TAHOMA",
+            "UNIVERS CONDENSED",
+        ])
         layout.addRow(lbl("FONT NAME :"), self.font_combo)
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
@@ -705,12 +712,37 @@ class TextPropertyEditor(QWidget):
 
     def _apply_font_family(self, value):
         font_map = {
-            "STANDARD":  "Arial",
-            "MONOSPACE": "Courier New",
-            "SERIF":     "Times New Roman",
+            "STANDARD":              "Arial",
+            "ARIAL":                 "Arial",
+            "ARIAL BLACK":           "Arial Black",
+            "ARIAL BLACK (GT)":      "Arial Black",
+            "ARIAL BLACK NEW":       "Arial Black",
+            "ARIAL BOLD":            "Arial",
+            "ARIAL NARROW BOLD":     "Arial Narrow",
+            "EUROSTILE BOLD OLD":    "Eurostile",
+            "FUTURA-CONDENSED-BOL":  "Futura",
+            "FUTURA-NORMAL":         "Futura",
+            "GLORIOLA STD BOLD":     "Arial",
+            "GLORIOLA STD LIGHT":    "Arial",
+            "HELVETICANEUE":         "Helvetica Neue",
+            "MONTSERRAT BOLD":       "Montserrat",
+            "MONTSERRAT SBOLD-CAE":  "Montserrat",
+            "MONTSERRAT SEMI BOLD":  "Montserrat",
+            "MYRIAD PRO":            "Myriad Pro",
+            "NEO SANS":              "Neo Sans",
+            "NEO SANS BOLD":         "Neo Sans",
+            "OCR-B":                 "OCR B",
+            "SWIS721":               "Swiss 721",
+            "TAHOMA":                "Tahoma",
+            "UNIVERS CONDENSED":     "Univers Condensed",
         }
+        bold_fonts = {"ARIAL BOLD", "ARIAL BLACK", "ARIAL BLACK (GT)", "ARIAL BLACK NEW",
+                      "ARIAL NARROW BOLD", "EUROSTILE BOLD OLD", "FUTURA-CONDENSED-BOL",
+                      "GLORIOLA STD BOLD", "HELVETICANEUE", "MONTSERRAT BOLD",
+                      "MONTSERRAT SBOLD-CAE", "MONTSERRAT SEMI BOLD", "NEO SANS BOLD"}
         font = self.item.font()
         font.setFamily(font_map.get(value, "Arial"))
+        font.setBold(value in bold_fonts)
         self.item.setFont(font)
         self.update_callback()
         
