@@ -676,7 +676,6 @@ class TextPropertyEditor(QWidget):
 
         self.align_combo.currentTextChanged.connect(self._apply_alignment)
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
-                # Apply initial visual indicator for visibility state
         self._update_visibility_indicator()
 
     def _apply_alignment(self, value):
@@ -688,7 +687,6 @@ class TextPropertyEditor(QWidget):
         from PySide6.QtGui import QTextCursor, QTextBlockFormat
         alignment = align_map.get(value, Qt.AlignLeft)
         
-        # Set text width so alignment has a container to work within
         if value == "LEFT JUSTIFY":
             self.item.setTextWidth(-1)
         else:
@@ -725,17 +723,14 @@ class TextPropertyEditor(QWidget):
         self._trim_checked = not self._trim_checked; self._set_trim_style(self._trim_checked)
 
     def _apply_inverse(self, value):
-        # Store for backend only, don't change canvas appearance
         self.item.design_inverse = (value == "YES")
         self.update_callback()
 
     def _apply_visible(self, value):
-        # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Visual indicator removed - keeping it simple"""
         pass
 
     def apply_text_changes(self, text):
@@ -769,13 +764,11 @@ class LinePropertyEditor(QWidget):
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y())); self.top_spin.valueChanged.connect(lambda v: self.item.setY(v)); layout.addRow(lbl("TOP :"), self.top_spin)
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
-        # Get stored visibility or default to True
         current_visible = getattr(self.item, "design_visible", None)
         visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
         self.visible_combo.setCurrentText(visible_val)
         self.visible_combo.currentTextChanged.connect(self._apply_visible)
         layout.addRow(lbl("VISIBLE :"), self.visible_combo)
-        # Apply initial visual indicator
         self._update_visibility_indicator()
 
     def update_geometry(self): self.item.setLine(0, 0, self.width_spin.value(), 0); self.update_callback()
@@ -786,12 +779,10 @@ class LinePropertyEditor(QWidget):
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
 
     def _apply_visible(self, value):
-        # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Visual indicator removed - keeping it simple"""
         pass
 
 
@@ -817,13 +808,11 @@ class RectanglePropertyEditor(QWidget):
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
         self.border_spin = make_spin(0, 20, int(pen.width())); self.border_spin.valueChanged.connect(self.update_border); layout.addRow(lbl("BORDER WIDTH :"), self.border_spin)
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
-        # Get stored visibility or default to True
         current_visible = getattr(self.item, "design_visible", None)
         visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
         self.visible_combo.setCurrentText(visible_val)
         self.visible_combo.currentTextChanged.connect(self._apply_visible)
         layout.addRow(lbl("VISIBLE :"), self.visible_combo)
-        # Apply initial visual indicator
         self._update_visibility_indicator()
         self.column_spin = make_spin(1, 999, 1); layout.addRow(lbl("COLUMN :"), self.column_spin)
 
@@ -835,12 +824,10 @@ class RectanglePropertyEditor(QWidget):
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
     
     def _apply_visible(self, value):
-        # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Visual indicator removed - keeping it simple"""
         pass
 
 
@@ -864,13 +851,11 @@ class BarcodePropertyEditor(QWidget):
         self.top_spin = make_spin(0, 5000, int(self.item.pos().y())); self.top_spin.valueChanged.connect(lambda v: self.item.setY(v)); layout.addRow(lbl("TOP :"), self.top_spin)
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x())); self.left_spin.valueChanged.connect(lambda v: self.item.setX(v)); layout.addRow(lbl("LEFT :"), self.left_spin)
         self.visible_combo = make_chevron_combo(["TRUE","FALSE"])
-        # Get stored visibility or default to True
         current_visible = getattr(self.item, "design_visible", None)
         visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
         self.visible_combo.setCurrentText(visible_val)
         self.visible_combo.currentTextChanged.connect(self._apply_visible)
         layout.addRow(lbl("VISIBLE :"), self.visible_combo)
-        # Apply initial visual indicator
         self._update_visibility_indicator()
 
     def update_design(self, new_design):
@@ -905,18 +890,58 @@ class BarcodePropertyEditor(QWidget):
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
 
-    
     def _apply_visible(self, value):
-        # Store visibility for backend, don't actually hide on canvas
         self.item.design_visible = (value == "TRUE")
         self.update_callback()
 
     def _update_visibility_indicator(self):
-        """Visual indicator removed - keeping it simple"""
         pass
 
 
 # --- Custom Scene Items ---
+
+class SelectableTextItem(QGraphicsTextItem):
+    """QGraphicsTextItem that turns red when selected instead of Qt's default dashed box."""
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if self.isSelected():
+            original_color = self.defaultTextColor()
+            self.setDefaultTextColor(QColor("#EF4444"))
+            super().paint(painter, option, widget)
+            self.setDefaultTextColor(original_color)
+        else:
+            super().paint(painter, option, widget)
+
+
+class SelectableLineItem(QGraphicsLineItem):
+    """QGraphicsLineItem that turns red when selected instead of Qt's default dashed box."""
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if self.isSelected():
+            original_pen = self.pen()
+            red_pen = QPen(original_pen)
+            red_pen.setColor(QColor("#EF4444"))
+            self.setPen(red_pen)
+            super().paint(painter, option, widget)
+            self.setPen(original_pen)
+        else:
+            super().paint(painter, option, widget)
+
+
+class SelectableRectItem(QGraphicsRectItem):
+    """QGraphicsRectItem that turns its border red when selected instead of Qt's default dashed box."""
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if self.isSelected():
+            original_pen = self.pen()
+            red_pen = QPen(original_pen)
+            red_pen.setColor(QColor("#EF4444"))
+            self.setPen(red_pen)
+            super().paint(painter, option, widget)
+            self.setPen(original_pen)
+        else:
+            super().paint(painter, option, widget)
+
 
 class BarcodeItem(QGraphicsItemGroup):
     def __init__(self, move_callback, design="CODE128"):
@@ -940,6 +965,11 @@ class BarcodeItem(QGraphicsItemGroup):
         lbl = QGraphicsTextItem("*12345678*"); lbl.setFont(QFont("Courier", 9, QFont.Bold)); lbl.setPos(35, 58); self.addToGroup(lbl)
 
     def boundingRect(self): return self.childrenBoundingRect().adjusted(-2,-2,2,2)
+
+    def paint(self, painter, option, widget=None):
+        # Suppress Qt's default dashed selection box — no extra highlight for barcode
+        option.state &= ~QStyle.State_Selected
+        super().paint(painter, option, widget)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene():
@@ -1144,8 +1174,6 @@ class GeneralTab(QWidget):
             le.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             return le
 
-        check_style = ""  # handled by CheckmarkCheckBox class below
-
         muted_style = f"color:{COLORS['text_mute']}; font-size:10px; background:transparent; border:none;"
 
         # ── Card ──────────────────────────────────────────────────────
@@ -1158,7 +1186,7 @@ class GeneralTab(QWidget):
         card_layout.setContentsMargins(28, 22, 28, 22)
         card_layout.setHorizontalSpacing(14)
         card_layout.setVerticalSpacing(14)
-        card_layout.setColumnStretch(3, 1)  # stretch between left block and jenis cetak
+        card_layout.setColumnStretch(3, 1)
 
         # ── LEFT TOP: Code / Name / Display Status ────────────────────
         self.code_input = make_input("e.g. BC001")
@@ -1175,14 +1203,12 @@ class GeneralTab(QWidget):
         card_layout.addWidget(lbl("DISPLAY STATUS :"), 2, 0, Qt.AlignVCenter | Qt.AlignLeft)
         card_layout.addWidget(self.status_combo,        2, 1, Qt.AlignVCenter)
 
-        # ── Separator row ─────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("background: #E2E8F0; border: none; min-height: 1px; max-height: 1px;")
         card_layout.addWidget(sep, 3, 0, 1, 2)
         card_layout.setRowMinimumHeight(3, 18)
 
-        # ── LEFT BOTTOM: Sticker / Height / Width ─────────────────────
         sticker_keys = list(self._sticker_data.keys())
         self.sticker_combo = make_chevron_combo(sticker_keys)
         self.sticker_combo.setPlaceholderText("— Please select a sticker —")
@@ -1215,14 +1241,12 @@ class GeneralTab(QWidget):
         card_layout.addWidget(lbl("WIDTH :"), 6, 0, Qt.AlignVCenter | Qt.AlignLeft)
         card_layout.addWidget(w_row_w, 6, 1, Qt.AlignVCenter)
 
-        # ── Vertical divider (left block | empty middle | jenis cetak) ─
         vdiv2 = QFrame()
         vdiv2.setFrameShape(QFrame.VLine)
         vdiv2.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
         card_layout.addWidget(vdiv2, 0, 2, 7, 1)
         card_layout.setColumnMinimumWidth(2, 24)
 
-        # ── RIGHT: Jenis Cetak — pinned to far right via col stretch ──
         right_w = QWidget()
         right_w.setStyleSheet("background: transparent; border: none;")
         right_layout = QVBoxLayout(right_w)
@@ -1245,8 +1269,6 @@ class GeneralTab(QWidget):
 
         self.sticker_combo.currentTextChanged.connect(self._on_sticker_changed)
 
-    # ── Sticker selection handler ─────────────────────────────────────
-
     def _on_sticker_changed(self, key: str):
         d = self._sticker_data.get(key)
         if d:
@@ -1261,8 +1283,6 @@ class GeneralTab(QWidget):
             self.width_inch.clear()
             self.width_px.clear()
 
-    # ── Public API ────────────────────────────────────────────────────
-
     def sync_from_design(self, code: str, name: str, sticker_name: str = "",
                          h_in: float = 0.0, w_in: float = 0.0,
                          h_px: int = 0, w_px: int = 0,
@@ -1270,7 +1290,6 @@ class GeneralTab(QWidget):
         self.code_input.setText(code)
         self.name_input.setText(name)
 
-        # Sync display status combo
         self.status_combo.blockSignals(True)
         self.status_combo.setCurrentText("DISPLAY" if dp_fg == 1 else "NOT DISPLAY")
         self.status_combo.blockSignals(False)
@@ -1286,7 +1305,6 @@ class GeneralTab(QWidget):
             self.width_inch.setText(f"{d['w_in']:.2f}")
             self.width_px.setText(str(d["w_px"]))
         else:
-            # No sticker — reset to placeholder
             self.sticker_combo.setCurrentIndex(-1)
             self.height_inch.setText(f"{h_in:.2f}" if h_in else "")
             self.height_px.setText(str(h_px) if h_px else "")
@@ -1306,7 +1324,6 @@ class GeneralTab(QWidget):
         return w, h
 
     def get_dp_fg(self) -> int:
-        """Return 1 if DISPLAY, 0 otherwise."""
         return 1 if self.status_combo.currentText() == "DISPLAY" else 0
 
 
@@ -1338,8 +1355,6 @@ class BarcodeEditorPage(QWidget):
 
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
-        
-        # Disable toolbar buttons until sticker is selected
         self._update_toolbar_buttons_state(False)
 
         if form_data:
@@ -1352,8 +1367,6 @@ class BarcodeEditorPage(QWidget):
             self._h_in         = float(form_data.get("h_in") or 0.0)
             self._w_in         = float(form_data.get("w_in") or 0.0)
             self._dp_fg        = int(form_data.get("dp_fg") or 0)
-            
-            # If sticker is already provided in form_data, enable buttons
             if self._sticker_name:
                 self._update_toolbar_buttons_state(True)
         else:
@@ -1379,7 +1392,6 @@ class BarcodeEditorPage(QWidget):
             dp_fg        = self._dp_fg,
         )
         self._switch_tab(0)
-
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
         self.reset_for_new()
@@ -1446,11 +1458,11 @@ class BarcodeEditorPage(QWidget):
         if self._sticker_name:
             self.view.setVisible(True)
             self._canvas_placeholder.setVisible(False)
-            self._update_toolbar_buttons_state(True)  # Enable if sticker exists
+            self._update_toolbar_buttons_state(True)
         else:
             self.view.setVisible(False)
             self._canvas_placeholder.setVisible(True)
-            self._update_toolbar_buttons_state(False)  # Disable if no sticker
+            self._update_toolbar_buttons_state(False)
 
     def serialize_canvas(self) -> list[dict]:
         elements = []
@@ -1461,9 +1473,7 @@ class BarcodeEditorPage(QWidget):
         return elements
 
     def _serialize_item(self, item) -> dict | None:
-        # Get the design visibility (stored property) rather than actual visibility
         design_visible = getattr(item, "design_visible", True)
-        
         base = {"x": round(item.pos().x(),2), "y": round(item.pos().y(),2), "z": item.zValue(),
                 "visible": design_visible, "rotation": item.rotation(), "name": getattr(item,"component_name","")}
         if isinstance(item, BarcodeItem):
@@ -1495,22 +1505,20 @@ class BarcodeEditorPage(QWidget):
         for d in elements:
             kind = d.get("type"); item = None
             if kind == "text":
-                item = QGraphicsTextItem(d.get("text",""))
+                item = SelectableTextItem(d.get("text",""))
                 font = QFont(d.get("font_family","Arial"), d.get("font_size",10))
                 font.setBold(d.get("bold",False)); font.setItalic(d.get("italic",False))
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color","#000000")))
-                # Store inverse for print preview, don't apply to canvas
                 item.design_inverse = d.get("inverse", False)
                 item.component_name = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
-
             elif kind == "line":
-                item = QGraphicsLineItem(0, 0, d.get("x2",100), d.get("y2",0))
+                item = SelectableLineItem(0, 0, d.get("x2",100), d.get("y2",0))
                 item.setPen(QPen(Qt.black, d.get("thickness",2))); item.component_name = d.get("name","Line")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "rect":
-                item = QGraphicsRectItem(0, 0, d.get("width",100), d.get("height",50))
+                item = SelectableRectItem(0, 0, d.get("width",100), d.get("height",50))
                 item.setPen(QPen(Qt.black, d.get("border_width",2))); item.component_name = d.get("name","Rectangle")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "barcode":
@@ -1519,9 +1527,7 @@ class BarcodeEditorPage(QWidget):
                 item.component_name = d.get("name","Barcode"); item.bg.setRect(0,0,item.container_width,item.container_height)
             if item is None: continue
             item.setPos(d.get("x",0), d.get("y",0)); item.setZValue(d.get("z",0))
-            # Store the design visibility as a property, don't actually hide on canvas
             item.design_visible = d.get("visible", True)
-            # Always show on canvas for editing
             item.setVisible(True)
             item.setRotation(d.get("rotation",0))
             self.scene.addItem(item)
@@ -1535,7 +1541,7 @@ class BarcodeEditorPage(QWidget):
         return {"usrm": _json.dumps(elements, separators=(",",":")), "itrm": _json.dumps(canvas_meta, separators=(",",":"))}
 
     def _update_design_subtitle(self):
-        pass  # subtitle removed from header
+        pass
 
     def _on_sticker_canvas_resize(self, w_px: int, h_px: int):
         if w_px <= 0 or h_px <= 0:
@@ -1581,8 +1587,6 @@ class BarcodeEditorPage(QWidget):
 
         header_bar_layout.addStretch()
 
-        # Save + Cancel side by side on the right
-
         self.back_btn = StandardButton("Cancel", icon_name="fa5s.times", variant="secondary")
         self.back_btn.setToolTip("Cancel and return to list")
         self.back_btn.setFixedHeight(34)
@@ -1593,9 +1597,6 @@ class BarcodeEditorPage(QWidget):
         self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
         self.save_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.save_btn)
-
-        
-
 
         self.main_layout.addWidget(header_bar)
 
@@ -1736,83 +1737,57 @@ class BarcodeEditorPage(QWidget):
         self.save_btn.clicked.connect(self._on_save_clicked)
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
-        # Add clipboard for copy-paste (add at the end of init_ui)
-                # Add clipboard for copy-paste (add at the end of init_ui)
         self._clipboard_item = None
-        
-        # Setup global shortcuts that work even when child widgets have focus
         self._setup_copy_paste_shortcuts()
-        
-        # Enable focus for key events
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
 
     def _setup_copy_paste_shortcuts(self):
-        """Setup global shortcuts for copy/paste/duplicate that work everywhere."""
         from PySide6.QtGui import QShortcut, QKeySequence
-        
-        # Copy - Ctrl+C
         self._shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         self._shortcut_copy.setContext(Qt.ApplicationShortcut)
         self._shortcut_copy.activated.connect(self._copy_selected)
-        
-        # Paste - Ctrl+V
         self._shortcut_paste = QShortcut(QKeySequence("Ctrl+V"), self)
         self._shortcut_paste.setContext(Qt.ApplicationShortcut)
         self._shortcut_paste.activated.connect(self._paste_clipboard)
-        
-        # Duplicate - Ctrl+D
         self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
         self._shortcut_duplicate.setContext(Qt.ApplicationShortcut)
         self._shortcut_duplicate.activated.connect(self._duplicate_selected)
-        
-        # Also handle Delete key for removing items
         self._shortcut_delete = QShortcut(QKeySequence("Delete"), self)
         self._shortcut_delete.setContext(Qt.ApplicationShortcut)
         self._shortcut_delete.activated.connect(self._delete_selected_item)
 
     def _delete_selected_item(self):
-        """Delete currently selected item."""
         selected = self.scene.selectedItems()
         if not selected:
             return
-        
         item = selected[0]
-        # Find the item in the component list and delete it
         for i in range(self.component_list.count()):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == item:
                 self.delete_component(i)
                 break
 
-
     def _update_toolbar_buttons_state(self, enabled: bool):
-        """Enable or disable toolbar buttons based on sticker selection."""
         self.btn_add_text.setEnabled(enabled)
         self.btn_add_rect.setEnabled(enabled)
         self.btn_add_line.setEnabled(enabled)
         self.btn_add_code.setEnabled(enabled)
-        
-        # Update visual appearance when disabled
-        opacity = "1.0" if enabled else "0.4"
-        cursor = "pointer" if enabled else "not-allowed"
-        
-        disabled_style = f"""
-            QPushButton {{
+
+        disabled_style = """
+            QPushButton {
                 background: #F1F5F9;
                 border: 1px solid #CBD5E1;
                 border-radius: 6px;
                 padding: 6px 12px;
                 font-size: 12px;
                 color: #94A3B8;
-                opacity: {opacity};
-            }}
-            QPushButton:hover {{
+            }
+            QPushButton:hover {
                 background: #F1F5F9;
                 border: 1px solid #CBD5E1;
-            }}
+            }
         """
-        
         enabled_style = """
             QPushButton {
                 background: #FFFFFF;
@@ -1827,130 +1802,82 @@ class BarcodeEditorPage(QWidget):
                 border: 1px solid #94A3B8;
             }
         """
-        
         style = enabled_style if enabled else disabled_style
-        
         for btn in [self.btn_add_text, self.btn_add_rect, self.btn_add_line, self.btn_add_code]:
             btn.setStyleSheet(style)
             btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
     def _copy_selected(self):
-        """Copy currently selected item to internal clipboard."""
         selected = self.scene.selectedItems()
         if not selected:
             return
-        
         item = selected[0]
         self._clipboard_item = self._serialize_item(item)
         print(f"[Copy] Copied {self._clipboard_item.get('type', 'unknown')} to clipboard")
 
     def _paste_clipboard(self):
-        """Paste item from clipboard with offset."""
         if not self._clipboard_item:
             return
-        
-        # Check if we have a valid sticker/canvas
         if not self._sticker_name:
-            QMessageBox.information(self, "Paste", "Please select a sticker first before pasting.")
             return
-        
         data = self._clipboard_item.copy()
-        
-        # Offset position to avoid exact overlap
         offset = 20
-        data['x'] = data.get('x', 0) + offset
-        data['y'] = data.get('y', 0) + offset
-        
-        # Ensure within bounds
-        data['x'] = max(0, min(data['x'], self._canvas_w - 50))
-        data['y'] = max(0, min(data['y'], self._canvas_h - 50))
-        
-        # Create new item from data
+        data['x'] = max(0, min(data.get('x', 0) + offset, self._canvas_w - 50))
+        data['y'] = max(0, min(data.get('y', 0) + offset, self._canvas_h - 50))
         item = self._create_item_from_data(data)
         if not item:
             return
-        
-        # Add to scene
         self.scene.addItem(item)
-        
-        # Add to component list
         li = QListWidgetItem(self.get_component_display_name(item))
         li.graphics_item = item
         self.component_list.insertItem(0, li)
         self.comp_count_badge.setText(str(self.component_list.count()))
-        
-        # Select the new item
         self.scene.clearSelection()
         item.setSelected(True)
-        
-        # Update z-order
         self.sync_z_order_from_list()
-        
-        print(f"[Paste] Pasted {data.get('type', 'unknown')} at ({data['x']}, {data['y']})")
 
     def _duplicate_selected(self):
-        """Duplicate currently selected item (Ctrl+D)."""
         self._copy_selected()
         self._paste_clipboard()
 
     def _create_item_from_data(self, data: dict):
-        """Create a graphics item from serialized data."""
         kind = data.get('type')
         flags = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges
-        
         if kind == 'text':
-            item = QGraphicsTextItem(data.get('text', ''))
+            item = SelectableTextItem(data.get('text', ''))
             font = QFont(data.get('font_family', 'Arial'), data.get('font_size', 10))
-            font.setBold(data.get('bold', False))
-            font.setItalic(data.get('italic', False))
+            font.setBold(data.get('bold', False)); font.setItalic(data.get('italic', False))
             item.setFont(font)
             item.component_name = data.get('name', 'Text')
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
-            setup_item_logic(item, self.update_pos_label)
-            item.setFlags(flags)
-            
+            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
-            item = QGraphicsLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
-            pen = QPen(QColor(data.get('color', '#000000')), data.get('thickness', 2))
-            item.setPen(pen)
+            item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
+            item.setPen(QPen(QColor(data.get('color', '#000000')), data.get('thickness', 2)))
             item.component_name = data.get('name', 'Line')
-            setup_item_logic(item, self.update_pos_label)
-            item.setFlags(flags)
-            
+            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'rect':
-            item = QGraphicsRectItem(0, 0, data.get('width', 100), data.get('height', 50))
-            pen = QPen(QColor(data.get('border_color', '#000000')), data.get('border_width', 2))
-            item.setPen(pen)
+            item = SelectableRectItem(0, 0, data.get('width', 100), data.get('height', 50))
+            item.setPen(QPen(QColor(data.get('border_color', '#000000')), data.get('border_width', 2)))
             item.component_name = data.get('name', 'Rectangle')
-            setup_item_logic(item, self.update_pos_label)
-            item.setFlags(flags)
-            
+            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'barcode':
             item = BarcodeItem(self.update_pos_label, design=data.get('design', 'CODE128'))
             item.container_width = data.get('container_width', 160)
             item.container_height = data.get('container_height', 80)
             item.component_name = data.get('name', 'Barcode')
-            # Recreate barcode with new dimensions
             item.bg.setRect(0, 0, item.container_width, item.container_height)
-            
         else:
             return None
-        
-        # Set common properties
-                # Set common properties
         item.setPos(data.get('x', 0), data.get('y', 0))
         item.setZValue(data.get('z', 0))
-        # Store visibility for backend, always show on canvas
         item.design_visible = data.get('visible', True)
-        item.setVisible(True)  # Always visible on canvas
+        item.setVisible(True)
         item.setRotation(data.get('rotation', 0))
-        
         return item
 
     def _on_save_clicked(self):
-        # Read all fields from the General tab
         selected_sticker = self.general_tab.sticker_combo.currentText()
-        # Ignore the placeholder item
         if selected_sticker and not selected_sticker.startswith("—"):
             self._sticker_name = selected_sticker
         elif selected_sticker and selected_sticker.startswith("—"):
@@ -1958,36 +1885,25 @@ class BarcodeEditorPage(QWidget):
 
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
-        if code_val:
-            self._design_code = code_val
-        if name_val:
-            self._design_name = name_val
+        if code_val: self._design_code = code_val
+        if name_val: self._design_name = name_val
 
-        # Read dp_fg from status combo (DISPLAY = 1, NOT DISPLAY = 0)
         dp_fg = self.general_tab.get_dp_fg()
 
-        try:
-            self._canvas_w = int(self.general_tab.width_px.text())
-        except (ValueError, AttributeError):
-            pass
-        try:
-            self._canvas_h = int(self.general_tab.height_px.text())
-        except (ValueError, AttributeError):
-            pass
-        try:
-            h_in = float(self.general_tab.height_inch.text())
-        except (ValueError, AttributeError):
-            h_in = getattr(self, "_h_in", 0.0)
-        try:
-            w_in = float(self.general_tab.width_inch.text())
-        except (ValueError, AttributeError):
-            w_in = getattr(self, "_w_in", 0.0)
+        try: self._canvas_w = int(self.general_tab.width_px.text())
+        except (ValueError, AttributeError): pass
+        try: self._canvas_h = int(self.general_tab.height_px.text())
+        except (ValueError, AttributeError): pass
+        try: h_in = float(self.general_tab.height_inch.text())
+        except (ValueError, AttributeError): h_in = getattr(self, "_h_in", 0.0)
+        try: w_in = float(self.general_tab.width_inch.text())
+        except (ValueError, AttributeError): w_in = getattr(self, "_w_in", 0.0)
 
         payload = self.get_design_payload()
         payload["pk"]           = self._design_code
         payload["original_pk"]  = getattr(self, "_original_pk", self._design_code)
         payload["name"]         = self._design_name
-        payload["dp_fg"]        = dp_fg          # ← now included
+        payload["dp_fg"]        = dp_fg
         payload["sticker_name"] = self._sticker_name
         payload["w_px"]         = self._canvas_w
         payload["h_px"]         = self._canvas_h
@@ -2086,23 +2002,23 @@ class BarcodeEditorPage(QWidget):
             if getattr(li, 'graphics_item', None) == selected: self.component_list.setCurrentItem(li); break
         self.component_list.blockSignals(False)
         self.current_editor = None
-        if isinstance(selected, QGraphicsTextItem): self.current_editor = TextPropertyEditor(selected, self.update_component_list)
+        if isinstance(selected, BarcodeItem): self.current_editor = BarcodePropertyEditor(selected, self.update_component_list)
+        elif isinstance(selected, QGraphicsTextItem): self.current_editor = TextPropertyEditor(selected, self.update_component_list)
         elif isinstance(selected, QGraphicsLineItem): self.current_editor = LinePropertyEditor(selected, self.update_component_list)
         elif isinstance(selected, QGraphicsRectItem): self.current_editor = RectanglePropertyEditor(selected, self.update_component_list)
-        elif isinstance(selected, BarcodeItem): self.current_editor = BarcodePropertyEditor(selected, self.update_component_list)
         if self.current_editor: self.inspector_layout.addWidget(self.current_editor)
 
     def add_element(self, kind):
         self.scene.clearSelection()
         flags = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges
         if kind == "text":
-            item = QGraphicsTextItem("LABEL_VAR"); item.setFont(QFont("Arial",10))
+            item = SelectableTextItem("LABEL_VAR"); item.setFont(QFont("Arial",10))
             item.component_name = "Text"; setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
-            item = QGraphicsRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
+            item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
             item.component_name = "Rectangle"; setup_item_logic(item, self.update_pos_label)
         elif kind == "line":
-            item = QGraphicsLineItem(0,0,100,0); item.setPen(QPen(Qt.black,2))
+            item = SelectableLineItem(0,0,100,0); item.setPen(QPen(Qt.black,2))
             item.component_name = "Line"; setup_item_logic(item, self.update_pos_label)
         elif kind == "barcode":
             item = BarcodeItem(self.update_pos_label)
