@@ -206,9 +206,27 @@ class _ComboDropdown(QFrame):
             self._style_btn(btn, btn.text() == option)
 
     def popup_below(self, trigger):
-        gpos = trigger.mapToGlobal(trigger.rect().bottomLeft())
+        """Show dropdown below trigger if space permits, otherwise above."""
         self.setFixedWidth(max(trigger.width(), 160))
-        self.move(gpos)
+        
+        # Get screen geometry to check available space
+        screen = QApplication.primaryScreen().availableGeometry()
+        
+        # Calculate position below the trigger
+        pos_below = trigger.mapToGlobal(trigger.rect().bottomLeft())
+        
+        # Check if dropdown would go off-screen at the bottom
+        space_below = screen.bottom() - pos_below.y()
+        dropdown_height = self.height()
+        
+        if space_below < dropdown_height:
+            # Not enough space below, show above instead
+            pos_above = trigger.mapToGlobal(trigger.rect().topLeft())
+            self.move(pos_above.x(), pos_above.y() - dropdown_height)
+        else:
+            # Enough space below
+            self.move(pos_below)
+        
         self.show()
         self.raise_()
 
