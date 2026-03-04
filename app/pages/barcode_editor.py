@@ -626,9 +626,12 @@ class TextPropertyEditor(QWidget):
         self.inverse_combo.setCurrentText("YES" if current_inverse else "NO")
         self.inverse_combo.currentTextChanged.connect(self._apply_inverse)
         layout.addRow(lbl("INVERSE :"), self.inverse_combo)
-        self.type_combo = make_chevron_combo(["FIX", "VAR"])
+        self.type_combo = make_chevron_combo([
+            "FIX", "INPUT", "LOOKUP", "SAME WITH", "LINK", "SYSTEM", "BATCH NO", "MERGE",
+            "TIMBANGAN", "DUPLIKASI", "RUNNING NO", "KONVERSI TIMBANGAN",
+        ])
         layout.addRow(lbl("TYPE :"), self.type_combo)
-        self.editor_combo = make_chevron_combo(["INVISIBLE", "VISIBLE", "READONLY"])
+        self.editor_combo = make_chevron_combo(["ENABLED", "DISABLED", "INVISIBLE"])
         layout.addRow(lbl("EDITOR :"), self.editor_combo)
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
