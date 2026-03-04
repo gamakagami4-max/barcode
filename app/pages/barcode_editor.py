@@ -1875,10 +1875,19 @@ class BarcodeEditorPage(QWidget):
         if not selected:
             return
         item = selected[0]
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox(self)
+        reply.setWindowTitle("Delete Component")
+        reply.setText("Are you sure you want to delete this component?")
+        reply.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        reply.setDefaultButton(QMessageBox.Cancel)
+        reply.setIcon(QMessageBox.Warning)
+        if reply.exec() != QMessageBox.Yes:
+            return
         for i in range(self.component_list.count()):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == item:
-                self.delete_component(i)
+                self.delete_component(i, confirmed=True)
                 break
 
     def _update_toolbar_buttons_state(self, enabled: bool):
@@ -2033,9 +2042,19 @@ class BarcodeEditorPage(QWidget):
             gi = getattr(li, 'graphics_item', None)
             if gi: gi.setZValue(count - i)
 
-    def delete_component(self, row):
+    def delete_component(self, row, confirmed=False):
         li = self.component_list.item(row)
         if not li: return
+        if not confirmed:
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox(self)
+            reply.setWindowTitle("Delete Component")
+            reply.setText("Are you sure you want to delete this component?")
+            reply.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+            reply.setDefaultButton(QMessageBox.Cancel)
+            reply.setIcon(QMessageBox.Warning)
+            if reply.exec() != QMessageBox.Yes:
+                return
         gi = getattr(li, 'graphics_item', None)
         self.scene.blockSignals(True); self.component_list.blockSignals(True)
         if gi and gi.scene() == self.scene: self.scene.removeItem(gi)
