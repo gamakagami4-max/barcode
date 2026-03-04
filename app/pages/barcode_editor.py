@@ -609,6 +609,23 @@ def setup_item_logic(item, on_move_callback):
     item.itemChange = patched_item_change
 
 
+# ── Shared disabled styles ────────────────────────────────────────────────────
+
+_LINE_DISABLED = """
+    QLineEdit {
+        background-color: #F8FAFC; border: 1px solid #E2E8F0;
+        border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+    }
+"""
+
+_FIELD_DISABLED = """
+    QLineEdit {
+        background-color: #F8FAFC; border: 1px solid #E2E8F0;
+        border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+    }
+"""
+
+
 # --- Property Editors ---
 
 class TextPropertyEditor(QWidget):
@@ -716,6 +733,41 @@ class TextPropertyEditor(QWidget):
         self.same_with_combo.currentTextChanged.connect(self._on_same_with_changed)
         layout.addRow(lbl("SAME WITH :"), self.same_with_combo)
 
+        # ── LINK-only: component dropdown (LOOKUP sources only) ───────
+        self.link_combo = make_chevron_combo([""])
+        try:
+            scene = self.item.scene()
+            if scene:
+                link_names = []
+                for scene_item in scene.items():
+                    if scene_item.group():
+                        continue
+                    if scene_item is self.item:
+                        continue
+                    if not isinstance(scene_item, SelectableTextItem):
+                        continue
+                    # Only LOOKUP components can be a LINK source
+                    if getattr(scene_item, "design_type", "") != "LOOKUP":
+                        continue
+                    name = getattr(scene_item, "component_name", "") or "Text"
+                    link_names.append(name)
+                if link_names:
+                    self.link_combo._items = [""] + link_names
+                    self.link_combo._current = ""
+                    self.link_combo._label.setText("")
+                    self.link_combo.setPlaceholderText("— select link —")
+                else:
+                    self.link_combo._items = ["—"]
+                    self.link_combo._current = "—"
+                    self.link_combo._label.setText("—")
+        except Exception:
+            pass
+        stored_link = getattr(self.item, "design_link", "")
+        if stored_link and stored_link in self.link_combo._items:
+            self.link_combo.setCurrentText(stored_link)
+        self.link_combo.currentTextChanged.connect(self._on_link_changed)
+        layout.addRow(lbl("LINK TO :"), self.link_combo)
+
         DISABLED_STYLE = """
             QComboBox, QSpinBox {
                 background-color: #F8FAFC;
@@ -732,6 +784,7 @@ class TextPropertyEditor(QWidget):
             is_input     = val == "INPUT"
             is_lookup    = val == "LOOKUP"
             is_same_with = val == "SAME WITH"
+            is_link      = val == "LINK"
 
             if is_same_with:
                 # Always lock all fields first — nothing is editable on a SAME WITH item
@@ -761,37 +814,33 @@ class TextPropertyEditor(QWidget):
                     if self.max_length_spin.value() == 0:
                         self.max_length_spin.setValue(1)
 
-                # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP ───────────
+                # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP, RESULT ───
                 self.table_combo.setEnabled(is_lookup)
                 self.group_combo.setEnabled(is_lookup)
                 self.table_extra.setEnabled(is_lookup)
-                self.result_combo.setEnabled(is_lookup)
-                self.result_combo.setStyleSheet(
-                    MODERN_INPUT_STYLE if is_lookup else """
-                        QLineEdit {
-                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
-                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
-                        }
-                    """
-                )
                 self.table_extra.setStyleSheet(
-                    MODERN_INPUT_STYLE if is_lookup else """
-                        QLineEdit {
-                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
-                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
-                        }
-                    """
+                    MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
                 )
                 self.field_edit.setEnabled(is_lookup)
                 self.field_edit.setStyleSheet(
-                    MODERN_INPUT_STYLE if is_lookup else """
-                        QLineEdit {
-                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
-                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
-                        }
-                    """
+                    MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
+                )
+                self.result_combo.setEnabled(is_lookup)
+                self.result_combo.setStyleSheet(
+                    MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
                 )
                 self.same_with_combo.setEnabled(is_same_with)
+
+            # ── LINK combo — enabled only when type is LINK ───────────
+            self.link_combo.setEnabled(is_link)
+            if is_link:
+                stored_link = getattr(self.item, "design_link", "")
+                if stored_link and stored_link not in ("", "—"):
+                    self._apply_link_fields(stored_link)
+                else:
+                    self._clear_link_fields()
+            else:
+                self.item.design_link = ""
 
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
@@ -915,12 +964,7 @@ class TextPropertyEditor(QWidget):
                 background: transparent; border: none;
             }
         """
-        LINE_DISABLED = """
-            QLineEdit {
-                background-color: #F8FAFC; border: 1px solid #E2E8F0;
-                border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
-            }
-        """
+        LINE_DISABLED = _LINE_DISABLED
         for w in [self.text_input, self.caption_input, self.format_edit, self.result_combo]:
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else LINE_DISABLED)
@@ -929,11 +973,10 @@ class TextPropertyEditor(QWidget):
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
         for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
                   self.editor_combo, self.wrap_combo, self.data_type_combo,
-                  self.table_combo, self.group_combo,
+                  self.table_combo, self.group_combo, self.link_combo,
                   self.visible_combo, self.save_field_combo, self.mandatory_combo]:
             w.setEnabled(not locked)
         self.trim_box.setEnabled(not locked)
-        # Keep SAME WITH combo always accessible
         # Keep SAME WITH combo accessible only when locked (i.e. type IS SAME WITH)
         if locked:
             self.same_with_combo.setEnabled(True)
@@ -963,6 +1006,89 @@ class TextPropertyEditor(QWidget):
             target.design_inverse = getattr(self.item, "design_inverse", False)
             target.design_visible = getattr(self.item, "design_visible", True)
         self.update_callback()
+
+    # ── LINK methods ──────────────────────────────────────────────────────────
+
+    def _on_link_changed(self, value):
+        if value and value not in ("", "—"):
+            self.item.design_link = value
+            self._apply_link_fields(value)
+        else:
+            self.item.design_link = ""
+            self._clear_link_fields()
+
+    def _apply_link_fields(self, source_name):
+        """Copy GROUP, TABLE, QUERY, FIELD, RESULT from the linked LOOKUP source."""
+        scene = self.item.scene()
+        if not scene:
+            return
+        source_item = None
+        for scene_item in scene.items():
+            if scene_item is self.item:
+                continue
+            if not isinstance(scene_item, SelectableTextItem):
+                continue
+            if getattr(scene_item, "component_name", "") == source_name:
+                source_item = scene_item
+                break
+        if not source_item:
+            return
+
+        # Copy values from source to this item's data attributes
+        self.item.design_group  = getattr(source_item, "design_group",  "")
+        self.item.design_table  = getattr(source_item, "design_table",  "")
+        self.item.design_query  = getattr(source_item, "design_query",  "")
+        self.item.design_field  = getattr(source_item, "design_field",  "")
+        self.item.design_result = getattr(source_item, "design_result", "")
+
+        # Reflect in UI — grey + read-only, showing source values
+        self.group_combo.setEnabled(False)
+        self.group_combo._current = self.item.design_group
+        self.group_combo._label.setText(self.item.design_group)
+
+        self.table_combo.setEnabled(False)
+        self.table_combo._current = self.item.design_table
+        self.table_combo._label.setText(self.item.design_table)
+
+        self.table_extra.setEnabled(False)
+        self.table_extra.setText(self.item.design_query)
+        self.table_extra.setStyleSheet(_LINE_DISABLED)
+
+        self.field_edit.setEnabled(False)
+        self.field_edit.setText(self.item.design_field)
+        self.field_edit.setStyleSheet(_LINE_DISABLED)
+
+        self.result_combo.setEnabled(False)
+        self.result_combo.setText(self.item.design_result)
+        self.result_combo.setStyleSheet(_LINE_DISABLED)
+
+    def _clear_link_fields(self):
+        """Reset GROUP, TABLE, QUERY, FIELD, RESULT to empty/disabled when link is cleared."""
+        self.item.design_group  = ""
+        self.item.design_table  = ""
+        self.item.design_query  = ""
+        self.item.design_field  = ""
+        self.item.design_result = ""
+
+        self.group_combo.setEnabled(False)
+        self.group_combo._current = ""
+        self.group_combo._label.setText("")
+
+        self.table_combo.setEnabled(False)
+        self.table_combo._current = ""
+        self.table_combo._label.setText("")
+
+        self.table_extra.setEnabled(False)
+        self.table_extra.clear()
+        self.table_extra.setStyleSheet(_LINE_DISABLED)
+
+        self.field_edit.setEnabled(False)
+        self.field_edit.clear()
+        self.field_edit.setStyleSheet(_LINE_DISABLED)
+
+        self.result_combo.setEnabled(False)
+        self.result_combo.clear()
+        self.result_combo.setStyleSheet(_LINE_DISABLED)
 
     # ── Standard methods ──────────────────────────────────────────────────────
 
@@ -1828,6 +1954,12 @@ class BarcodeEditorPage(QWidget):
                 "color": color,
                 "inverse": getattr(item, "design_inverse", False),
                 "design_same_with": getattr(item, "design_same_with", ""),
+                "design_link":      getattr(item, "design_link",      ""),
+                "design_group":     getattr(item, "design_group",     ""),
+                "design_table":     getattr(item, "design_table",     ""),
+                "design_query":     getattr(item, "design_query",     ""),
+                "design_field":     getattr(item, "design_field",     ""),
+                "design_result":    getattr(item, "design_result",    ""),
                 "design_type": getattr(item, "design_type", "FIX"),
             })
             return base
@@ -1849,10 +1981,16 @@ class BarcodeEditorPage(QWidget):
                 font.setBold(d.get("bold",False)); font.setItalic(d.get("italic",False))
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color","#000000")))
-                item.design_inverse = d.get("inverse", False)
-                item.design_same_with = d.get("design_same_with", "")
-                item.design_type = d.get("design_type", "FIX")
-                item.component_name = d.get("name","Text")
+                item.design_inverse    = d.get("inverse", False)
+                item.design_same_with  = d.get("design_same_with", "")
+                item.design_link       = d.get("design_link",   "")
+                item.design_group      = d.get("design_group",  "")
+                item.design_table      = d.get("design_table",  "")
+                item.design_query      = d.get("design_query",  "")
+                item.design_field      = d.get("design_field",  "")
+                item.design_result     = d.get("design_result", "")
+                item.design_type       = d.get("design_type", "FIX")
+                item.component_name    = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
                 item = SelectableLineItem(0, 0, d.get("x2",100), d.get("y2",0))
@@ -2140,7 +2278,13 @@ class BarcodeEditorPage(QWidget):
             item.setFont(font)
             item.component_name = data.get('name', 'Text')
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
-            item.design_same_with = ""  # new items don't inherit same-with
+            item.design_same_with = ""
+            item.design_link      = ""
+            item.design_group     = ""
+            item.design_table     = ""
+            item.design_query     = ""
+            item.design_field     = ""
+            item.design_result    = ""
             item.design_type = "FIX"
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
@@ -2304,12 +2448,7 @@ class BarcodeEditorPage(QWidget):
             scene_item.design_visible = getattr(source, "design_visible", True)
 
     def _rebuild_same_with_registry(self):
-        """Rebuild SameWithRegistry from current scene items.
-
-        Must be called:
-          - after deserialize_canvas() so loaded designs work immediately
-          - before opening a TextPropertyEditor so SAME WITH lock state is correct
-        """
+        """Rebuild SameWithRegistry from current scene items."""
         name_to_item = {}
         for scene_item in self.scene.items():
             if scene_item.group():
@@ -2344,16 +2483,16 @@ class BarcodeEditorPage(QWidget):
             for scene_item in self.scene.items():
                 if getattr(scene_item, "design_same_with", "") == old_name:
                     scene_item.design_same_with = new_name
-            # If the currently open editor is a SAME WITH item pointing to the
-            # renamed component, update its combo to show the new name live
+                if getattr(scene_item, "design_link", "") == old_name:
+                    scene_item.design_link = new_name
+            # Update live combos in the currently open editor
             editor = getattr(self, "current_editor", None)
             if editor and isinstance(editor, TextPropertyEditor):
-                combo = editor.same_with_combo
-                # Update the item in the list that matched old_name
-                combo._items = [new_name if i == old_name else i for i in combo._items]
-                if combo._current == old_name:
-                    combo._current = new_name
-                    combo._label.setText(new_name)
+                for combo in (editor.same_with_combo, editor.link_combo):
+                    combo._items = [new_name if i == old_name else i for i in combo._items]
+                    if combo._current == old_name:
+                        combo._current = new_name
+                        combo._label.setText(new_name)
         self.update_component_list()
 
     def sync_selection_from_list(self, li):
@@ -2398,9 +2537,15 @@ class BarcodeEditorPage(QWidget):
         flags = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges
         if kind == "text":
             item = SelectableTextItem("LABEL_VAR"); item.setFont(QFont("Arial",10))
-            item.component_name = "Text"
+            item.component_name   = "Text"
             item.design_same_with = ""
-            item.design_type = "FIX"
+            item.design_link      = ""
+            item.design_group     = ""
+            item.design_table     = ""
+            item.design_query     = ""
+            item.design_field     = ""
+            item.design_result    = ""
+            item.design_type      = "FIX"
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
