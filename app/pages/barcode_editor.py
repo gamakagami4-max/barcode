@@ -650,6 +650,21 @@ class TextPropertyEditor(QWidget):
             return l
 
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
+        # Prefer stored value, fallback to reading document
+        stored_align = getattr(self.item, "_design_alignment", None)
+        if stored_align in ("LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"):
+            self.align_combo._current = stored_align
+            self.align_combo._label.setText(stored_align)
+        else:
+            doc = self.item.document()
+            if doc.blockCount() > 0:
+                block_align = doc.begin().blockFormat().alignment()
+                if block_align == Qt.AlignCenter:
+                    self.align_combo._current = "CENTER"
+                    self.align_combo._label.setText("CENTER")
+                elif block_align == Qt.AlignRight:
+                    self.align_combo._current = "RIGHT JUSTIFY"
+                    self.align_combo._label.setText("RIGHT JUSTIFY")
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
         self.font_combo = make_chevron_combo([
             "STANDARD", "ARIAL", "ARIAL BLACK", "ARIAL BLACK (GT)", "ARIAL BLACK NEW",
@@ -1100,17 +1115,62 @@ class TextPropertyEditor(QWidget):
         }
         from PySide6.QtGui import QTextCursor, QTextBlockFormat
         alignment = align_map.get(value, Qt.AlignLeft)
+
+        was_selected = self.item.isSelected()
+        
+        # Save current color before any changes
+        current_color = self.item.defaultTextColor()
+
         if value == "LEFT JUSTIFY":
             self.item.setTextWidth(-1)
         else:
             w = self.item.boundingRect().width()
             self.item.setTextWidth(w if w > 0 else 200)
-        cursor = self.item.textCursor()
-        cursor.select(QTextCursor.SelectionType.Document)
-        fmt = QTextBlockFormat()
-        fmt.setAlignment(alignment)
-        cursor.mergeBlockFormat(fmt)
-        self.item.setTextCursor(cursor)
+
+        self.item._ignore_selection_color = True
+        try:
+            cursor = self.item.textCursor()
+            cursor.select(QTextCursor.SelectionType.Document)
+            fmt = QTextBlockFormat()
+            fmt.setAlignment(alignment)
+            cursor.mergeBlockFormat(fmt)
+            self.item.setTextCursor(cursor)
+        finally:
+            self.item._ignore_selection_color = False
+
+        # Only set _original_color if it doesn't exist, don't overwrite it!
+        if not hasattr(self.item, '_original_color'):
+            self.item._original_color = QColor("#000000")
+        
+        # Determine target color based on selection state
+        target_color = QColor("#EF4444") if was_selected else self.item._original_color
+        
+        # Force full repaint by briefly removing and re-adding to scene
+        scene = self.item.scene()
+        if scene:
+            pos = self.item.pos()
+            z = self.item.zValue()
+            rotation = self.item.rotation()
+            
+            # CRITICAL: Keep ignore true during ENTIRE scene manipulation
+            self.item._ignore_selection_color = True
+            
+            scene.removeItem(self.item)
+            scene.addItem(self.item)
+            self.item.setPos(pos)
+            self.item.setZValue(z)
+            self.item.setRotation(rotation)
+            
+            if was_selected:
+                self.item.setSelected(True)
+            
+            # Set color while still ignoring selection changes
+            self.item.setDefaultTextColor(target_color)
+            
+            # Only release the lock at the very end
+            self.item._ignore_selection_color = False
+
+        self.item._design_alignment = value
         self.update_callback()
 
     def _apply_font_family(self, value):
@@ -1340,15 +1400,25 @@ class BarcodePropertyEditor(QWidget):
 # --- Custom Scene Items ---
 
 class SelectableTextItem(QGraphicsTextItem):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_color = QColor("#000000")
+        self._ignore_selection_color = False
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedChange and not self._ignore_selection_color:
+            print(f"[itemChange LIVE] value={value}, _ignore={self._ignore_selection_color}, color before={self.defaultTextColor().name()}")
+            if value:
+                self._original_color = QColor("#000000")
+                self.setDefaultTextColor(QColor("#EF4444"))
+            else:
+                self.setDefaultTextColor(self._original_color)
+            print(f"[itemChange LIVE] color after={self.defaultTextColor().name()}")
+        return super().itemChange(change, value)
+
     def paint(self, painter, option, widget=None):
         option.state &= ~QStyle.State_Selected
-        if self.isSelected():
-            original_color = self.defaultTextColor()
-            self.setDefaultTextColor(QColor("#EF4444"))
-            super().paint(painter, option, widget)
-            self.setDefaultTextColor(original_color)
-        else:
-            super().paint(painter, option, widget)
+        super().paint(painter, option, widget)
 
 
 class SelectableLineItem(QGraphicsLineItem):
