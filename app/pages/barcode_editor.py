@@ -20,6 +20,38 @@ import shiboken6
 from components.standard_button import StandardButton
 
 
+# ── SAME WITH Registry ────────────────────────────────────────────────────────
+
+class SameWithRegistry:
+    """Tracks which components are linked via SAME WITH relationships."""
+    _links = {}
+
+    @classmethod
+    def register(cls, target_item, source_item):
+        cls._links[target_item] = source_item
+
+    @classmethod
+    def unregister(cls, target_item):
+        if target_item in cls._links:
+            del cls._links[target_item]
+
+    @classmethod
+    def get_source(cls, target_item):
+        return cls._links.get(target_item)
+
+    @classmethod
+    def get_targets(cls, source_item):
+        return [t for t, s in cls._links.items() if s == source_item]
+
+    @classmethod
+    def is_source(cls, item):
+        return item in cls._links.values()
+
+    @classmethod
+    def clear(cls):
+        cls._links.clear()
+
+
 # ── Checkbox with checkmark (not solid fill) ─────────────────────────────────
 
 class CheckmarkCheckBox(QCheckBox):
@@ -51,17 +83,14 @@ class CheckmarkCheckBox(QCheckBox):
         box_size = 14
         y_offset = (self.height() - box_size) // 2
 
-        # ── Box ──────────────────────────────────────────────────────
         box_rect = QRect(0, y_offset, box_size, box_size)
         painter.setPen(QPen(QColor("#94A3B8" if not self.isChecked() else "#334155"), 1.5))
         painter.setBrush(QBrush(QColor("white")))
         painter.drawRoundedRect(box_rect, 3, 3)
 
-        # ── Checkmark ────────────────────────────────────────────────
         if self.isChecked():
             pen = QPen(QColor("#334155"), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
             painter.setPen(pen)
-            # tick: bottom-left corner → mid-bottom → top-right
             x, y = box_rect.x(), box_rect.y()
             s = box_size
             painter.drawLine(
@@ -73,7 +102,6 @@ class CheckmarkCheckBox(QCheckBox):
                 QPointF(x + s * 0.82, y + s * 0.24),
             )
 
-        # ── Label ─────────────────────────────────────────────────────
         text_x = box_size + 6
         painter.setPen(QColor("#334155"))
         font = self.font()
@@ -90,7 +118,7 @@ class CheckmarkCheckBox(QCheckBox):
         if event.button() == Qt.LeftButton:
             self.setChecked(not self.isChecked())
             self.update()
-            event.accept()  # consume event so Qt doesn't toggle again
+            event.accept()
         else:
             super().mousePressEvent(event)
 
@@ -106,13 +134,12 @@ COLORS = {
     "legacy_blue": "#1E3A8A" 
 }
 
-MODERN_COMBO_STYLE = ""  # Kept for legacy references; CustomCombo is used instead
+MODERN_COMBO_STYLE = ""
 
 
-# ── Custom combo widget (bypasses Qt native dropdown which ignores stylesheets) ──
+# ── Custom combo widget ───────────────────────────────────────────────────────
 
 class _ComboDropdown(QFrame):
-    """Floating dropdown — uses Qt.Tool (not Qt.Popup) to avoid hide-before-click race."""
     optionSelected = Signal(str)
 
     _ITEM_H = 32
@@ -208,36 +235,21 @@ class _ComboDropdown(QFrame):
             self._style_btn(btn, btn.text() == option)
 
     def popup_below(self, trigger):
-        """Show dropdown below trigger if space permits, otherwise above."""
         self.setFixedWidth(max(trigger.width(), 160))
-        
-        # Get screen geometry to check available space
         screen = QApplication.primaryScreen().availableGeometry()
-        
-        # Calculate position below the trigger
         pos_below = trigger.mapToGlobal(trigger.rect().bottomLeft())
-        
-        # Check if dropdown would go off-screen at the bottom
         space_below = screen.bottom() - pos_below.y()
         dropdown_height = self.height()
-        
         if space_below < dropdown_height:
-            # Not enough space below, show above instead
             pos_above = trigger.mapToGlobal(trigger.rect().topLeft())
             self.move(pos_above.x(), pos_above.y() - dropdown_height)
         else:
-            # Enough space below
             self.move(pos_below)
-        
         self.show()
         self.raise_()
 
 
 class CustomCombo(QFrame):
-    """
-    Drop-in QComboBox replacement. Uses Qt.Tool popup + app event filter
-    for outside-click detection (avoids Qt.Popup hide-before-click race).
-    """
     currentTextChanged = Signal(str)
 
     def __init__(self, items=None, parent=None):
@@ -282,8 +294,6 @@ class CustomCombo(QFrame):
             }}
             CustomCombo:hover {{ border-color: {hover}; }}
         """)
-        # Ensure chevron is visible when enabled
-        # AFTER
         if self.isEnabled() and hasattr(self, '_chevron'):
             self._chevron.setVisible(True)
 
@@ -296,14 +306,12 @@ class CustomCombo(QFrame):
     def setEnabled(self, enabled):
         super().setEnabled(enabled)
         self._apply_enabled_style(enabled)
-    
+
     def _apply_enabled_style(self, enabled):
         if enabled:
             self._apply_style(self._is_open)
-            # Restore normal chevron
             self._set_chevron(self._is_open)
         else:
-            # Disabled style - grey out background and border
             self.setStyleSheet("""
                 CustomCombo {
                     background: #F8FAFC;
@@ -312,10 +320,7 @@ class CustomCombo(QFrame):
                 }
                 CustomCombo:hover { border-color: #E2E8F0; }
             """)
-            # Hide chevron when disabled
             self._chevron.setVisible(False)
-
-
 
     def mousePressEvent(self, event):
         if not self.isEnabled():
@@ -368,8 +373,6 @@ class CustomCombo(QFrame):
         if self._is_open:
             self._close()
         super().hideEvent(event)
-
-    # ── QComboBox-compatible API ──────────────────────────────────────
 
     def currentText(self):
         return self._current
@@ -620,7 +623,7 @@ class TextPropertyEditor(QWidget):
         layout.setHorizontalSpacing(4)
         layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         layout.setLabelAlignment(Qt.AlignLeft)
-        LABEL_W = 70  # fixed width so all labels align perfectly
+        LABEL_W = 70
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         def lbl(text):
             l = QLabel(text)
@@ -628,6 +631,7 @@ class TextPropertyEditor(QWidget):
             l.setFixedWidth(LABEL_W)
             l.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
             return l
+
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         layout.addRow(lbl("ALIGNMENT :"), self.align_combo)
         self.font_combo = make_chevron_combo([
@@ -674,8 +678,43 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("DATA TYPE :"), self.data_type_combo)
 
         self.max_length_spin = make_spin(0, 9999, 1)
-        self.max_length_spin.setSpecialValueText("")  # shows blank-like when value=0/minimum
+        self.max_length_spin.setSpecialValueText("")
         layout.addRow(lbl("MAX LENGTH :"), self.max_length_spin)
+
+        # ── SAME WITH-only: component dropdown ───────────────────────
+        self.same_with_combo = make_chevron_combo([""])
+        try:
+            scene = self.item.scene()
+            if scene:
+                other_names = []
+                for scene_item in scene.items():
+                    if scene_item.group():
+                        continue
+                    if scene_item is self.item:
+                        continue
+                    if not isinstance(scene_item, SelectableTextItem):
+                        continue
+                    # Prevent circular references
+                    if getattr(scene_item, "design_same_with", "") == getattr(self.item, "component_name", ""):
+                        continue
+                    name = getattr(scene_item, "component_name", "") or "Text"
+                    other_names.append(name)
+                if other_names:
+                    self.same_with_combo._items = [""] + other_names
+                    self.same_with_combo._current = ""
+                    self.same_with_combo._label.setText("")
+                    self.same_with_combo.setPlaceholderText("—")
+                else:
+                    self.same_with_combo._items = ["—"]
+                    self.same_with_combo._current = "—"
+                    self.same_with_combo._label.setText("—")
+        except Exception:
+            pass
+        stored_same_with = getattr(self.item, "design_same_with", "")
+        if stored_same_with and stored_same_with in self.same_with_combo._items:
+            self.same_with_combo.setCurrentText(stored_same_with)
+        self.same_with_combo.currentTextChanged.connect(self._on_same_with_changed)
+        layout.addRow(lbl("SAME WITH :"), self.same_with_combo)
 
         DISABLED_STYLE = """
             QComboBox, QSpinBox {
@@ -690,44 +729,61 @@ class TextPropertyEditor(QWidget):
         """
 
         def _on_type_changed(val):
-            is_input = val == "INPUT"
-            is_lookup = val == "LOOKUP"
+            is_input     = val == "INPUT"
+            is_lookup    = val == "LOOKUP"
+            is_same_with = val == "SAME WITH"
 
-            # ── INPUT-only: DATA TYPE + MAX LENGTH ────────────────────────
-            if not is_input:
-                self.data_type_combo.setEnabled(False)
-                self.max_length_spin.setEnabled(False)
-                self.data_type_combo.blockSignals(True)
-                self.data_type_combo.setCurrentIndex(-1)
-                self.data_type_combo.blockSignals(False)
-                self.max_length_spin.setValue(0)
-                self.max_length_spin.setStyleSheet(DISABLED_STYLE)
+            if is_same_with:
+                # Always lock all fields first — nothing is editable on a SAME WITH item
+                self._lock_all_fields(True)
+                self.same_with_combo.setEnabled(True)
+                source_name = self.same_with_combo.currentText()
+                if source_name and source_name not in ("", "(no other components)"):
+                    self._apply_same_with_link(source_name)
             else:
-                self.data_type_combo.setEnabled(True)
-                self.max_length_spin.setEnabled(True)
-                self.max_length_spin.setStyleSheet(MODERN_INPUT_STYLE)
-                if self.data_type_combo.currentIndex() == -1:
-                    self.data_type_combo.setCurrentIndex(0)
-                if self.max_length_spin.value() == 0:
-                    self.max_length_spin.setValue(1)
+                self._clear_same_with()
 
-            # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP ───────────────────
-            for widget in [self.table_combo, self.table_extra, self.field_edit, self.group_combo]:
-                widget.setEnabled(is_lookup)
-                if isinstance(widget, QLineEdit):
-                    widget.setStyleSheet(
-                        MODERN_INPUT_STYLE if is_lookup else """
-                            QLineEdit {
-                                background-color: #F8FAFC;
-                                border: 1px solid #E2E8F0;
-                                border-radius: 4px;
-                                padding: 5px;
-                                font-size: 11px;
-                                color: #94A3B8;
-                            }
-                        """
-                    )
-        
+                # ── INPUT-only: DATA TYPE + MAX LENGTH ────────────────
+                if not is_input:
+                    self.data_type_combo.setEnabled(False)
+                    self.max_length_spin.setEnabled(False)
+                    self.data_type_combo.blockSignals(True)
+                    self.data_type_combo.setCurrentIndex(-1)
+                    self.data_type_combo.blockSignals(False)
+                    self.max_length_spin.setValue(0)
+                    self.max_length_spin.setStyleSheet(DISABLED_STYLE)
+                else:
+                    self.data_type_combo.setEnabled(True)
+                    self.max_length_spin.setEnabled(True)
+                    self.max_length_spin.setStyleSheet(MODERN_INPUT_STYLE)
+                    if self.data_type_combo.currentIndex() == -1:
+                        self.data_type_combo.setCurrentIndex(0)
+                    if self.max_length_spin.value() == 0:
+                        self.max_length_spin.setValue(1)
+
+                # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP ───────────
+                self.table_combo.setEnabled(is_lookup)
+                self.group_combo.setEnabled(is_lookup)
+                self.table_extra.setEnabled(is_lookup)
+                self.table_extra.setStyleSheet(
+                    MODERN_INPUT_STYLE if is_lookup else """
+                        QLineEdit {
+                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+                        }
+                    """
+                )
+                self.field_edit.setEnabled(is_lookup)
+                self.field_edit.setStyleSheet(
+                    MODERN_INPUT_STYLE if is_lookup else """
+                        QLineEdit {
+                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+                        }
+                    """
+                )
+                self.same_with_combo.setEnabled(is_same_with)
+
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.text_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -737,14 +793,12 @@ class TextPropertyEditor(QWidget):
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.caption_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("CAPTION :"), self.caption_input)
-        # WRAP TEXT and WIDTH on separate rows
         self.wrap_combo = make_chevron_combo(["NO", "YES"])
         layout.addRow(lbl("WRAP TEXT :"), self.wrap_combo)
         self.wrap_width_spin = make_spin(0, 5000, 1)
         layout.addRow(lbl("WRAP WIDTH :"), self.wrap_width_spin)
         self.group_combo = make_chevron_combo([""])
         layout.addRow(lbl("GROUP :"), self.group_combo)
-        # TABLE and extra on separate rows
         self.table_combo = make_chevron_combo([""])
         layout.addRow(lbl("TABLE :"), self.table_combo)
         self.table_extra = QLineEdit(); self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
@@ -753,7 +807,6 @@ class TextPropertyEditor(QWidget):
         self.field_edit = QLineEdit(); self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
         self.field_edit.setMinimumHeight(52); self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FIELD :"), self.field_edit)
-        # RESULT and TRIM on separate rows
         self.result_combo = make_chevron_combo([""])
         layout.addRow(lbl("RESULT :"), self.result_combo)
         self._trim_checked = False
@@ -768,7 +821,6 @@ class TextPropertyEditor(QWidget):
         self.format_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FORMAT :"), self.format_edit)
         self.visible_combo = make_chevron_combo(["TRUE", "FALSE"])
-        # Get stored visibility or default to True
         current_visible = getattr(self.item, "design_visible", None)
         visible_val = "TRUE" if current_visible in [True, None] else "FALSE"
         self.visible_combo.setCurrentText(visible_val)
@@ -779,13 +831,129 @@ class TextPropertyEditor(QWidget):
         self.column_spin = make_spin(1, 999, 1)
         layout.addRow(lbl("COLUMN :"), self.column_spin)
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
-        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo) 
+        layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
 
         self.align_combo.currentTextChanged.connect(self._apply_alignment)
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
         self.type_combo.currentTextChanged.connect(_on_type_changed)
         _on_type_changed(getattr(self.item, "design_type", "FIX"))
+
+        # Restore SAME WITH link if previously set
+        if stored_same_with and stored_same_with in self.same_with_combo._items:
+            if getattr(self.item, "design_type", "") == "SAME WITH":
+                self._apply_same_with_link(stored_same_with)
+
         self._update_visibility_indicator()
+
+    # ── SAME WITH methods ─────────────────────────────────────────────────────
+
+    def _on_same_with_changed(self, value):
+        if self.type_combo.currentText() == "SAME WITH":
+            if value and value not in ("", "(no other components)"):
+                self._apply_same_with_link(value)
+            else:
+                # Blank selected — cut off the link entirely
+                SameWithRegistry.unregister(self.item)
+                self.item.design_same_with = ""
+                self._lock_all_fields(True)
+                self.same_with_combo.setEnabled(True)
+                return
+        self.item.design_same_with = value
+
+    def _apply_same_with_link(self, source_name):
+        scene = self.item.scene()
+        if not scene:
+            return
+        source_item = None
+        for scene_item in scene.items():
+            if scene_item is self.item:
+                continue
+            if not isinstance(scene_item, SelectableTextItem):
+                continue
+            if getattr(scene_item, "component_name", "") == source_name:
+                source_item = scene_item
+                break
+        if not source_item:
+            return
+        # Prevent linking to another SAME WITH item
+        if getattr(source_item, "design_type", "") == "SAME WITH":
+            return
+        SameWithRegistry.register(self.item, source_item)
+        self.item.setPlainText(source_item.toPlainText())
+        self.item.setFont(QFont(source_item.font().family(), source_item.font().pointSize()))
+        self.item.setDefaultTextColor(source_item.defaultTextColor())
+        self.item.design_inverse = getattr(source_item, "design_inverse", False)
+        self.item.design_visible = getattr(source_item, "design_visible", True)
+        self.item.design_same_with = source_name
+        self._refresh_ui_from_item()
+        self._lock_all_fields(True)
+        self.update_callback()
+
+    def _clear_same_with(self):
+        SameWithRegistry.unregister(self.item)
+        self.item.design_same_with = ""
+        self._lock_all_fields(False)
+
+    def _lock_all_fields(self, locked):
+        DISABLED_STYLE_FULL = """
+            QComboBox, QSpinBox, QLineEdit {
+                background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+            }
+            QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button {
+                background: transparent; border: none;
+            }
+        """
+        LINE_DISABLED = """
+            QLineEdit {
+                background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+            }
+        """
+        for w in [self.text_input, self.caption_input, self.format_edit]:
+            w.setEnabled(not locked)
+            w.setStyleSheet(MODERN_INPUT_STYLE if not locked else LINE_DISABLED)
+        for w in [self.size_spin, self.top_spin, self.left_spin, self.wrap_width_spin, self.column_spin]:
+            w.setEnabled(not locked)
+            w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
+        for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
+                  self.editor_combo, self.wrap_combo, self.data_type_combo,
+                  self.table_combo, self.group_combo, self.result_combo,
+                  self.visible_combo, self.save_field_combo, self.mandatory_combo]:
+            w.setEnabled(not locked)
+        self.trim_box.setEnabled(not locked)
+        # Keep SAME WITH combo always accessible
+        # Keep SAME WITH combo accessible only when locked (i.e. type IS SAME WITH)
+        if locked:
+            self.same_with_combo.setEnabled(True)
+
+    def _refresh_ui_from_item(self):
+        self.text_input.blockSignals(True)
+        self.size_spin.blockSignals(True)
+        self.text_input.setText(self.item.toPlainText())
+        self.size_spin.setValue(int(self.item.font().pointSize()))
+        self.top_spin.setValue(int(self.item.pos().y()))
+        self.left_spin.setValue(int(self.item.pos().x()))
+        angle_map_inv = {0: "0", 270: "90", 180: "180", 90: "270"}
+        self.angle_combo.setCurrentText(angle_map_inv.get(int(self.item.rotation()), "0"))
+        self.inverse_combo.setCurrentText("YES" if getattr(self.item, "design_inverse", False) else "NO")
+        self.visible_combo.setCurrentText("TRUE" if getattr(self.item, "design_visible", True) else "FALSE")
+        self.text_input.blockSignals(False)
+        self.size_spin.blockSignals(False)
+
+    def _sync_same_with_targets(self):
+        targets = SameWithRegistry.get_targets(self.item)
+        for target in targets:
+            if not target.scene():
+                continue
+            target.setPlainText(self.item.toPlainText())
+            target.setFont(QFont(self.item.font().family(), self.item.font().pointSize()))
+            target.setDefaultTextColor(self.item.defaultTextColor())
+            target.design_inverse = getattr(self.item, "design_inverse", False)
+            target.design_visible = getattr(self.item, "design_visible", True)
+        self.update_callback()
+
+    # ── Standard methods ──────────────────────────────────────────────────────
 
     def _apply_alignment(self, value):
         align_map = {
@@ -795,13 +963,11 @@ class TextPropertyEditor(QWidget):
         }
         from PySide6.QtGui import QTextCursor, QTextBlockFormat
         alignment = align_map.get(value, Qt.AlignLeft)
-        
         if value == "LEFT JUSTIFY":
             self.item.setTextWidth(-1)
         else:
             w = self.item.boundingRect().width()
             self.item.setTextWidth(w if w > 0 else 200)
-
         cursor = self.item.textCursor()
         cursor.select(QTextCursor.SelectionType.Document)
         fmt = QTextBlockFormat()
@@ -844,8 +1010,10 @@ class TextPropertyEditor(QWidget):
         font.setFamily(font_map.get(value, "Arial"))
         font.setBold(value in bold_fonts)
         self.item.setFont(font)
+        if SameWithRegistry.is_source(self.item):
+            self._sync_same_with_targets()
         self.update_callback()
-        
+
     def _set_trim_style(self, checked):
         if checked:
             self.trim_box.setText("✓"); self.trim_box.setAlignment(Qt.AlignCenter)
@@ -858,20 +1026,32 @@ class TextPropertyEditor(QWidget):
 
     def _apply_inverse(self, value):
         self.item.design_inverse = (value == "YES")
+        if SameWithRegistry.is_source(self.item):
+            self._sync_same_with_targets()
         self.update_callback()
 
     def _apply_visible(self, value):
         self.item.design_visible = (value == "TRUE")
+        if SameWithRegistry.is_source(self.item):
+            self._sync_same_with_targets()
         self.update_callback()
 
     def _update_visibility_indicator(self):
         pass
 
     def apply_text_changes(self, text):
-        self.item.setPlainText(text); self.update_callback()
+        self.item.setPlainText(text)
+        if SameWithRegistry.is_source(self.item):
+            self._sync_same_with_targets()
+        self.update_callback()
 
     def apply_font_changes(self, size):
-        font = self.item.font(); font.setPointSize(size); self.item.setFont(font); self.update_callback()
+        font = self.item.font()
+        font.setPointSize(size)
+        self.item.setFont(font)
+        if SameWithRegistry.is_source(self.item):
+            self._sync_same_with_targets()
+        self.update_callback()
 
     def update_position_fields(self, pos):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
@@ -911,13 +1091,9 @@ class LinePropertyEditor(QWidget):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
-
     def _apply_visible(self, value):
-        self.item.design_visible = (value == "TRUE")
-        self.update_callback()
-
-    def _update_visibility_indicator(self):
-        pass
+        self.item.design_visible = (value == "TRUE"); self.update_callback()
+    def _update_visibility_indicator(self): pass
 
 
 class RectanglePropertyEditor(QWidget):
@@ -930,11 +1106,9 @@ class RectanglePropertyEditor(QWidget):
         layout.setLabelAlignment(Qt.AlignLeft)
         label_style = f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; background: transparent; border: none;"
         LABEL_W = 70
-
         def lbl(t):
             l = QLabel(t); l.setStyleSheet(label_style)
             l.setFixedWidth(LABEL_W); l.setAlignment(Qt.AlignLeft | Qt.AlignBottom); return l
-        
         rect = self.item.rect(); pen = self.item.pen()
         self.height_spin = make_spin(0, 5000, int(rect.height())); self.height_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("HEIGHT :"), self.height_spin)
         self.width_spin = make_spin(0, 5000, int(rect.width())); self.width_spin.valueChanged.connect(self.update_geometry); layout.addRow(lbl("WIDTH :"), self.width_spin)
@@ -956,13 +1130,9 @@ class RectanglePropertyEditor(QWidget):
         self.top_spin.blockSignals(True); self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y())); self.left_spin.setValue(int(pos.x()))
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
-    
     def _apply_visible(self, value):
-        self.item.design_visible = (value == "TRUE")
-        self.update_callback()
-
-    def _update_visibility_indicator(self):
-        pass
+        self.item.design_visible = (value == "TRUE"); self.update_callback()
+    def _update_visibility_indicator(self): pass
 
 
 class BarcodePropertyEditor(QWidget):
@@ -1025,17 +1195,14 @@ class BarcodePropertyEditor(QWidget):
         self.top_spin.blockSignals(False); self.left_spin.blockSignals(False)
 
     def _apply_visible(self, value):
-        self.item.design_visible = (value == "TRUE")
-        self.update_callback()
+        self.item.design_visible = (value == "TRUE"); self.update_callback()
 
-    def _update_visibility_indicator(self):
-        pass
+    def _update_visibility_indicator(self): pass
 
 
 # --- Custom Scene Items ---
 
 class SelectableTextItem(QGraphicsTextItem):
-    """QGraphicsTextItem that turns red when selected instead of Qt's default dashed box."""
     def paint(self, painter, option, widget=None):
         option.state &= ~QStyle.State_Selected
         if self.isSelected():
@@ -1048,7 +1215,6 @@ class SelectableTextItem(QGraphicsTextItem):
 
 
 class SelectableLineItem(QGraphicsLineItem):
-    """QGraphicsLineItem that turns red when selected instead of Qt's default dashed box."""
     def paint(self, painter, option, widget=None):
         option.state &= ~QStyle.State_Selected
         if self.isSelected():
@@ -1063,7 +1229,6 @@ class SelectableLineItem(QGraphicsLineItem):
 
 
 class SelectableRectItem(QGraphicsRectItem):
-    """QGraphicsRectItem that turns its border red when selected instead of Qt's default dashed box."""
     def paint(self, painter, option, widget=None):
         option.state &= ~QStyle.State_Selected
         if self.isSelected():
@@ -1101,7 +1266,6 @@ class BarcodeItem(QGraphicsItemGroup):
     def boundingRect(self): return self.childrenBoundingRect().adjusted(-2,-2,2,2)
 
     def paint(self, painter, option, widget=None):
-        # Suppress Qt's default dashed selection box — no extra highlight for barcode
         option.state &= ~QStyle.State_Selected
         super().paint(painter, option, widget)
 
@@ -1266,18 +1430,14 @@ class GeneralTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
-
         self._sticker_data: dict = _fetch_sticker_data()
-
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 20, 40, 20)
         root.setSpacing(0)
-
         label_style = (
             f"color: {COLORS['legacy_blue']}; font-size: 9px; font-weight: 700; "
             "text-transform: uppercase; letter-spacing: 0.4px; background: transparent; border: none;"
         )
-
         def lbl(text):
             l = QLabel(text)
             l.setStyleSheet(label_style)
@@ -1285,13 +1445,11 @@ class GeneralTab(QWidget):
             l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             l.setFixedHeight(32)
             return l
-
         def make_input(placeholder=""):
             le = QLineEdit(); le.setPlaceholderText(placeholder)
             le.setStyleSheet(MODERN_INPUT_STYLE)
             le.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             return le
-
         READONLY_STYLE = """
             QLineEdit {
                 background-color: #F8FAFC;
@@ -1302,43 +1460,29 @@ class GeneralTab(QWidget):
                 color: #64748B;
             }
         """
-
         def make_readonly(placeholder="—"):
             le = QLineEdit(); le.setPlaceholderText(placeholder)
             le.setReadOnly(True)
             le.setStyleSheet(READONLY_STYLE)
             le.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             return le
-
         muted_style = f"color:{COLORS['text_mute']}; font-size:10px; background:transparent; border:none;"
-
-        # ── Card ──────────────────────────────────────────────────────
         card = QFrame()
-        card.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #E2E8F0; border-radius: 10px; }"
-        )
-
+        card.setStyleSheet("QFrame { background: white; border: 1px solid #E2E8F0; border-radius: 10px; }")
         card_layout = QGridLayout(card)
         card_layout.setContentsMargins(28, 22, 28, 22)
         card_layout.setHorizontalSpacing(0)
         card_layout.setVerticalSpacing(0)
-        # col0: code block, col1: vdiv, col2: sticker block, col3: vdiv, col4: jenis cetak — equal stretch
         card_layout.setColumnStretch(0, 1)
         card_layout.setColumnStretch(2, 1)
         card_layout.setColumnStretch(4, 1)
         card_layout.setColumnMinimumWidth(1, 28)
         card_layout.setColumnMinimumWidth(3, 28)
-
-        # ── Helper: vertical divider spanning full height ─────────────
         def vdiv():
             d = QFrame()
             d.setFrameShape(QFrame.VLine)
             d.setStyleSheet("background: #E2E8F0; border: none; min-width: 1px; max-width: 1px;")
             return d
-
-        # ════════════════════════════════════════════════════════════
-        # COL 0, ROW 0 — Code / Name / Display Status
-        # ════════════════════════════════════════════════════════════
         code_block = QWidget(); code_block.setStyleSheet("background: transparent; border: none;")
         code_form = QFormLayout(code_block)
         code_form.setContentsMargins(0, 0, 32, 16)
@@ -1347,41 +1491,28 @@ class GeneralTab(QWidget):
         code_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         code_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         code_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-
         self.code_input = make_input("")
         self.code_input.setReadOnly(True)
         self.code_input.setMaximumWidth(220)
         self.code_input.setStyleSheet("""
             QLineEdit {
-                background-color: #F8FAFC;
-                border: 1px solid #E2E8F0;
-                border-radius: 4px;
-                padding: 5px;
-                font-size: 11px;
-                color: #64748B;
+                background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                border-radius: 4px; padding: 5px; font-size: 11px; color: #64748B;
             }
         """)
         self.name_input = make_input("e.g. Member Label A4")
         self.name_input.setMaximumWidth(220)
         self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
         self.status_combo.setMaximumWidth(220)
-
         code_form.addRow(lbl("CODE :"),           self.code_input)
         code_form.addRow(lbl("NAME :"),           self.name_input)
         code_form.addRow(lbl("DISPLAY STATUS :"), self.status_combo)
-
         card_layout.addWidget(code_block, 0, 0, Qt.AlignTop)
-
-        # ── Horizontal separator between code block and sticker block ─
         hsep = QFrame()
         hsep.setFrameShape(QFrame.HLine)
         hsep.setStyleSheet("background: #E2E8F0; border: none; min-height: 1px; max-height: 1px;")
         card_layout.addWidget(hsep, 1, 0)
         card_layout.setRowMinimumHeight(1, 20)
-
-        # ════════════════════════════════════════════════════════════
-        # COL 0, ROW 2 — Sticker / Height / Width
-        # ════════════════════════════════════════════════════════════
         sticker_block = QWidget(); sticker_block.setStyleSheet("background: transparent; border: none;")
         sticker_form = QFormLayout(sticker_block)
         sticker_form.setContentsMargins(0, 16, 32, 0)
@@ -1390,14 +1521,12 @@ class GeneralTab(QWidget):
         sticker_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         sticker_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         sticker_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-
         sticker_keys = list(self._sticker_data.keys())
         self.sticker_combo = make_chevron_combo(sticker_keys)
         self.sticker_combo.setPlaceholderText("— Please select a sticker —")
         self.sticker_combo.setCurrentIndex(-1)
         self.sticker_combo.setMaximumWidth(220)
         sticker_form.addRow(lbl("STICKER :"), self.sticker_combo)
-
         h_row_w = QWidget(); h_row_w.setStyleSheet("background: transparent; border: none;")
         h_hl = QHBoxLayout(h_row_w); h_hl.setContentsMargins(0, 0, 0, 0); h_hl.setSpacing(4)
         self.height_inch = make_readonly(); self.height_inch.setFixedWidth(70)
@@ -1408,7 +1537,6 @@ class GeneralTab(QWidget):
         px_lbl1 = QLabel("PIXEL"); px_lbl1.setStyleSheet(muted_style); h_hl.addWidget(px_lbl1)
         h_hl.addStretch()
         sticker_form.addRow(lbl("HEIGHT :"), h_row_w)
-
         w_row_w = QWidget(); w_row_w.setStyleSheet("background: transparent; border: none;")
         w_hl = QHBoxLayout(w_row_w); w_hl.setContentsMargins(0, 0, 0, 0); w_hl.setSpacing(4)
         self.width_inch = make_readonly(); self.width_inch.setFixedWidth(70)
@@ -1419,41 +1547,25 @@ class GeneralTab(QWidget):
         px_lbl2 = QLabel("PIXEL"); px_lbl2.setStyleSheet(muted_style); w_hl.addWidget(px_lbl2)
         w_hl.addStretch()
         sticker_form.addRow(lbl("WIDTH :"), w_row_w)
-
         card_layout.addWidget(sticker_block, 2, 0, Qt.AlignTop)
-
-        # ── Vertical divider col0 | col2 ─────────────────────────────
         card_layout.addWidget(vdiv(), 0, 1, 3, 1)
-
-        # col2 is intentionally empty (middle space)
-
-        # ── Vertical divider col2 | col4 ─────────────────────────────
         card_layout.addWidget(vdiv(), 0, 3, 3, 1)
-
-        # ════════════════════════════════════════════════════════════
-        # COL 4, ROW 0 — Jenis Cetak
-        # ════════════════════════════════════════════════════════════
         col_jenis = QWidget(); col_jenis.setStyleSheet("background: transparent; border: none;")
         jenis_layout = QVBoxLayout(col_jenis)
         jenis_layout.setContentsMargins(24, 0, 0, 0)
         jenis_layout.setSpacing(8)
         jenis_layout.setAlignment(Qt.AlignTop)
-
         jenis_lbl = QLabel("JENIS CETAK :")
         jenis_lbl.setStyleSheet(label_style)
         jenis_layout.addWidget(jenis_lbl)
-
         self.chk_barcode_printer = CheckmarkCheckBox("KE BARCODE PRINTER")
         self.chk_report = CheckmarkCheckBox("KE REPORT")
         jenis_layout.addWidget(self.chk_barcode_printer)
         jenis_layout.addWidget(self.chk_report)
         jenis_layout.addStretch()
-
         card_layout.addWidget(col_jenis, 0, 4, 3, 1, Qt.AlignTop)
-
         root.addWidget(card)
         root.addStretch()
-
         self.sticker_combo.currentTextChanged.connect(self._on_sticker_changed)
 
     def _on_sticker_changed(self, key: str):
@@ -1465,23 +1577,18 @@ class GeneralTab(QWidget):
             self.width_px.setText(str(d["w_px"]))
             self.stickerChanged.emit(d["w_px"], d["h_px"])
         else:
-            self.height_inch.clear()
-            self.height_px.clear()
-            self.width_inch.clear()
-            self.width_px.clear()
+            self.height_inch.clear(); self.height_px.clear()
+            self.width_inch.clear(); self.width_px.clear()
 
     def sync_from_design(self, code: str, name: str, sticker_name: str = "",
                          h_in: float = 0.0, w_in: float = 0.0,
-                         h_px: int = 0, w_px: int = 0,
-                         dp_fg: int = 0):
+                         h_px: int = 0, w_px: int = 0, dp_fg: int = 0):
         print(f"[DEBUG sync_from_design] code={repr(code)}")
         self.code_input.setText(code)
         self.name_input.setText(name)
-
         self.status_combo.blockSignals(True)
         self.status_combo.setCurrentText("DISPLAY" if dp_fg == 1 else "NOT DISPLAY")
         self.status_combo.blockSignals(False)
-
         self.sticker_combo.blockSignals(True)
         if sticker_name and sticker_name in self._sticker_data:
             idx = self.sticker_combo.findText(sticker_name)
@@ -1501,14 +1608,10 @@ class GeneralTab(QWidget):
         self.sticker_combo.blockSignals(False)
 
     def get_canvas_size(self) -> tuple[int, int]:
-        try:
-            w = int(self.width_px.text())
-        except (ValueError, AttributeError):
-            w = 600
-        try:
-            h = int(self.height_px.text())
-        except (ValueError, AttributeError):
-            h = 400
+        try: w = int(self.width_px.text())
+        except (ValueError, AttributeError): w = 600
+        try: h = int(self.height_px.text())
+        except (ValueError, AttributeError): h = 400
         return w, h
 
     def get_dp_fg(self) -> int:
@@ -1519,7 +1622,7 @@ class GeneralTab(QWidget):
 
 class BarcodeEditorPage(QWidget):
     design_saved = Signal(dict)
-    _pending_code: str = ""  # reserved but not yet saved
+    _pending_code: str = ""
     _COUNTER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bc_counter.json")
 
     @classmethod
@@ -1546,9 +1649,7 @@ class BarcodeEditorPage(QWidget):
 
     @classmethod
     def _reserve_code(cls) -> str:
-        """Return a pending code without incrementing — reuses if not yet saved."""
         if not cls._pending_code:
-            # Check file for a previously reserved but unsaved code
             try:
                 with open(cls._COUNTER_FILE, "r") as f:
                     data = _json_top.load(f)
@@ -1563,10 +1664,8 @@ class BarcodeEditorPage(QWidget):
 
     @classmethod
     def _consume_code(cls) -> str:
-        """Called on save — marks the pending code as used and clears it."""
         code = cls._pending_code if cls._pending_code else cls._next_code()
         cls._pending_code = ""
-        # Clear pending in file but keep counter
         counter = cls._load_counter()
         cls._save_counter(counter, "")
         return code
@@ -1583,6 +1682,7 @@ class BarcodeEditorPage(QWidget):
         self.init_ui()
 
     def reset_for_new(self, form_data: dict | None = None):
+        SameWithRegistry.clear()
         self.scene.clearSelection()
         for item in list(self.scene.items()): self.scene.removeItem(item)
         self.component_list.clear()
@@ -1591,11 +1691,9 @@ class BarcodeEditorPage(QWidget):
         while self.inspector_layout.count():
             child = self.inspector_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
-
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
         self._update_toolbar_buttons_state(False)
-
         if form_data:
             w = int(form_data.get("w_px") or 600)
             h = int(form_data.get("h_px") or 400)
@@ -1619,21 +1717,15 @@ class BarcodeEditorPage(QWidget):
             self._sticker_name = ""
             self._h_in = self._w_in = 0.0
             self._dp_fg = 0
-
         self._canvas_w, self._canvas_h = w, h
         self.scene.setSceneRect(QRectF(0, 0, w, h))
         self._update_design_subtitle()
         self.general_tab.sync_from_design(
-            code         = self._design_code,
-            name         = self._design_name,
-            sticker_name = self._sticker_name,
-            h_in         = self._h_in,
-            w_in         = self._w_in,
-            h_px         = h if self._sticker_name else 0,
-            w_px         = w if self._sticker_name else 0,
-            dp_fg        = self._dp_fg,
+            code=self._design_code, name=self._design_name,
+            sticker_name=self._sticker_name, h_in=self._h_in, w_in=self._w_in,
+            h_px=h if self._sticker_name else 0, w_px=w if self._sticker_name else 0,
+            dp_fg=self._dp_fg,
         )
-        # Ensure auto-generated code is always visible in the readonly field
         self.general_tab.code_input.setText(self._design_code)
         print(f"[DEBUG reset_for_new] setText called with={repr(self._design_code)}, field now={repr(self.general_tab.code_input.text())}")
         self._switch_tab(0)
@@ -1647,13 +1739,11 @@ class BarcodeEditorPage(QWidget):
             h_in = float(row_dict.get("h_in") or 0.0)
             w_in = float(row_dict.get("w_in") or 0.0)
             dp_fg = int(row_dict.get("dp_fg") or 0)
-
             try:
                 self._canvas_w, self._canvas_h = w, h
                 self.scene.setSceneRect(QRectF(0, 0, w, h))
             except (TypeError, ValueError):
                 pass
-
             self._design_code  = str(row_dict.get("pk", ""))
             self._original_pk  = self._design_code
             self._design_name  = str(row_dict.get("name", ""))
@@ -1661,12 +1751,10 @@ class BarcodeEditorPage(QWidget):
             self._h_in = h_in
             self._w_in = w_in
             self._dp_fg = dp_fg
-
             usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
             if usrm:
                 try: self.deserialize_canvas(_json.loads(usrm))
                 except Exception as e: print(f"[load_design] Could not deserialize canvas: {e}")
-
             itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
             if itrm:
                 try:
@@ -1686,20 +1774,13 @@ class BarcodeEditorPage(QWidget):
             self._h_in = self._w_in = 0.0
             self._dp_fg = 0
             w, h = self._canvas_w, self._canvas_h
-
         self._update_design_subtitle()
         self.general_tab.sync_from_design(
-            code         = self._design_code,
-            name         = self._design_name,
-            sticker_name = self._sticker_name,
-            h_in         = self._h_in,
-            w_in         = self._w_in,
-            h_px         = self._canvas_h,
-            w_px         = self._canvas_w,
-            dp_fg        = self._dp_fg,
+            code=self._design_code, name=self._design_name,
+            sticker_name=self._sticker_name, h_in=self._h_in, w_in=self._w_in,
+            h_px=self._canvas_h, w_px=self._canvas_w, dp_fg=self._dp_fg,
         )
         self._switch_tab(0)
-
         if self._sticker_name:
             self.view.setVisible(True)
             self._canvas_placeholder.setVisible(False)
@@ -1734,7 +1815,9 @@ class BarcodeEditorPage(QWidget):
                 "bold": font.bold(),
                 "italic": font.italic(),
                 "color": color,
-                "inverse": getattr(item, "design_inverse", False)
+                "inverse": getattr(item, "design_inverse", False),
+                "design_same_with": getattr(item, "design_same_with", ""),
+                "design_type": getattr(item, "design_type", "FIX"),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -1756,6 +1839,8 @@ class BarcodeEditorPage(QWidget):
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color","#000000")))
                 item.design_inverse = d.get("inverse", False)
+                item.design_same_with = d.get("design_same_with", "")
+                item.design_type = d.get("design_type", "FIX")
                 item.component_name = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -1778,19 +1863,19 @@ class BarcodeEditorPage(QWidget):
             self.scene.addItem(item)
             li = QListWidgetItem(self.get_component_display_name(item)); li.graphics_item = item
             self.component_list.addItem(li)
-        self.comp_count_badge.setText(str(self.component_list.count())); self.sync_z_order_from_list()
+        self.comp_count_badge.setText(str(self.component_list.count()))
+        self.sync_z_order_from_list()
+        self._rebuild_same_with_registry()
 
     def get_design_payload(self) -> dict:
         elements = self.serialize_canvas()
         canvas_meta = {"canvas_w": self._canvas_w, "canvas_h": self._canvas_h}
         return {"usrm": _json.dumps(elements, separators=(",",":")), "itrm": _json.dumps(canvas_meta, separators=(",",":"))}
 
-    def _update_design_subtitle(self):
-        pass
+    def _update_design_subtitle(self): pass
 
     def _on_sticker_canvas_resize(self, w_px: int, h_px: int):
-        if w_px <= 0 or h_px <= 0:
-            return
+        if w_px <= 0 or h_px <= 0: return
         self._canvas_w, self._canvas_h = w_px, h_px
         self.scene.setSceneRect(QRectF(0, 0, w_px, h_px))
         self._sticker_name = self.general_tab.sticker_combo.currentText()
@@ -1808,18 +1893,13 @@ class BarcodeEditorPage(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
-
-        # ── Header bar ────────────────────────────────────────────────
         header_bar = QWidget()
-        header_bar.setStyleSheet(
-            "QWidget#headerBar { background: white; border-bottom: 1px solid #E2E8F0; }"
-        )
+        header_bar.setStyleSheet("QWidget#headerBar { background: white; border-bottom: 1px solid #E2E8F0; }")
         header_bar.setObjectName("headerBar")
         header_bar.setFixedHeight(56)
         header_bar_layout = QHBoxLayout(header_bar)
         header_bar_layout.setContentsMargins(24, 0, 24, 0)
         header_bar_layout.setSpacing(0)
-
         self._tab_btns = []
         for i, label in enumerate(["GENERAL", "EDITOR"]):
             btn = QPushButton(label)
@@ -1829,27 +1909,18 @@ class BarcodeEditorPage(QWidget):
             btn.clicked.connect(lambda checked=False, idx=i: self._switch_tab(idx))
             header_bar_layout.addWidget(btn)
             self._tab_btns.append(btn)
-
         header_bar_layout.addStretch()
-
         self.back_btn = StandardButton("Cancel", icon_name="fa5s.times", variant="secondary")
         self.back_btn.setToolTip("Cancel and return to list")
         self.back_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.back_btn)
-
         header_bar_layout.addSpacing(8)
-
         self.save_btn = StandardButton("Save Design", icon_name="fa5s.save", variant="primary")
         self.save_btn.setFixedHeight(34)
         header_bar_layout.addWidget(self.save_btn)
-
         self.main_layout.addWidget(header_bar)
-
-        # ── Stacked content ───────────────────────────────────────────
         self._tab_stack = QStackedWidget()
         self._tab_stack.setStyleSheet("background: transparent;")
-
-        # ── Page 0: General ───────────────────────────────────────────
         general_scroll = QScrollArea()
         general_scroll.setWidgetResizable(True)
         general_scroll.setFrameShape(QFrame.NoFrame)
@@ -1858,15 +1929,12 @@ class BarcodeEditorPage(QWidget):
         general_scroll.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         self.general_tab = GeneralTab()
         general_scroll.setWidget(self.general_tab)
-        self._tab_stack.addWidget(general_scroll)   # index 0
-
-        # ── Page 1: Editor ────────────────────────────────────────────
+        self._tab_stack.addWidget(general_scroll)
         editor_page = QWidget()
         editor_page.setStyleSheet(f"background: {COLORS['bg_main']};")
         editor_layout = QVBoxLayout(editor_page)
         editor_layout.setContentsMargins(40, 20, 40, 12)
         editor_layout.setSpacing(0)
-
         self.btn_add_text = StandardButton("Text",    icon_name="fa5s.font",    variant="secondary")
         self.btn_add_rect = StandardButton("Rect",    icon_name="fa5s.square",  variant="secondary")
         self.btn_add_line = StandardButton("Line",    icon_name="fa5s.minus",   variant="secondary")
@@ -1876,7 +1944,6 @@ class BarcodeEditorPage(QWidget):
         editor_toolbar.addWidget(self.btn_add_line); editor_toolbar.addWidget(self.btn_add_code)
         editor_toolbar.addStretch()
         editor_layout.addLayout(editor_toolbar); editor_layout.addSpacing(18)
-
         workspace_layout = QHBoxLayout()
         self.scene = GridGraphicsScene(QRectF(0,0,self._canvas_w,self._canvas_h), grid_size=20, color=QColor("#E2E8F0"))
         self.scene.setBackgroundBrush(QBrush(QColor(COLORS["canvas_bg"])))
@@ -1886,11 +1953,8 @@ class BarcodeEditorPage(QWidget):
         self.view.setAlignment(Qt.AlignCenter)
         self.view.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         self.view.horizontalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
-
         self._canvas_placeholder = QFrame()
-        self._canvas_placeholder.setStyleSheet(
-            "QFrame { background: #F8FAFC; border: 2px dashed #CBD5E1; border-radius: 8px; }"
-        )
+        self._canvas_placeholder.setStyleSheet("QFrame { background: #F8FAFC; border: 2px dashed #CBD5E1; border-radius: 8px; }")
         placeholder_layout = QVBoxLayout(self._canvas_placeholder)
         placeholder_layout.setAlignment(Qt.AlignCenter)
         ph_icon = QLabel()
@@ -1902,17 +1966,14 @@ class BarcodeEditorPage(QWidget):
         placeholder_layout.addWidget(ph_icon)
         placeholder_layout.addSpacing(8)
         placeholder_layout.addWidget(ph_text)
-
         workspace_layout.addWidget(self.view, stretch=3)
         workspace_layout.addWidget(self._canvas_placeholder, stretch=3)
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
-
         self.sidebar = QFrame()
         self.sidebar.setMinimumWidth(280)
         self.sidebar.setStyleSheet(f"QFrame {{ background: {COLORS['white']}; border: 1px solid {COLORS['border']}; border-radius: 12px; }}")
         sidebar_layout = QVBoxLayout(self.sidebar); sidebar_layout.setContentsMargins(10,10,10,10); sidebar_layout.setSpacing(10)
-
         comp_header = QWidget(); comp_header.setStyleSheet("background: transparent; border: none;")
         comp_header_layout = QHBoxLayout(comp_header); comp_header_layout.setContentsMargins(2,4,2,4)
         comp_icon = QLabel(); comp_icon.setPixmap(qta.icon("fa5s.layer-group", color="#6366F1").pixmap(13,13))
@@ -1922,7 +1983,6 @@ class BarcodeEditorPage(QWidget):
         self.comp_count_badge = QLabel("0"); self.comp_count_badge.setAlignment(Qt.AlignCenter)
         self.comp_count_badge.setFixedSize(20,20); self.comp_count_badge.setStyleSheet("background: #6366F1; color: white; border-radius: 10px; font-weight: 700;")
         comp_header_layout.addWidget(self.comp_count_badge); sidebar_layout.addWidget(comp_header)
-
         self.component_list = DeleteSignalList()
         self.component_list.setSpacing(2); self.component_list.setMouseTracking(True)
         self.component_list.viewport().setMouseTracking(True)
@@ -1932,11 +1992,9 @@ class BarcodeEditorPage(QWidget):
         self.component_list.delete_item_requested.connect(self.delete_component)
         self.component_list.itemClicked.connect(self.sync_selection_from_list)
         sidebar_layout.addWidget(self.component_list, stretch=2)
-
         divider = QFrame(); divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet(f"background-color: {COLORS['border']}; min-height: 1px;")
         sidebar_layout.addWidget(divider)
-
         prop_header = QWidget(); prop_header.setStyleSheet("QWidget { background: transparent; border: none; padding: 2px 0px; }")
         prop_header_layout = QHBoxLayout(prop_header); prop_header_layout.setContentsMargins(8,6,8,6); prop_header_layout.setSpacing(4)
         prop_icon = QLabel(); prop_icon.setPixmap(qta.icon("fa5s.sliders-h", color="#6366F1").pixmap(14,14))
@@ -1955,7 +2013,6 @@ class BarcodeEditorPage(QWidget):
         """)
         self.prop_name_input.textChanged.connect(self.update_current_component_name)
         prop_header_layout.addWidget(self.prop_name_input, stretch=1); sidebar_layout.addWidget(prop_header)
-
         self.scroll_area = ConstrainedScrollArea()
         self.scroll_area.setWidgetResizable(True); self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1964,24 +2021,18 @@ class BarcodeEditorPage(QWidget):
         self.inspector_widget = QWidget(); self.inspector_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.inspector_layout = QVBoxLayout(self.inspector_widget); self.inspector_layout.setAlignment(Qt.AlignTop)
         self.scroll_area.setWidget(self.inspector_widget); sidebar_layout.addWidget(self.scroll_area, stretch=3)
-
         workspace_layout.addWidget(self.sidebar, stretch=1)
         editor_layout.addLayout(workspace_layout)
-        self._tab_stack.addWidget(editor_page)   # index 1
-
+        self._tab_stack.addWidget(editor_page)
         self.main_layout.addWidget(self._tab_stack)
-
         self._switch_tab(0)
-
         self.general_tab.stickerChanged.connect(self._on_sticker_canvas_resize)
-
         self.btn_add_text.clicked.connect(lambda: self.add_element("text"))
         self.btn_add_rect.clicked.connect(lambda: self.add_element("rect"))
         self.btn_add_line.clicked.connect(lambda: self.add_element("line"))
         self.btn_add_code.clicked.connect(lambda: self.add_element("barcode"))
         self.save_btn.clicked.connect(self._on_save_clicked)
         self.scene.selectionChanged.connect(self.on_selection_changed)
-
         self._clipboard_item = None
         self._setup_copy_paste_shortcuts()
         self.setFocusPolicy(Qt.StrongFocus)
@@ -2004,8 +2055,7 @@ class BarcodeEditorPage(QWidget):
 
     def _delete_selected_item(self):
         selected = self.scene.selectedItems()
-        if not selected:
-            return
+        if not selected: return
         item = selected[0]
         from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox(self)
@@ -2014,47 +2064,30 @@ class BarcodeEditorPage(QWidget):
         reply.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         reply.setDefaultButton(QMessageBox.Cancel)
         reply.setIcon(QMessageBox.Warning)
-        if reply.exec() != QMessageBox.Yes:
-            return
+        if reply.exec() != QMessageBox.Yes: return
         for i in range(self.component_list.count()):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == item:
-                self.delete_component(i, confirmed=True)
-                break
+                self.delete_component(i, confirmed=True); break
 
     def _update_toolbar_buttons_state(self, enabled: bool):
         self.btn_add_text.setEnabled(enabled)
         self.btn_add_rect.setEnabled(enabled)
         self.btn_add_line.setEnabled(enabled)
         self.btn_add_code.setEnabled(enabled)
-
         disabled_style = """
             QPushButton {
-                background: #F1F5F9;
-                border: 1px solid #CBD5E1;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 12px;
-                color: #94A3B8;
+                background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 6px;
+                padding: 6px 12px; font-size: 12px; color: #94A3B8;
             }
-            QPushButton:hover {
-                background: #F1F5F9;
-                border: 1px solid #CBD5E1;
-            }
+            QPushButton:hover { background: #F1F5F9; border: 1px solid #CBD5E1; }
         """
         enabled_style = """
             QPushButton {
-                background: #FFFFFF;
-                border: 1px solid #CBD5E1;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 12px;
-                color: #334155;
+                background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px;
+                padding: 6px 12px; font-size: 12px; color: #334155;
             }
-            QPushButton:hover {
-                background: #F8FAFC;
-                border: 1px solid #94A3B8;
-            }
+            QPushButton:hover { background: #F8FAFC; border: 1px solid #94A3B8; }
         """
         style = enabled_style if enabled else disabled_style
         for btn in [self.btn_add_text, self.btn_add_rect, self.btn_add_line, self.btn_add_code]:
@@ -2063,24 +2096,17 @@ class BarcodeEditorPage(QWidget):
 
     def _copy_selected(self):
         selected = self.scene.selectedItems()
-        if not selected:
-            return
-        item = selected[0]
-        self._clipboard_item = self._serialize_item(item)
-        print(f"[Copy] Copied {self._clipboard_item.get('type', 'unknown')} to clipboard")
+        if not selected: return
+        self._clipboard_item = self._serialize_item(selected[0])
 
     def _paste_clipboard(self):
-        if not self._clipboard_item:
-            return
-        if not self._sticker_name:
-            return
+        if not self._clipboard_item or not self._sticker_name: return
         data = self._clipboard_item.copy()
         offset = 20
         data['x'] = max(0, min(data.get('x', 0) + offset, self._canvas_w - 50))
         data['y'] = max(0, min(data.get('y', 0) + offset, self._canvas_h - 50))
         item = self._create_item_from_data(data)
-        if not item:
-            return
+        if not item: return
         self.scene.addItem(item)
         li = QListWidgetItem(self.get_component_display_name(item))
         li.graphics_item = item
@@ -2091,8 +2117,7 @@ class BarcodeEditorPage(QWidget):
         self.sync_z_order_from_list()
 
     def _duplicate_selected(self):
-        self._copy_selected()
-        self._paste_clipboard()
+        self._copy_selected(); self._paste_clipboard()
 
     def _create_item_from_data(self, data: dict):
         kind = data.get('type')
@@ -2104,6 +2129,8 @@ class BarcodeEditorPage(QWidget):
             item.setFont(font)
             item.component_name = data.get('name', 'Text')
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
+            item.design_same_with = ""  # new items don't inherit same-with
+            item.design_type = "FIX"
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
@@ -2136,16 +2163,12 @@ class BarcodeEditorPage(QWidget):
             self._sticker_name = selected_sticker
         elif selected_sticker and selected_sticker.startswith("—"):
             self._sticker_name = ""
-
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
-        # If this is a new design (pending code), lock it in now
         if self.__class__._pending_code and self._design_code == self.__class__._pending_code:
             self._consume_code()
         if name_val: self._design_name = name_val
-
         dp_fg = self.general_tab.get_dp_fg()
-
         try: self._canvas_w = int(self.general_tab.width_px.text())
         except (ValueError, AttributeError): pass
         try: self._canvas_h = int(self.general_tab.height_px.text())
@@ -2154,7 +2177,6 @@ class BarcodeEditorPage(QWidget):
         except (ValueError, AttributeError): h_in = getattr(self, "_h_in", 0.0)
         try: w_in = float(self.general_tab.width_inch.text())
         except (ValueError, AttributeError): w_in = getattr(self, "_w_in", 0.0)
-
         payload = self.get_design_payload()
         payload["pk"]           = self._design_code
         payload["original_pk"]  = getattr(self, "_original_pk", self._design_code)
@@ -2185,9 +2207,10 @@ class BarcodeEditorPage(QWidget):
             reply.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
             reply.setDefaultButton(QMessageBox.Cancel)
             reply.setIcon(QMessageBox.Warning)
-            if reply.exec() != QMessageBox.Yes:
-                return
+            if reply.exec() != QMessageBox.Yes: return
         gi = getattr(li, 'graphics_item', None)
+        if gi:
+            SameWithRegistry.unregister(gi)
         self.scene.blockSignals(True); self.component_list.blockSignals(True)
         if gi and gi.scene() == self.scene: self.scene.removeItem(gi)
         self.component_list.takeItem(row)
@@ -2234,10 +2257,93 @@ class BarcodeEditorPage(QWidget):
                     li = self.component_list.item(i)
                     if getattr(li, 'graphics_item', None) == sel[0]: self.component_list.setCurrentItem(li); break
         self.comp_count_badge.setText(str(self.component_list.count())); self.component_list.blockSignals(False)
+        self._sync_same_with_items()
+
+    def _sync_same_with_items(self):
+        """After any item change, sync all SAME WITH dependents from their source."""
+        name_to_item = {}
+        for scene_item in self.scene.items():
+            if scene_item.group(): continue
+            if isinstance(scene_item, SelectableTextItem):
+                name = getattr(scene_item, "component_name", "")
+                if name:
+                    name_to_item[name] = scene_item
+        for scene_item in self.scene.items():
+            if scene_item.group(): continue
+            if not isinstance(scene_item, SelectableTextItem): continue
+            if getattr(scene_item, "design_type", "") != "SAME WITH": continue
+            ref_name = getattr(scene_item, "design_same_with", "")
+            if not ref_name: continue
+            source = name_to_item.get(ref_name)
+            if not source or source is scene_item: continue
+            if getattr(source, "design_type", "") == "SAME WITH":
+                scene_item.design_same_with = ""
+                SameWithRegistry.unregister(scene_item)
+                continue
+            # Keep registry up-to-date so live-edit sync always works
+            SameWithRegistry.register(scene_item, source)
+            # Sync all visual + data properties
+            if scene_item.toPlainText() != source.toPlainText():
+                scene_item.setPlainText(source.toPlainText())
+            if scene_item.font() != source.font():
+                scene_item.setFont(source.font())
+            if scene_item.defaultTextColor() != source.defaultTextColor():
+                scene_item.setDefaultTextColor(source.defaultTextColor())
+            scene_item.design_inverse = getattr(source, "design_inverse", False)
+            scene_item.design_visible = getattr(source, "design_visible", True)
+
+    def _rebuild_same_with_registry(self):
+        """Rebuild SameWithRegistry from current scene items.
+
+        Must be called:
+          - after deserialize_canvas() so loaded designs work immediately
+          - before opening a TextPropertyEditor so SAME WITH lock state is correct
+        """
+        name_to_item = {}
+        for scene_item in self.scene.items():
+            if scene_item.group():
+                continue
+            if isinstance(scene_item, SelectableTextItem):
+                name = getattr(scene_item, "component_name", "")
+                if name:
+                    name_to_item[name] = scene_item
+        for scene_item in self.scene.items():
+            if scene_item.group():
+                continue
+            if not isinstance(scene_item, SelectableTextItem):
+                continue
+            if getattr(scene_item, "design_type", "") != "SAME WITH":
+                continue
+            ref_name = getattr(scene_item, "design_same_with", "")
+            if not ref_name:
+                continue
+            source = name_to_item.get(ref_name)
+            if source and source is not scene_item:
+                if getattr(source, "design_type", "") != "SAME WITH":
+                    SameWithRegistry.register(scene_item, source)
 
     def update_current_component_name(self, name):
         sel = self.scene.selectedItems()
-        if sel: sel[0].component_name = name if name else "Unnamed"; self.update_component_list()
+        if not sel: return
+        item = sel[0]
+        old_name = getattr(item, "component_name", "")
+        new_name = name if name else "Unnamed"
+        item.component_name = new_name
+        if old_name != new_name:
+            for scene_item in self.scene.items():
+                if getattr(scene_item, "design_same_with", "") == old_name:
+                    scene_item.design_same_with = new_name
+            # If the currently open editor is a SAME WITH item pointing to the
+            # renamed component, update its combo to show the new name live
+            editor = getattr(self, "current_editor", None)
+            if editor and isinstance(editor, TextPropertyEditor):
+                combo = editor.same_with_combo
+                # Update the item in the list that matched old_name
+                combo._items = [new_name if i == old_name else i for i in combo._items]
+                if combo._current == old_name:
+                    combo._current = new_name
+                    combo._label.setText(new_name)
+        self.update_component_list()
 
     def sync_selection_from_list(self, li):
         item = getattr(li, 'graphics_item', None)
@@ -2267,6 +2373,8 @@ class BarcodeEditorPage(QWidget):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == selected: self.component_list.setCurrentItem(li); break
         self.component_list.blockSignals(False)
+        # Rebuild SameWithRegistry before opening editor so lock state is correct on load
+        self._rebuild_same_with_registry()
         self.current_editor = None
         if isinstance(selected, BarcodeItem): self.current_editor = BarcodePropertyEditor(selected, self.update_component_list)
         elif isinstance(selected, QGraphicsTextItem): self.current_editor = TextPropertyEditor(selected, self.update_component_list)
@@ -2279,7 +2387,10 @@ class BarcodeEditorPage(QWidget):
         flags = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges
         if kind == "text":
             item = SelectableTextItem("LABEL_VAR"); item.setFont(QFont("Arial",10))
-            item.component_name = "Text"; setup_item_logic(item, self.update_pos_label)
+            item.component_name = "Text"
+            item.design_same_with = ""
+            item.design_type = "FIX"
+            setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
             item.component_name = "Rectangle"; setup_item_logic(item, self.update_pos_label)
