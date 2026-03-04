@@ -765,6 +765,15 @@ class TextPropertyEditor(QWidget):
                 self.table_combo.setEnabled(is_lookup)
                 self.group_combo.setEnabled(is_lookup)
                 self.table_extra.setEnabled(is_lookup)
+                self.result_combo.setEnabled(is_lookup)
+                self.result_combo.setStyleSheet(
+                    MODERN_INPUT_STYLE if is_lookup else """
+                        QLineEdit {
+                            background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                            border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
+                        }
+                    """
+                )
                 self.table_extra.setStyleSheet(
                     MODERN_INPUT_STYLE if is_lookup else """
                         QLineEdit {
@@ -807,7 +816,9 @@ class TextPropertyEditor(QWidget):
         self.field_edit = QLineEdit(); self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
         self.field_edit.setMinimumHeight(52); self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("FIELD :"), self.field_edit)
-        self.result_combo = make_chevron_combo([""])
+        self.result_combo = QLineEdit()
+        self.result_combo.setStyleSheet(MODERN_INPUT_STYLE)
+        self.result_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("RESULT :"), self.result_combo)
         self._trim_checked = False
         trim_row = QWidget(); trim_row.setStyleSheet("background: transparent; border: none;")
@@ -910,7 +921,7 @@ class TextPropertyEditor(QWidget):
                 border-radius: 4px; padding: 5px; font-size: 11px; color: #94A3B8;
             }
         """
-        for w in [self.text_input, self.caption_input, self.format_edit]:
+        for w in [self.text_input, self.caption_input, self.format_edit, self.result_combo]:
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else LINE_DISABLED)
         for w in [self.size_spin, self.top_spin, self.left_spin, self.wrap_width_spin, self.column_spin]:
@@ -918,7 +929,7 @@ class TextPropertyEditor(QWidget):
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
         for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
                   self.editor_combo, self.wrap_combo, self.data_type_combo,
-                  self.table_combo, self.group_combo, self.result_combo,
+                  self.table_combo, self.group_combo,
                   self.visible_combo, self.save_field_combo, self.mandatory_combo]:
             w.setEnabled(not locked)
         self.trim_box.setEnabled(not locked)
