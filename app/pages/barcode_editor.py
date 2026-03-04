@@ -613,6 +613,9 @@ class TextPropertyEditor(QWidget):
         self.angle_combo.currentTextChanged.connect(lambda v: self.item.setRotation(angle_map.get(v, 0)))
         layout.addRow(lbl("ANGLE :"), self.angle_combo)
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
+        current_inverse = getattr(self.item, "design_inverse", False)
+        self.inverse_combo.setCurrentText("YES" if current_inverse else "NO")
+        self.inverse_combo.currentTextChanged.connect(self._apply_inverse)
         layout.addRow(lbl("INVERSE :"), self.inverse_combo)
         self.type_combo = make_chevron_combo(["FIX", "VAR"])
         layout.addRow(lbl("TYPE :"), self.type_combo)
@@ -722,7 +725,9 @@ class TextPropertyEditor(QWidget):
         self._trim_checked = not self._trim_checked; self._set_trim_style(self._trim_checked)
 
     def _apply_inverse(self, value):
-        self.item.setDefaultTextColor(QColor("white") if value == "YES" else QColor("black"))
+        # Store for backend only, don't change canvas appearance
+        self.item.design_inverse = (value == "YES")
+        self.update_callback()
 
     def _apply_visible(self, value):
         # Store visibility for backend, don't actually hide on canvas
@@ -1466,7 +1471,17 @@ class BarcodeEditorPage(QWidget):
         if isinstance(item, QGraphicsTextItem):
             font = item.font()
             color = item.defaultTextColor().name()
-            base.update({"type":"text","text":item.toPlainText(),"font_size":font.pointSize(),"font_family":font.family(),"bold":font.bold(),"italic":font.italic(),"color":color}); return base
+            base.update({
+                "type": "text",
+                "text": item.toPlainText(),
+                "font_size": font.pointSize(),
+                "font_family": font.family(),
+                "bold": font.bold(),
+                "italic": font.italic(),
+                "color": color,
+                "inverse": getattr(item, "design_inverse", False)
+            })
+            return base
         if isinstance(item, QGraphicsLineItem):
             line = item.line(); pen = item.pen()
             base.update({"type":"line","x2":round(line.x2(),2),"y2":round(line.y2(),2),"thickness":pen.width()}); return base
@@ -1485,6 +1500,8 @@ class BarcodeEditorPage(QWidget):
                 font.setBold(d.get("bold",False)); font.setItalic(d.get("italic",False))
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color","#000000")))
+                # Store inverse for print preview, don't apply to canvas
+                item.design_inverse = d.get("inverse", False)
                 item.component_name = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
 
