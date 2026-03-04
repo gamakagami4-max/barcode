@@ -1,4 +1,6 @@
 import sys
+import os
+import json as _json_top
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, 
@@ -1188,8 +1190,12 @@ class GeneralTab(QWidget):
         card_layout.setContentsMargins(28, 22, 28, 22)
         card_layout.setHorizontalSpacing(0)
         card_layout.setVerticalSpacing(0)
-        # col0: code+sticker, col1: divider, col2: empty stretch, col3: divider, col4: jenis cetak
+        # col0: code block, col1: vdiv, col2: sticker block, col3: vdiv, col4: jenis cetak — equal stretch
+        card_layout.setColumnStretch(0, 1)
         card_layout.setColumnStretch(2, 1)
+        card_layout.setColumnStretch(4, 1)
+        card_layout.setColumnMinimumWidth(1, 28)
+        card_layout.setColumnMinimumWidth(3, 28)
 
         # ── Helper: vertical divider spanning full height ─────────────
         def vdiv():
@@ -1203,16 +1209,30 @@ class GeneralTab(QWidget):
         # ════════════════════════════════════════════════════════════
         code_block = QWidget(); code_block.setStyleSheet("background: transparent; border: none;")
         code_form = QFormLayout(code_block)
-        code_form.setContentsMargins(0, 0, 28, 16)
+        code_form.setContentsMargins(0, 0, 32, 16)
         code_form.setVerticalSpacing(18)
         code_form.setHorizontalSpacing(14)
-        code_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        code_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         code_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         code_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
 
-        self.code_input = make_input("e.g. BC001")
+        self.code_input = make_input("")
+        self.code_input.setReadOnly(True)
+        self.code_input.setMaximumWidth(220)
+        self.code_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 11px;
+                color: #64748B;
+            }
+        """)
         self.name_input = make_input("e.g. Member Label A4")
+        self.name_input.setMaximumWidth(220)
         self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
+        self.status_combo.setMaximumWidth(220)
 
         code_form.addRow(lbl("CODE :"),           self.code_input)
         code_form.addRow(lbl("NAME :"),           self.name_input)
@@ -1232,10 +1252,10 @@ class GeneralTab(QWidget):
         # ════════════════════════════════════════════════════════════
         sticker_block = QWidget(); sticker_block.setStyleSheet("background: transparent; border: none;")
         sticker_form = QFormLayout(sticker_block)
-        sticker_form.setContentsMargins(0, 16, 28, 0)
+        sticker_form.setContentsMargins(0, 16, 32, 0)
         sticker_form.setVerticalSpacing(18)
         sticker_form.setHorizontalSpacing(14)
-        sticker_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        sticker_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         sticker_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         sticker_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
 
@@ -1243,6 +1263,7 @@ class GeneralTab(QWidget):
         self.sticker_combo = make_chevron_combo(sticker_keys)
         self.sticker_combo.setPlaceholderText("— Please select a sticker —")
         self.sticker_combo.setCurrentIndex(-1)
+        self.sticker_combo.setMaximumWidth(220)
         sticker_form.addRow(lbl("STICKER :"), self.sticker_combo)
 
         h_row_w = QWidget(); h_row_w.setStyleSheet("background: transparent; border: none;")
@@ -1269,22 +1290,20 @@ class GeneralTab(QWidget):
 
         card_layout.addWidget(sticker_block, 2, 0, Qt.AlignTop)
 
-        # ── Vertical divider between col0 and col2 (spans all rows) ──
+        # ── Vertical divider col0 | col2 ─────────────────────────────
         card_layout.addWidget(vdiv(), 0, 1, 3, 1)
-        card_layout.setColumnMinimumWidth(1, 28)
 
-        # col2 is the empty stretch column — nothing added, just expands
+        # col2 is intentionally empty (middle space)
 
-        # ── Vertical divider between col2 and col4 ───────────────────
+        # ── Vertical divider col2 | col4 ─────────────────────────────
         card_layout.addWidget(vdiv(), 0, 3, 3, 1)
-        card_layout.setColumnMinimumWidth(3, 28)
 
         # ════════════════════════════════════════════════════════════
         # COL 4, ROW 0 — Jenis Cetak
         # ════════════════════════════════════════════════════════════
         col_jenis = QWidget(); col_jenis.setStyleSheet("background: transparent; border: none;")
         jenis_layout = QVBoxLayout(col_jenis)
-        jenis_layout.setContentsMargins(0, 0, 0, 0)
+        jenis_layout.setContentsMargins(24, 0, 0, 0)
         jenis_layout.setSpacing(8)
         jenis_layout.setAlignment(Qt.AlignTop)
 
@@ -1323,6 +1342,7 @@ class GeneralTab(QWidget):
                          h_in: float = 0.0, w_in: float = 0.0,
                          h_px: int = 0, w_px: int = 0,
                          dp_fg: int = 0):
+        print(f"[DEBUG sync_from_design] code={repr(code)}")
         self.code_input.setText(code)
         self.name_input.setText(name)
 
@@ -1367,6 +1387,57 @@ class GeneralTab(QWidget):
 
 class BarcodeEditorPage(QWidget):
     design_saved = Signal(dict)
+    _pending_code: str = ""  # reserved but not yet saved
+    _COUNTER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bc_counter.json")
+
+    @classmethod
+    def _load_counter(cls) -> int:
+        try:
+            with open(cls._COUNTER_FILE, "r") as f:
+                return int(_json_top.load(f).get("counter", 0))
+        except Exception:
+            return 0
+
+    @classmethod
+    def _save_counter(cls, value: int, pending: str = ""):
+        try:
+            with open(cls._COUNTER_FILE, "w") as f:
+                _json_top.dump({"counter": value, "pending": pending}, f)
+        except Exception:
+            pass
+
+    @classmethod
+    def _next_code(cls) -> str:
+        counter = cls._load_counter() + 1
+        cls._save_counter(counter)
+        return f"BC{counter:04d}"
+
+    @classmethod
+    def _reserve_code(cls) -> str:
+        """Return a pending code without incrementing — reuses if not yet saved."""
+        if not cls._pending_code:
+            # Check file for a previously reserved but unsaved code
+            try:
+                with open(cls._COUNTER_FILE, "r") as f:
+                    data = _json_top.load(f)
+                    cls._pending_code = data.get("pending", "")
+            except Exception:
+                cls._pending_code = ""
+        if not cls._pending_code:
+            counter = cls._load_counter() + 1
+            cls._pending_code = f"BC{counter:04d}"
+            cls._save_counter(counter, cls._pending_code)
+        return cls._pending_code
+
+    @classmethod
+    def _consume_code(cls) -> str:
+        """Called on save — marks the pending code as used and clears it."""
+        code = cls._pending_code if cls._pending_code else cls._next_code()
+        cls._pending_code = ""
+        # Clear pending in file but keep counter
+        counter = cls._load_counter()
+        cls._save_counter(counter, "")
+        return code
 
     def __init__(self):
         super().__init__()
@@ -1396,7 +1467,9 @@ class BarcodeEditorPage(QWidget):
         if form_data:
             w = int(form_data.get("w_px") or 600)
             h = int(form_data.get("h_px") or 400)
-            self._design_code  = form_data.get("pk", "")
+            pk = form_data.get("pk", "")
+            print(f"[DEBUG reset_for_new] form_data branch, pk={repr(pk)}")
+            self._design_code  = pk if pk else self._reserve_code()
             self._original_pk  = self._design_code
             self._design_name  = form_data.get("name", "")
             self._sticker_name = str(form_data.get("sticker_name") or "")
@@ -1407,8 +1480,9 @@ class BarcodeEditorPage(QWidget):
                 self._update_toolbar_buttons_state(True)
         else:
             w, h = 600, 400
-            self._design_code  = ""
-            self._original_pk  = ""
+            self._design_code  = self._reserve_code()
+            self._original_pk  = self._design_code
+            print(f"[DEBUG reset_for_new] else branch, generated code={repr(self._design_code)}")
             self._design_name  = ""
             self._sticker_name = ""
             self._h_in = self._w_in = 0.0
@@ -1427,6 +1501,9 @@ class BarcodeEditorPage(QWidget):
             w_px         = w if self._sticker_name else 0,
             dp_fg        = self._dp_fg,
         )
+        # Ensure auto-generated code is always visible in the readonly field
+        self.general_tab.code_input.setText(self._design_code)
+        print(f"[DEBUG reset_for_new] setText called with={repr(self._design_code)}, field now={repr(self.general_tab.code_input.text())}")
         self._switch_tab(0)
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
@@ -1921,7 +1998,9 @@ class BarcodeEditorPage(QWidget):
 
         code_val = self.general_tab.code_input.text().strip()
         name_val = self.general_tab.name_input.text().strip()
-        if code_val: self._design_code = code_val
+        # If this is a new design (pending code), lock it in now
+        if self.__class__._pending_code and self._design_code == self.__class__._pending_code:
+            self._consume_code()
         if name_val: self._design_name = name_val
 
         dp_fg = self.general_tab.get_dp_fg()
