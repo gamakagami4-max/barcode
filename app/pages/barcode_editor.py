@@ -2050,6 +2050,8 @@ class GeneralTab(QWidget):
         self.name_input = make_input("e.g. Member Label A4")
         self.name_input.setMaximumWidth(220)
         self.status_combo = make_chevron_combo(["DISPLAY", "NOT DISPLAY"])
+        self.status_combo._current = "DISPLAY"
+        self.status_combo._label.setText("DISPLAY")
         self.status_combo.setMaximumWidth(220)
         code_form.addRow(lbl("CODE :"),           self.code_input)
         code_form.addRow(lbl("NAME :"),           self.name_input)
@@ -2133,9 +2135,9 @@ class GeneralTab(QWidget):
         print(f"[DEBUG sync_from_design] code={repr(code)}")
         self.code_input.setText(code)
         self.name_input.setText(name)
-        self.status_combo.blockSignals(True)
-        self.status_combo.setCurrentText("DISPLAY" if dp_fg == 1 else "NOT DISPLAY")
-        self.status_combo.blockSignals(False)
+        status_text = "DISPLAY" if dp_fg == 1 else "NOT DISPLAY"
+        self.status_combo._current = status_text
+        self.status_combo._label.setText(status_text)  # set raw text, no elision width dependency
         self.sticker_combo.blockSignals(True)
         if sticker_name and sticker_name in self._sticker_data:
             idx = self.sticker_combo.findText(sticker_name)
@@ -2255,15 +2257,18 @@ class BarcodeEditorPage(QWidget):
             self._dp_fg        = int(form_data.get("dp_fg") or 0)
             if self._sticker_name:
                 self._update_toolbar_buttons_state(True)
-        else:
-            w, h = 600, 400
-            self._design_code  = self._reserve_code()
-            self._original_pk  = self._design_code
-            print(f"[DEBUG reset_for_new] else branch, generated code={repr(self._design_code)}")
-            self._design_name  = ""
-            self._sticker_name = ""
-            self._h_in = self._w_in = 0.0
-            self._dp_fg = 1
+            else:
+                w, h = 600, 400
+                self._design_code  = self._reserve_code()
+                self._original_pk  = self._design_code
+                print(f"[DEBUG reset_for_new] else branch, generated code={repr(self._design_code)}")
+                self._design_name  = ""
+                self._sticker_name = ""
+                self._h_in = self._w_in = 0.0
+                self._dp_fg = 1
+                # Default display status to DISPLAY for new designs
+                self.general_tab.status_combo._current = "DISPLAY"
+                self.general_tab.status_combo._label.setText("DISPLAY")
         self._canvas_w, self._canvas_h = w, h
         self.scene.setSceneRect(QRectF(0, 0, w, h))
         self._update_design_subtitle()
