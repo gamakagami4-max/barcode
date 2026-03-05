@@ -207,7 +207,7 @@ class _ComboDropdown(QFrame):
                     background: #EFF6FF; color: #3B82F6;
                     border: none; border-radius: 4px;
                     font-size: 12px; font-weight: 500;
-                    text-align: left; padding: 0 10px;
+                    text-align: left; padding: 0 8px;
                 }
                 QPushButton:hover { background: #DBEAFE; color: #3B82F6; }
             """)
@@ -217,7 +217,7 @@ class _ComboDropdown(QFrame):
                     background: transparent; color: #18181B;
                     border: none; border-radius: 4px;
                     font-size: 12px; font-weight: 400;
-                    text-align: left; padding: 0 10px;
+                    text-align: left; padding: 0 8px;
                 }
                 QPushButton:hover { background: #F4F4F5; color: #18181B; }
             """)
@@ -270,7 +270,7 @@ class CustomCombo(QFrame):
         layout.setContentsMargins(10, 0, 8, 0)
         layout.setSpacing(6)
 
-        self._label = QLabel(self._current)
+        self._label = QLabel()
         self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
         self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
@@ -282,6 +282,11 @@ class CustomCombo(QFrame):
         layout.addWidget(self._label, 1)
         layout.addWidget(self._chevron, 0)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._current:
+            self._set_label_text(self._current)
+            
     def _apply_style(self, open_):
         border = "#3B82F6" if open_ else "#E5E7EB"
         bw     = "1.5"     if open_ else "1"
@@ -296,6 +301,21 @@ class CustomCombo(QFrame):
         """)
         if self.isEnabled() and hasattr(self, '_chevron'):
             self._chevron.setVisible(True)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_label') and self._current:
+            self._set_label_text(self._current)
+
+    def _set_label_text(self, text, color="#18181B"):
+        normal_style = f"color: {color}; font-size: 12px; background: transparent; border: none;"
+        self._label.setStyleSheet(normal_style)
+        fm = QFontMetrics(self._label.font())
+        # left pad (10) + right pad (8) + chevron (10) + spacing (6) = 34
+        available = self.width() - 34
+        elided = fm.elidedText(text, Qt.ElideRight, max(available, 20))
+        self._label.setText(elided)
+        self._label.setToolTip(text if elided != text else "")
 
     def _set_chevron(self, open_):
         self._chevron.setPixmap(
@@ -352,8 +372,7 @@ class CustomCombo(QFrame):
 
     def _on_selected(self, option):
         self._current = option
-        self._label.setText(option)
-        self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+        self._set_label_text(option)
         self._close()
         if not self._signals_blocked:
             self.currentTextChanged.emit(option)
@@ -380,8 +399,7 @@ class CustomCombo(QFrame):
     def setCurrentText(self, text):
         if text in self._items:
             self._current = text
-            self._label.setText(text)
-            self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+            self._set_label_text(text)
             if self._dropdown:
                 self._dropdown.set_selected(text)
 
@@ -424,7 +442,6 @@ class CustomCombo(QFrame):
         if not self._current:
             self._label.setText(text)
             self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
-
     def blockSignals(self, block):
         self._signals_blocked = block
         return super().blockSignals(block)
@@ -766,6 +783,95 @@ class TextPropertyEditor(QWidget):
         self.editor_combo = make_chevron_combo(["ENABLED", "DISABLED", "INVISIBLE"])
         layout.addRow(lbl("EDITOR :"), self.editor_combo)
 
+        
+        # ── SYSTEM-only fields ────────────────────────────────────────
+        self.system_value_combo = make_chevron_combo(["USER ID", "DATETIME", "LOT NO", "OTHERS"])
+        stored_system_value = getattr(self.item, "design_system_value", "")
+        if stored_system_value in ("USER ID", "DATETIME", "LOT NO", "OTHERS") and getattr(self.item, "design_type", "") == "SYSTEM":
+            self.system_value_combo.setCurrentText(stored_system_value)
+        else:
+            self.system_value_combo.setCurrentIndex(-1)
+        layout.addRow(lbl("SYSTEM VALUE :"), self.system_value_combo)
+
+        # Single extra field — options change based on system_value_combo selection
+        self.system_extra_combo = make_chevron_combo([""])
+        stored_system_extra = getattr(self.item, "design_system_extra", "")
+        if getattr(self.item, "design_type", "") != "SYSTEM":
+            self.system_extra_combo.setCurrentIndex(-1)
+        layout.addRow(lbl("EXTRA :"), self.system_extra_combo)
+
+        def _update_system_extra_options(system_val):
+            if system_val == "DATETIME":
+                options = [
+                    "dd MMM yy",
+                    "dd MMM yyyy",
+                    "dd MMM yyyy HH:mm",
+                    "dd MMM yyyy HH:mm AM/PM",
+                    "dd-MMM-yy",
+                    "dd-MMM-yyyy",
+                    "dd-MMM-yyyy HH:mm",
+                    "dd-MMM-yyyy HH:mm AM/PM",
+                    "dd-MMM-yyyy HH:mm:ss",
+                    "HH:mm",
+                    "HH:mm AM/PM",
+                    "HH:mm:ss",
+                    "HH:mm:ss AM/PM",
+                    "MMM yyyy",
+                    "MMMM yyyy",
+                ]
+            elif system_val == "LOT NO":
+                options = [
+                    "FILTECHNO",
+                    "FLEETGUARD",
+                    "FLEETGUARD2",
+                    "FLEETRITE",
+                    "FUSO",
+                    "LUBERFINER",
+                    "MULTIFITTING",
+                    "MULTIFITTING2",
+                    "OEM",
+                    "PREMIUM GUARD",
+                    "PTC",
+                    "SAKURA",
+                    "SANKO",
+                    "YANMAR",
+                ]
+            elif system_val == "OTHERS":
+                options = ["MADE IN", "NAMA"]
+            else:
+                options = [""]
+            has_extra = system_val in ("DATETIME", "LOT NO", "OTHERS")
+            self.system_extra_combo.setEnabled(has_extra)
+            self.system_extra_combo._items = options
+            self.system_extra_combo._current = options[0]
+            self.system_extra_combo._label.setText(options[0])
+            sv = getattr(self.item, "design_system_extra", "")
+            if sv and sv in options:
+                self.system_extra_combo.setCurrentText(sv)
+
+        def _on_system_value_changed(val):
+            setattr(self.item, "design_system_value", val)
+            _update_system_extra_options(val)
+
+        self.system_value_combo.currentTextChanged.connect(_on_system_value_changed)
+        self.system_extra_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_system_extra", v)
+        )
+        # Initialise extra options for whatever is already stored
+        # Initialise extra options for whatever is already stored
+        if getattr(self.item, "design_type", "") == "SYSTEM":
+            if stored_system_value in ("USER ID", "DATETIME", "LOT NO", "OTHERS"):
+                _update_system_extra_options(stored_system_value)
+                if stored_system_extra and stored_system_extra in self.system_extra_combo._items:
+                    self.system_extra_combo.setCurrentText(stored_system_extra)
+            else:
+                # No system value selected yet — disable extra
+                self.system_extra_combo.setEnabled(False)
+                self.system_extra_combo.setCurrentIndex(-1)
+        else:
+            self.system_extra_combo.setCurrentIndex(-1)
+            self.system_extra_combo.setEnabled(False)
+
         # ── INPUT-only fields: DATA TYPE + MAX LENGTH ─────────────────
         self.data_type_combo = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
         self.data_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -862,9 +968,20 @@ class TextPropertyEditor(QWidget):
             is_lookup    = val == "LOOKUP"
             is_same_with = val == "SAME WITH"
             is_link      = val == "LINK"
+            is_system    = val == "SYSTEM"
+
+            # ── SYSTEM-only: SYSTEM VALUE + EXTRA ────────────────────
+            if is_system:
+                self.system_value_combo.setEnabled(True)
+                sv = self.system_value_combo.currentText()
+                self.system_extra_combo.setEnabled(sv in ("DATETIME", "LOT NO", "OTHERS"))
+            else:
+                self.system_value_combo.setCurrentIndex(-1)
+                self.system_value_combo.setEnabled(False)
+                self.system_extra_combo.setCurrentIndex(-1)
+                self.system_extra_combo.setEnabled(False)
 
             if is_same_with:
-                # Always lock all fields first — nothing is editable on a SAME WITH item
                 self._lock_all_fields(True)
                 self.same_with_combo.setEnabled(True)
                 source_name = self.same_with_combo.currentText()
@@ -873,7 +990,6 @@ class TextPropertyEditor(QWidget):
             else:
                 self._clear_same_with()
 
-                # ── INPUT-only: DATA TYPE + MAX LENGTH ────────────────
                 if not is_input:
                     self.data_type_combo.setEnabled(False)
                     self.max_length_spin.setEnabled(False)
@@ -891,7 +1007,6 @@ class TextPropertyEditor(QWidget):
                     if self.max_length_spin.value() == 0:
                         self.max_length_spin.setValue(1)
 
-                # ── LOOKUP-only: TABLE, QUERY, FIELD, GROUP, RESULT ───
                 self.table_combo.setEnabled(is_lookup)
                 self.group_combo.setEnabled(is_lookup)
                 self.table_extra.setEnabled(is_lookup)
@@ -908,7 +1023,6 @@ class TextPropertyEditor(QWidget):
                 )
                 self.same_with_combo.setEnabled(is_same_with)
 
-            # ── LINK combo — enabled only when type is LINK ───────────
             self.link_combo.setEnabled(is_link)
             if is_link:
                 stored_link = getattr(self.item, "design_link", "")
@@ -918,6 +1032,13 @@ class TextPropertyEditor(QWidget):
                     self._clear_link_fields()
             else:
                 self.item.design_link = ""
+
+            # ── Always enforce SYSTEM-only fields at the end ──────────
+            if not is_system:
+                self.system_value_combo.setCurrentIndex(-1)
+                self.system_extra_combo.setCurrentIndex(-1)
+                self.system_value_combo.setEnabled(False)
+                self.system_extra_combo.setEnabled(False)
 
         self.text_input = QLineEdit(self.item.toPlainText())
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
@@ -1053,6 +1174,7 @@ class TextPropertyEditor(QWidget):
                   self.table_combo, self.group_combo, self.link_combo,
                   self.visible_combo, self.save_field_combo, self.mandatory_combo]:
             w.setEnabled(not locked)
+        # SYSTEM fields are managed exclusively by _on_type_changed — never touched here
         self.trim_box.setEnabled(not locked)
         # Keep SAME WITH combo accessible only when locked (i.e. type IS SAME WITH)
         if locked:
@@ -2001,6 +2123,8 @@ class BarcodeEditorPage(QWidget):
                 "design_field":     getattr(item, "design_field",     ""),
                 "design_result":    getattr(item, "design_result",    ""),
                 "design_type": getattr(item, "design_type", "FIX"),
+                "design_system_value": getattr(item, "design_system_value", "USER ID"),
+                "design_system_extra": getattr(item, "design_system_extra", ""),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -2029,8 +2153,10 @@ class BarcodeEditorPage(QWidget):
                 item.design_query      = d.get("design_query",  "")
                 item.design_field      = d.get("design_field",  "")
                 item.design_result     = d.get("design_result", "")
-                item.design_type       = d.get("design_type", "FIX")
-                item.component_name    = d.get("name","Text")
+                item.design_type          = d.get("design_type", "FIX")
+                item.design_system_value = d.get("design_system_value", "USER ID")
+                item.design_system_extra = d.get("design_system_extra", "")
+                item.component_name       = d.get("name","Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
                 item = SelectableLineItem(0, 0, d.get("x2",100), d.get("y2",0))
@@ -2325,7 +2451,9 @@ class BarcodeEditorPage(QWidget):
             item.design_query     = ""
             item.design_field     = ""
             item.design_result    = ""
-            item.design_type = "FIX"
+            item.design_type          = "FIX"
+            item.design_system_value = "USER ID"
+            item.design_system_extra = ""
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
@@ -2579,7 +2707,9 @@ class BarcodeEditorPage(QWidget):
             item.design_query     = ""
             item.design_field     = ""
             item.design_result    = ""
-            item.design_type      = "FIX"
+            item.design_type          = "FIX"
+            item.design_system_value = "USER ID"
+            item.design_system_extra = ""
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
