@@ -2150,7 +2150,9 @@ class BarcodeEditorPage(QWidget):
         self._switch_tab(0)
 
     def load_design(self, row_data: tuple, row_dict: dict | None):
-        self.reset_for_new()
+        stub = {"pk": "", "name": "", "sticker_name": "", "h_in": 0.0,
+            "w_in": 0.0, "h_px": 0, "w_px": 0, "dp_fg": 0}
+        self.reset_for_new(stub)
         if row_dict:
             sticker_name = str(row_dict.get("sticker_name") or "").strip()
             w = int(row_dict.get("w_px") or self._canvas_w)
@@ -2481,24 +2483,39 @@ class BarcodeEditorPage(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
 
+    # REPLACE the entire _setup_copy_paste_shortcuts method:
     def _setup_copy_paste_shortcuts(self):
         from PySide6.QtGui import QShortcut, QKeySequence
         self._shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
-        self._shortcut_copy.setContext(Qt.ApplicationShortcut)
+        self._shortcut_copy.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_copy.activated.connect(self._copy_selected)
-        self._shortcut_paste = QShortcut(QKeySequence("Ctrl+V"), self)
-        self._shortcut_paste.setContext(Qt.ApplicationShortcut)
-        self._shortcut_paste.activated.connect(self._paste_clipboard)
-        self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
-        self._shortcut_duplicate.setContext(Qt.ApplicationShortcut)
-        self._shortcut_duplicate.activated.connect(self._duplicate_selected)
-        self._shortcut_delete = QShortcut(QKeySequence("Delete"), self)
-        self._shortcut_delete.setContext(Qt.ApplicationShortcut)
-        self._shortcut_delete.activated.connect(self._delete_selected_item)
 
+        self._shortcut_paste = QShortcut(QKeySequence("Ctrl+V"), self)
+        self._shortcut_paste.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_paste.activated.connect(self._paste_clipboard)
+
+        self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
+        self._shortcut_duplicate.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_duplicate.activated.connect(self._duplicate_selected)
+
+        # DELETE: no shortcut — handled via keyPressEvent on the view instead
+
+    def keyPressEvent(self, event):
+        if (event.key() == Qt.Key_Delete
+                and self.view.isVisible()
+                and self._tab_stack.currentIndex() == 1
+                and self.scene.selectedItems()):
+            self._delete_selected_item()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+        
     def _delete_selected_item(self):
+        if not self.view.isVisible() or self._tab_stack.currentIndex() != 1:
+            return
         selected = self.scene.selectedItems()
-        if not selected: return
+        if not selected:
+            return
         item = selected[0]
         from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox(self)
@@ -2507,11 +2524,13 @@ class BarcodeEditorPage(QWidget):
         reply.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         reply.setDefaultButton(QMessageBox.Cancel)
         reply.setIcon(QMessageBox.Warning)
-        if reply.exec() != QMessageBox.Yes: return
+        if reply.exec() != QMessageBox.Yes:
+            return
         for i in range(self.component_list.count()):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == item:
-                self.delete_component(i, confirmed=True); break
+                self.delete_component(i, confirmed=True)
+                break
 
     def _update_toolbar_buttons_state(self, enabled: bool):
         self.btn_add_text.setEnabled(enabled)

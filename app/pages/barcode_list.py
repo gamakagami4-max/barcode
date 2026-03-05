@@ -140,11 +140,7 @@ class BarcodeListPage(QWidget):
 
         self._list_page = QWidget()
         self._stack.addWidget(self._list_page)
-
-        self._editor_page = BarcodeEditorPage()
-        self._editor_page.design_saved.connect(self._on_editor_save)
-        self._editor_page.back_btn.clicked.connect(self._show_list)
-        self._stack.addWidget(self._editor_page)
+        self._editor_page = None
 
         self.init_ui()
         self._stack.setCurrentIndex(self._VIEW_LIST)
@@ -155,11 +151,20 @@ class BarcodeListPage(QWidget):
     # Internal navigation
     # ------------------------------------------------------------------
 
+    def _get_editor_page(self) -> BarcodeEditorPage:
+        if self._editor_page is None:
+            self._editor_page = BarcodeEditorPage()
+            self._editor_page.design_saved.connect(self._on_editor_save)
+            self._editor_page.back_btn.clicked.connect(self._show_list)
+            self._stack.addWidget(self._editor_page)
+        return self._editor_page
+
     def _show_list(self):
         self._stack.setCurrentIndex(self._VIEW_LIST)
 
     def _show_editor(self):
-        self._stack.setCurrentIndex(self._VIEW_EDITOR)
+        if self._editor_page is not None:
+            self._stack.setCurrentIndex(self._VIEW_EDITOR)
 
     def _ensure_layout_columns(self):
         conn = self._get_db_connection()
@@ -703,7 +708,7 @@ class BarcodeListPage(QWidget):
             "flag": 0, "cont": 0, "print_": 0, "print_flag": 0, "ad_fg": 0,
         }
         self._pending_new_design = blank
-        self._editor_page.reset_for_new(blank)
+        self._get_editor_page().reset_for_new(blank)
         self._show_editor()
 
     def handle_edit_action(self):
@@ -742,7 +747,7 @@ class BarcodeListPage(QWidget):
         except Exception as e:
             print(f"[handle_edit_action] Could not fetch layout columns: {e}")
 
-        self._editor_page.load_design(self.selected_row_data, row_dict)
+        self._get_editor_page().load_design(self.selected_row_data, row_dict)
         self._show_editor()
 
     def _get_db_connection(self):
