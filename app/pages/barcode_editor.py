@@ -311,7 +311,6 @@ class CustomCombo(QFrame):
         normal_style = f"color: {color}; font-size: 12px; background: transparent; border: none;"
         self._label.setStyleSheet(normal_style)
         fm = QFontMetrics(self._label.font())
-        # left pad (10) + right pad (8) + chevron (10) + spacing (6) = 34
         available = self.width() - 34
         elided = fm.elidedText(text, Qt.ElideRight, max(available, 20))
         self._label.setText(elided)
@@ -442,6 +441,7 @@ class CustomCombo(QFrame):
         if not self._current:
             self._label.setText(text)
             self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
+
     def blockSignals(self, block):
         self._signals_blocked = block
         return super().blockSignals(block)
@@ -643,6 +643,80 @@ _FIELD_DISABLED = """
 """
 
 
+# ── DB helpers for LOOKUP ─────────────────────────────────────────────────────
+
+def _fetch_connections() -> list[dict]:
+    """Return list of {pk, name} for all active DB connections."""
+    try:
+        from server.db import get_connection
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT mcconm, mcconm
+                  FROM barcodesap.mconnc
+                 ORDER BY mcconm
+                """
+            )
+            return [{"pk": row[0], "name": str(row[1]).strip()} for row in cur.fetchall()]
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[_fetch_connections] {e}")
+        return []
+
+
+def _fetch_tables_for_connection(connection_pk: int) -> list[dict]:
+    """Return list of {pk, name} for tables belonging to connection_pk."""
+    try:
+        from server.db import get_connection
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT matbnmiy, matbnm
+                  FROM barcodesap.mmstbnm
+                 WHERE maconciy = %s
+                   AND madlfg <> '1'
+                 ORDER BY matbnm
+                """,
+                (connection_pk,),
+            )
+            return [{"pk": row[0], "name": str(row[1]).strip()} for row in cur.fetchall()]
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[_fetch_tables_for_connection] {e}")
+        return []
+
+
+def _fetch_fields_for_table(table_pk: int) -> list[str]:
+    """Return list of field names for the given table PK."""
+    try:
+        from server.db import get_connection
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT mflid, mtflnm
+                  FROM barcodesap.mmfield
+                 WHERE matbnmiy = %s
+                   AND madlfg <> '1'
+                 ORDER BY mtflnm
+                """,
+                (table_pk,),
+            )
+            return [str(row[1]).strip() for row in cur.fetchall()]
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[_fetch_fields_for_table] {e}")
+        return []
+
+
 # --- Custom Scene Items ---
 
 class SelectableTextItem(QGraphicsTextItem):
@@ -729,7 +803,6 @@ class TextPropertyEditor(QWidget):
             return l
 
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
-        # Prefer stored value, fallback to reading document
         stored_align = getattr(self.item, "_design_alignment", None)
         if stored_align in ("LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"):
             self.align_combo._current = stored_align
@@ -783,7 +856,6 @@ class TextPropertyEditor(QWidget):
         self.editor_combo = make_chevron_combo(["ENABLED", "DISABLED", "INVISIBLE"])
         layout.addRow(lbl("EDITOR :"), self.editor_combo)
 
-        
         # ── SYSTEM-only fields ────────────────────────────────────────
         self.system_value_combo = make_chevron_combo(["USER ID", "DATETIME", "LOT NO", "OTHERS"])
         stored_system_value = getattr(self.item, "design_system_value", "")
@@ -793,7 +865,6 @@ class TextPropertyEditor(QWidget):
             self.system_value_combo.setCurrentIndex(-1)
         layout.addRow(lbl("SYSTEM VALUE :"), self.system_value_combo)
 
-        # Single extra field — options change based on system_value_combo selection
         self.system_extra_combo = make_chevron_combo([""])
         stored_system_extra = getattr(self.item, "design_system_extra", "")
         if getattr(self.item, "design_type", "") != "SYSTEM":
@@ -803,38 +874,17 @@ class TextPropertyEditor(QWidget):
         def _update_system_extra_options(system_val):
             if system_val == "DATETIME":
                 options = [
-                    "dd MMM yy",
-                    "dd MMM yyyy",
-                    "dd MMM yyyy HH:mm",
-                    "dd MMM yyyy HH:mm AM/PM",
-                    "dd-MMM-yy",
-                    "dd-MMM-yyyy",
-                    "dd-MMM-yyyy HH:mm",
-                    "dd-MMM-yyyy HH:mm AM/PM",
-                    "dd-MMM-yyyy HH:mm:ss",
-                    "HH:mm",
-                    "HH:mm AM/PM",
-                    "HH:mm:ss",
-                    "HH:mm:ss AM/PM",
-                    "MMM yyyy",
-                    "MMMM yyyy",
+                    "dd MMM yy", "dd MMM yyyy", "dd MMM yyyy HH:mm",
+                    "dd MMM yyyy HH:mm AM/PM", "dd-MMM-yy", "dd-MMM-yyyy",
+                    "dd-MMM-yyyy HH:mm", "dd-MMM-yyyy HH:mm AM/PM",
+                    "dd-MMM-yyyy HH:mm:ss", "HH:mm", "HH:mm AM/PM",
+                    "HH:mm:ss", "HH:mm:ss AM/PM", "MMM yyyy", "MMMM yyyy",
                 ]
             elif system_val == "LOT NO":
                 options = [
-                    "FILTECHNO",
-                    "FLEETGUARD",
-                    "FLEETGUARD2",
-                    "FLEETRITE",
-                    "FUSO",
-                    "LUBERFINER",
-                    "MULTIFITTING",
-                    "MULTIFITTING2",
-                    "OEM",
-                    "PREMIUM GUARD",
-                    "PTC",
-                    "SAKURA",
-                    "SANKO",
-                    "YANMAR",
+                    "FILTECHNO", "FLEETGUARD", "FLEETGUARD2", "FLEETRITE", "FUSO",
+                    "LUBERFINER", "MULTIFITTING", "MULTIFITTING2", "OEM",
+                    "PREMIUM GUARD", "PTC", "SAKURA", "SANKO", "YANMAR",
                 ]
             elif system_val == "OTHERS":
                 options = ["MADE IN", "NAMA"]
@@ -857,22 +907,19 @@ class TextPropertyEditor(QWidget):
         self.system_extra_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_system_extra", v)
         )
-        # Initialise extra options for whatever is already stored
-        # Initialise extra options for whatever is already stored
         if getattr(self.item, "design_type", "") == "SYSTEM":
             if stored_system_value in ("USER ID", "DATETIME", "LOT NO", "OTHERS"):
                 _update_system_extra_options(stored_system_value)
                 if stored_system_extra and stored_system_extra in self.system_extra_combo._items:
                     self.system_extra_combo.setCurrentText(stored_system_extra)
             else:
-                # No system value selected yet — disable extra
                 self.system_extra_combo.setEnabled(False)
                 self.system_extra_combo.setCurrentIndex(-1)
         else:
             self.system_extra_combo.setCurrentIndex(-1)
             self.system_extra_combo.setEnabled(False)
 
-        # ── INPUT-only fields: DATA TYPE + MAX LENGTH ─────────────────
+        # ── INPUT-only fields ─────────────────────────────────────────
         self.data_type_combo = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
         self.data_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addRow(lbl("DATA TYPE :"), self.data_type_combo)
@@ -881,22 +928,17 @@ class TextPropertyEditor(QWidget):
         self.max_length_spin.setSpecialValueText("")
         layout.addRow(lbl("MAX LENGTH :"), self.max_length_spin)
 
-        # ── SAME WITH-only: component dropdown ───────────────────────
+        # ── SAME WITH combo ───────────────────────────────────────────
         self.same_with_combo = make_chevron_combo([""])
         try:
             scene = self.item.scene()
             if scene:
                 other_names = []
                 for scene_item in scene.items():
-                    if scene_item.group():
-                        continue
-                    if scene_item is self.item:
-                        continue
-                    if not isinstance(scene_item, SelectableTextItem):
-                        continue
-                    # Prevent circular references
-                    if getattr(scene_item, "design_same_with", "") == getattr(self.item, "component_name", ""):
-                        continue
+                    if scene_item.group(): continue
+                    if scene_item is self.item: continue
+                    if not isinstance(scene_item, SelectableTextItem): continue
+                    if getattr(scene_item, "design_same_with", "") == getattr(self.item, "component_name", ""): continue
                     name = getattr(scene_item, "component_name", "") or "Text"
                     other_names.append(name)
                 if other_names:
@@ -916,22 +958,17 @@ class TextPropertyEditor(QWidget):
         self.same_with_combo.currentTextChanged.connect(self._on_same_with_changed)
         layout.addRow(lbl("SAME WITH :"), self.same_with_combo)
 
-        # ── LINK-only: component dropdown (LOOKUP sources only) ───────
+        # ── LINK combo ────────────────────────────────────────────────
         self.link_combo = make_chevron_combo([""])
         try:
             scene = self.item.scene()
             if scene:
                 link_names = []
                 for scene_item in scene.items():
-                    if scene_item.group():
-                        continue
-                    if scene_item is self.item:
-                        continue
-                    if not isinstance(scene_item, SelectableTextItem):
-                        continue
-                    # Only LOOKUP components can be a LINK source
-                    if getattr(scene_item, "design_type", "") != "LOOKUP":
-                        continue
+                    if scene_item.group(): continue
+                    if scene_item is self.item: continue
+                    if not isinstance(scene_item, SelectableTextItem): continue
+                    if getattr(scene_item, "design_type", "") != "LOOKUP": continue
                     name = getattr(scene_item, "component_name", "") or "Text"
                     link_names.append(name)
                 if link_names:
@@ -950,19 +987,17 @@ class TextPropertyEditor(QWidget):
             self.link_combo.setCurrentText(stored_link)
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(lbl("LINK TO :"), self.link_combo)
-        # ── MERGE-only: component dropdown ───────────────────────
+
+        # ── MERGE combo ───────────────────────────────────────────────
         self.merge_combo = make_chevron_combo([""])
         try:
             scene = self.item.scene()
             if scene:
                 merge_names = []
                 for scene_item in scene.items():
-                    if scene_item.group():
-                        continue
-                    if scene_item is self.item:
-                        continue
-                    if not isinstance(scene_item, SelectableTextItem):
-                        continue
+                    if scene_item.group(): continue
+                    if scene_item is self.item: continue
+                    if not isinstance(scene_item, SelectableTextItem): continue
                     name = getattr(scene_item, "component_name", "") or "Text"
                     merge_names.append(name)
                 if merge_names:
@@ -982,7 +1017,7 @@ class TextPropertyEditor(QWidget):
         self.merge_combo.currentTextChanged.connect(self._on_merge_changed)
         layout.addRow(lbl("MERGE WITH :"), self.merge_combo)
 
-        # ── KONVERSI TIMBANGAN-only fields ────────────────────────
+        # ── KONVERSI TIMBANGAN combos ─────────────────────────────────
         self.timbangan_combo = make_chevron_combo([""])
         self.weight_combo    = make_chevron_combo([""])
         self.um_combo        = make_chevron_combo([""])
@@ -991,12 +1026,9 @@ class TextPropertyEditor(QWidget):
             if scene:
                 kt_names = []
                 for scene_item in scene.items():
-                    if scene_item.group():
-                        continue
-                    if scene_item is self.item:
-                        continue
-                    if not isinstance(scene_item, SelectableTextItem):
-                        continue
+                    if scene_item.group(): continue
+                    if scene_item is self.item: continue
+                    if not isinstance(scene_item, SelectableTextItem): continue
                     name = getattr(scene_item, "component_name", "") or "Text"
                     kt_names.append(name)
                 if kt_names:
@@ -1032,6 +1064,131 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("WEIGHT :"),    self.weight_combo)
         layout.addRow(lbl("U/M :"),       self.um_combo)
 
+        # ══════════════════════════════════════════════════════════════
+        # ── GROUP / TABLE / QUERY / FIELD / RESULT  (LOOKUP dynamic) ─
+        # ══════════════════════════════════════════════════════════════
+
+        # Internal maps: display-name → pk
+        self._conn_map   = {}
+        self._table_map  = {}
+        self._field_list = []
+
+        # GROUP = connection picker
+        connections = _fetch_connections()
+        self._conn_map = {c["name"]: c["pk"] for c in connections}
+        conn_names = list(self._conn_map.keys())
+
+        self.group_combo = make_chevron_combo(conn_names if conn_names else [""])
+        self.group_combo.setPlaceholderText("— select connection —")
+        self.group_combo.setCurrentIndex(-1)
+        layout.addRow(lbl("GROUP :"), self.group_combo)
+
+        # TABLE = populated after group is chosen
+        self.table_combo = make_chevron_combo([""])
+        self.table_combo.setPlaceholderText("— select table —")
+        self.table_combo.setCurrentIndex(-1)
+        self.table_combo.setEnabled(False)
+        layout.addRow(lbl("TABLE :"), self.table_combo)
+
+        # QUERY (free-text SQL condition, unchanged)
+        self.table_extra = QLineEdit()
+        self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
+        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addRow(lbl("QUERY :"), self.table_extra)
+
+        # FIELD = populated after table is chosen (now a combo, not a plain QLineEdit)
+        self.field_edit = make_chevron_combo([""])
+        self.field_edit.setPlaceholderText("— select field —")
+        self.field_edit.setCurrentIndex(-1)
+        self.field_edit.setEnabled(False)
+        layout.addRow(lbl("FIELD :"), self.field_edit)
+
+        # RESULT = also populated from the same field list
+        self.result_combo = make_chevron_combo([""])
+        self.result_combo.setPlaceholderText("— select result field —")
+        self.result_combo.setCurrentIndex(-1)
+        self.result_combo.setEnabled(False)
+        layout.addRow(lbl("RESULT :"), self.result_combo)
+
+        # ── inner helpers ──────────────────────────────────────────────
+
+        def _clear_field_combos():
+            self._field_list = []
+            for combo in (self.field_edit, self.result_combo):
+                combo._items   = [""]
+                combo._current = ""
+                combo._label.setText("")
+                combo.setEnabled(False)
+                combo.setCurrentIndex(-1)
+
+        def _on_group_changed(conn_name: str):
+            conn_pk = self._conn_map.get(conn_name)
+            if conn_pk is None:
+                self.table_combo._items = [""]
+                self.table_combo.setCurrentIndex(-1)
+                self.table_combo.setEnabled(False)
+                self._table_map = {}
+                _clear_field_combos()
+                return
+            tables = _fetch_tables_for_connection(conn_pk)
+            self._table_map = {t["name"]: t["pk"] for t in tables}
+            table_names = list(self._table_map.keys())
+            self.table_combo._items   = table_names if table_names else [""]
+            self.table_combo._current = ""
+            self.table_combo._label.setText("")
+            self.table_combo.setEnabled(bool(table_names))
+            self.table_combo.setPlaceholderText("— select table —")
+            self.table_combo.setCurrentIndex(-1)
+            setattr(self.item, "design_group", conn_name)
+            _clear_field_combos()
+
+        def _on_table_changed(table_name: str):
+            table_pk = self._table_map.get(table_name)
+            if table_pk is None:
+                _clear_field_combos()
+                return
+            fields = _fetch_fields_for_table(table_pk)
+            self._field_list = fields
+            opts = fields if fields else [""]
+            for combo in (self.field_edit, self.result_combo):
+                combo._items   = opts
+                combo._current = ""
+                combo._label.setText("")
+                combo.setEnabled(bool(fields))
+                combo.setCurrentIndex(-1)
+            setattr(self.item, "design_table", table_name)
+
+        self.group_combo.currentTextChanged.connect(_on_group_changed)
+        self.table_combo.currentTextChanged.connect(_on_table_changed)
+        self.field_edit.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_field",  v if v not in ("", "—") else "")
+        )
+        self.result_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_result", v if v not in ("", "—") else "")
+        )
+
+        # Restore persisted values when loading a saved design
+        stored_group  = getattr(self.item, "design_group",  "")
+        stored_table  = getattr(self.item, "design_table",  "")
+        stored_field  = getattr(self.item, "design_field",  "")
+        stored_result = getattr(self.item, "design_result", "")
+        stored_query  = getattr(self.item, "design_query",  "")
+
+        if stored_group and stored_group in self._conn_map:
+            self.group_combo.setCurrentText(stored_group)   # triggers _on_group_changed
+            if stored_table and stored_table in self._table_map:
+                self.table_combo.setCurrentText(stored_table)  # triggers _on_table_changed
+                if stored_field and stored_field in self._field_list:
+                    self.field_edit.setCurrentText(stored_field)
+                if stored_result and stored_result in self._field_list:
+                    self.result_combo.setCurrentText(stored_result)
+        if stored_query:
+            self.table_extra.setText(stored_query)
+
+        # ══════════════════════════════════════════════════════════════
+        # End LOOKUP block
+        # ══════════════════════════════════════════════════════════════
+
         DISABLED_STYLE = """
             QComboBox, QSpinBox {
                 background-color: #F8FAFC;
@@ -1054,7 +1211,7 @@ class TextPropertyEditor(QWidget):
             is_merge     = val == "MERGE"
             is_konversi  = val == "KONVERSI TIMBANGAN"
 
-            # ── SYSTEM-only: SYSTEM VALUE + EXTRA ────────────────────
+            # ── SYSTEM ────────────────────────────────────────────────
             if is_system:
                 self.system_value_combo.setEnabled(True)
                 sv = self.system_value_combo.currentText()
@@ -1065,6 +1222,7 @@ class TextPropertyEditor(QWidget):
                 self.system_extra_combo.setCurrentIndex(-1)
                 self.system_extra_combo.setEnabled(False)
 
+            # ── SAME WITH ─────────────────────────────────────────────
             if is_same_with:
                 self._lock_all_fields(True)
                 self.same_with_combo.setEnabled(True)
@@ -1091,22 +1249,27 @@ class TextPropertyEditor(QWidget):
                     if self.max_length_spin.value() == 0:
                         self.max_length_spin.setValue(1)
 
-                self.table_combo.setEnabled(is_lookup)
+                # ── LOOKUP: cascading enable ───────────────────────────
                 self.group_combo.setEnabled(is_lookup)
+                if is_lookup:
+                    has_group = bool(self.group_combo.currentText())
+                    self.table_combo.setEnabled(has_group)
+                    has_table = bool(self.table_combo.currentText())
+                    self.field_edit.setEnabled(has_table)
+                    self.result_combo.setEnabled(has_table)
+                else:
+                    self.table_combo.setEnabled(False)
+                    self.field_edit.setEnabled(False)
+                    self.result_combo.setEnabled(False)
+
                 self.table_extra.setEnabled(is_lookup)
                 self.table_extra.setStyleSheet(
                     MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
                 )
-                self.field_edit.setEnabled(is_lookup)
-                self.field_edit.setStyleSheet(
-                    MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
-                )
-                self.result_combo.setEnabled(is_lookup)
-                self.result_combo.setStyleSheet(
-                    MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
-                )
+
                 self.same_with_combo.setEnabled(is_same_with)
 
+            # ── LINK ──────────────────────────────────────────────────
             self.link_combo.setEnabled(is_link)
             if is_link:
                 stored_link = getattr(self.item, "design_link", "")
@@ -1117,20 +1280,20 @@ class TextPropertyEditor(QWidget):
             else:
                 self.item.design_link = ""
 
-            # ── BATCH NO-only ─────────────────────────────────────────
+            # ── BATCH NO ──────────────────────────────────────────────
             self.batch_no_combo.setEnabled(is_batch_no)
             self.wh_combo.setEnabled(is_batch_no)
             if not is_batch_no:
                 self.batch_no_combo.setCurrentIndex(-1)
                 self.wh_combo.setCurrentIndex(-1)
 
-            # ── MERGE-only ────────────────────────────────────────────
+            # ── MERGE ─────────────────────────────────────────────────
             self.merge_combo.setEnabled(is_merge)
             if not is_merge:
                 self.merge_combo.setCurrentIndex(-1)
                 self.item.design_merge = ""
 
-            # ── KONVERSI TIMBANGAN-only ───────────────────────────────
+            # ── KONVERSI TIMBANGAN ────────────────────────────────────
             self.timbangan_combo.setEnabled(is_konversi)
             self.weight_combo.setEnabled(is_konversi)
             self.um_combo.setEnabled(is_konversi)
@@ -1142,7 +1305,7 @@ class TextPropertyEditor(QWidget):
                 self.item.design_weight    = ""
                 self.item.design_um        = ""
 
-            # ── Always enforce SYSTEM-only fields at the end ──────────
+            # ── enforce SYSTEM-only at end ────────────────────────────
             if not is_system:
                 self.system_value_combo.setCurrentIndex(-1)
                 self.system_extra_combo.setCurrentIndex(-1)
@@ -1162,20 +1325,6 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("WRAP TEXT :"), self.wrap_combo)
         self.wrap_width_spin = make_spin(0, 5000, 1)
         layout.addRow(lbl("WRAP WIDTH :"), self.wrap_width_spin)
-        self.group_combo = make_chevron_combo([""])
-        layout.addRow(lbl("GROUP :"), self.group_combo)
-        self.table_combo = make_chevron_combo([""])
-        layout.addRow(lbl("TABLE :"), self.table_combo)
-        self.table_extra = QLineEdit(); self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
-        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addRow(lbl("QUERY :"), self.table_extra)
-        self.field_edit = QLineEdit(); self.field_edit.setStyleSheet(MODERN_INPUT_STYLE)
-        self.field_edit.setMinimumHeight(52); self.field_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addRow(lbl("FIELD :"), self.field_edit)
-        self.result_combo = QLineEdit()
-        self.result_combo.setStyleSheet(MODERN_INPUT_STYLE)
-        self.result_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addRow(lbl("RESULT :"), self.result_combo)
         self._trim_checked = False
         trim_row = QWidget(); trim_row.setStyleSheet("background: transparent; border: none;")
         trim_layout = QHBoxLayout(trim_row); trim_layout.setContentsMargins(0,0,0,0); trim_layout.setSpacing(6)
@@ -1223,7 +1372,6 @@ class TextPropertyEditor(QWidget):
             if value and value not in ("", "(no other components)"):
                 self._apply_same_with_link(value)
             else:
-                # Blank selected — cut off the link entirely
                 SameWithRegistry.unregister(self.item)
                 self.item.design_same_with = ""
                 self._lock_all_fields(True)
@@ -1237,16 +1385,13 @@ class TextPropertyEditor(QWidget):
             return
         source_item = None
         for scene_item in scene.items():
-            if scene_item is self.item:
-                continue
-            if not isinstance(scene_item, SelectableTextItem):
-                continue
+            if scene_item is self.item: continue
+            if not isinstance(scene_item, SelectableTextItem): continue
             if getattr(scene_item, "component_name", "") == source_name:
                 source_item = scene_item
                 break
         if not source_item:
             return
-        # Prevent linking to another SAME WITH item
         if getattr(source_item, "design_type", "") == "SAME WITH":
             return
         SameWithRegistry.register(self.item, source_item)
@@ -1276,7 +1421,7 @@ class TextPropertyEditor(QWidget):
             }
         """
         LINE_DISABLED = _LINE_DISABLED
-        for w in [self.text_input, self.caption_input, self.format_edit, self.result_combo]:
+        for w in [self.text_input, self.caption_input, self.format_edit]:
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else LINE_DISABLED)
         for w in [self.size_spin, self.top_spin, self.left_spin, self.wrap_width_spin, self.column_spin]:
@@ -1284,12 +1429,15 @@ class TextPropertyEditor(QWidget):
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
         for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
                 self.editor_combo, self.wrap_combo, self.data_type_combo,
-                self.table_combo, self.group_combo, self.link_combo,
+                self.group_combo, self.table_combo, self.field_edit,
+                self.result_combo, self.link_combo,
                 self.merge_combo,
                 self.timbangan_combo, self.weight_combo, self.um_combo,
                 self.visible_combo, self.save_field_combo, self.mandatory_combo,
                 self.batch_no_combo, self.wh_combo]:
             w.setEnabled(not locked)
+        self.table_extra.setEnabled(not locked)
+        self.table_extra.setStyleSheet(MODERN_INPUT_STYLE if not locked else LINE_DISABLED)
         self.trim_box.setEnabled(not locked)
         if locked:
             self.same_with_combo.setEnabled(True)
@@ -1311,8 +1459,7 @@ class TextPropertyEditor(QWidget):
     def _sync_same_with_targets(self):
         targets = SameWithRegistry.get_targets(self.item)
         for target in targets:
-            if not target.scene():
-                continue
+            if not target.scene(): continue
             target.setPlainText(self.item.toPlainText())
             target.setFont(QFont(self.item.font().family(), self.item.font().pointSize()))
             target.setDefaultTextColor(self.item.defaultTextColor())
@@ -1335,7 +1482,7 @@ class TextPropertyEditor(QWidget):
             self.item.design_merge = value
         else:
             self.item.design_merge = ""
-            
+
     def _apply_link_fields(self, source_name):
         """Copy GROUP, TABLE, QUERY, FIELD, RESULT from the linked LOOKUP source."""
         scene = self.item.scene()
@@ -1343,10 +1490,8 @@ class TextPropertyEditor(QWidget):
             return
         source_item = None
         for scene_item in scene.items():
-            if scene_item is self.item:
-                continue
-            if not isinstance(scene_item, SelectableTextItem):
-                continue
+            if scene_item is self.item: continue
+            if not isinstance(scene_item, SelectableTextItem): continue
             if getattr(scene_item, "component_name", "") == source_name:
                 source_item = scene_item
                 break
@@ -1372,12 +1517,12 @@ class TextPropertyEditor(QWidget):
         self.table_extra.setStyleSheet(_LINE_DISABLED)
 
         self.field_edit.setEnabled(False)
-        self.field_edit.setText(self.item.design_field)
-        self.field_edit.setStyleSheet(_LINE_DISABLED)
+        self.field_edit._current = self.item.design_field
+        self.field_edit._label.setText(self.item.design_field)
 
         self.result_combo.setEnabled(False)
-        self.result_combo.setText(self.item.design_result)
-        self.result_combo.setStyleSheet(_LINE_DISABLED)
+        self.result_combo._current = self.item.design_result
+        self.result_combo._label.setText(self.item.design_result)
 
     def _clear_link_fields(self):
         self.item.design_group  = ""
@@ -1386,25 +1531,15 @@ class TextPropertyEditor(QWidget):
         self.item.design_field  = ""
         self.item.design_result = ""
 
-        self.group_combo.setEnabled(False)
-        self.group_combo._current = ""
-        self.group_combo._label.setText("")
-
-        self.table_combo.setEnabled(False)
-        self.table_combo._current = ""
-        self.table_combo._label.setText("")
+        for combo in (self.group_combo, self.table_combo,
+                      self.field_edit, self.result_combo):
+            combo.setEnabled(False)
+            combo._current = ""
+            combo._label.setText("")
 
         self.table_extra.setEnabled(False)
         self.table_extra.clear()
         self.table_extra.setStyleSheet(_LINE_DISABLED)
-
-        self.field_edit.setEnabled(False)
-        self.field_edit.clear()
-        self.field_edit.setStyleSheet(_LINE_DISABLED)
-
-        self.result_combo.setEnabled(False)
-        self.result_combo.clear()
-        self.result_combo.setStyleSheet(_LINE_DISABLED)
 
     # ── Standard methods ──────────────────────────────────────────────────────
 
@@ -1416,24 +1551,17 @@ class TextPropertyEditor(QWidget):
         }
         from PySide6.QtGui import QTextCursor, QTextBlockFormat
         alignment = align_map.get(value, Qt.AlignLeft)
-
         if value == "LEFT JUSTIFY":
             self.item.setTextWidth(-1)
         else:
             w = self.item.boundingRect().width()
             self.item.setTextWidth(w if w > 0 else 200)
-
-        # Use the document's own cursor — never call setTextCursor() on the item
-        # because that triggers an internal Qt event that fires itemChange
-        # with a deselect/reselect cycle which resets the text color.
         doc = self.item.document()
         doc_cursor = QTextCursor(doc)
         doc_cursor.select(QTextCursor.SelectionType.Document)
         fmt = QTextBlockFormat()
         fmt.setAlignment(alignment)
         doc_cursor.mergeBlockFormat(fmt)
-        # doc_cursor goes out of scope here — no setTextCursor call, no color side-effects
-
         self.item._design_alignment = value
         self.update_callback()
 
@@ -2483,22 +2611,17 @@ class BarcodeEditorPage(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
 
-    # REPLACE the entire _setup_copy_paste_shortcuts method:
     def _setup_copy_paste_shortcuts(self):
         from PySide6.QtGui import QShortcut, QKeySequence
         self._shortcut_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         self._shortcut_copy.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_copy.activated.connect(self._copy_selected)
-
         self._shortcut_paste = QShortcut(QKeySequence("Ctrl+V"), self)
         self._shortcut_paste.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_paste.activated.connect(self._paste_clipboard)
-
         self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
         self._shortcut_duplicate.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_duplicate.activated.connect(self._duplicate_selected)
-
-        # DELETE: no shortcut — handled via keyPressEvent on the view instead
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Delete
@@ -2509,7 +2632,7 @@ class BarcodeEditorPage(QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
-        
+
     def _delete_selected_item(self):
         if not self.view.isVisible() or self._tab_stack.currentIndex() != 1:
             return
@@ -2766,22 +2889,17 @@ class BarcodeEditorPage(QWidget):
     def _rebuild_same_with_registry(self):
         name_to_item = {}
         for scene_item in self.scene.items():
-            if scene_item.group():
-                continue
+            if scene_item.group(): continue
             if isinstance(scene_item, SelectableTextItem):
                 name = getattr(scene_item, "component_name", "")
                 if name:
                     name_to_item[name] = scene_item
         for scene_item in self.scene.items():
-            if scene_item.group():
-                continue
-            if not isinstance(scene_item, SelectableTextItem):
-                continue
-            if getattr(scene_item, "design_type", "") != "SAME WITH":
-                continue
+            if scene_item.group(): continue
+            if not isinstance(scene_item, SelectableTextItem): continue
+            if getattr(scene_item, "design_type", "") != "SAME WITH": continue
             ref_name = getattr(scene_item, "design_same_with", "")
-            if not ref_name:
-                continue
+            if not ref_name: continue
             source = name_to_item.get(ref_name)
             if source and source is not scene_item:
                 if getattr(source, "design_type", "") != "SAME WITH":
