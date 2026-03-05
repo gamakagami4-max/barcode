@@ -969,6 +969,7 @@ class TextPropertyEditor(QWidget):
             is_same_with = val == "SAME WITH"
             is_link      = val == "LINK"
             is_system    = val == "SYSTEM"
+            is_batch_no  = val == "BATCH NO"
 
             # ── SYSTEM-only: SYSTEM VALUE + EXTRA ────────────────────
             if is_system:
@@ -1022,6 +1023,13 @@ class TextPropertyEditor(QWidget):
                     MODERN_INPUT_STYLE if is_lookup else _LINE_DISABLED
                 )
                 self.same_with_combo.setEnabled(is_same_with)
+
+            # ── BATCH NO-only — must run AFTER if/else so _lock_all_fields can't re-enable ──
+            self.batch_no_combo.setEnabled(is_batch_no)
+            self.wh_combo.setEnabled(is_batch_no)
+            if not is_batch_no:
+                self.batch_no_combo.setCurrentIndex(-1)
+                self.wh_combo.setCurrentIndex(-1)
 
             self.link_combo.setEnabled(is_link)
             if is_link:
@@ -1090,6 +1098,10 @@ class TextPropertyEditor(QWidget):
         layout.addRow(lbl("COLUMN :"), self.column_spin)
         self.mandatory_combo = make_chevron_combo(["FALSE", "TRUE"])
         layout.addRow(lbl("MANDATORY :"), self.mandatory_combo)
+        self.batch_no_combo = make_chevron_combo([""])
+        layout.addRow(lbl("BATCH NO :"), self.batch_no_combo)
+        self.wh_combo = make_chevron_combo([""])
+        layout.addRow(lbl("WH :"), self.wh_combo)
 
         self.align_combo.currentTextChanged.connect(self._apply_alignment)
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
@@ -1170,9 +1182,10 @@ class TextPropertyEditor(QWidget):
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
         for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
-                  self.editor_combo, self.wrap_combo, self.data_type_combo,
-                  self.table_combo, self.group_combo, self.link_combo,
-                  self.visible_combo, self.save_field_combo, self.mandatory_combo]:
+                self.editor_combo, self.wrap_combo, self.data_type_combo,
+                self.table_combo, self.group_combo, self.link_combo,
+                self.visible_combo, self.save_field_combo, self.mandatory_combo,
+                self.batch_no_combo, self.wh_combo]:
             w.setEnabled(not locked)
         # SYSTEM fields are managed exclusively by _on_type_changed — never touched here
         self.trim_box.setEnabled(not locked)
