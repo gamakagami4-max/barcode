@@ -950,6 +950,37 @@ class TextPropertyEditor(QWidget):
             self.link_combo.setCurrentText(stored_link)
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(lbl("LINK TO :"), self.link_combo)
+        # ── MERGE-only: component dropdown ───────────────────────
+        self.merge_combo = make_chevron_combo([""])
+        try:
+            scene = self.item.scene()
+            if scene:
+                merge_names = []
+                for scene_item in scene.items():
+                    if scene_item.group():
+                        continue
+                    if scene_item is self.item:
+                        continue
+                    if not isinstance(scene_item, SelectableTextItem):
+                        continue
+                    name = getattr(scene_item, "component_name", "") or "Text"
+                    merge_names.append(name)
+                if merge_names:
+                    self.merge_combo._items = [""] + merge_names
+                    self.merge_combo._current = ""
+                    self.merge_combo._label.setText("")
+                    self.merge_combo.setPlaceholderText("— select component —")
+                else:
+                    self.merge_combo._items = ["—"]
+                    self.merge_combo._current = "—"
+                    self.merge_combo._label.setText("—")
+        except Exception:
+            pass
+        stored_merge = getattr(self.item, "design_merge", "")
+        if stored_merge and stored_merge in self.merge_combo._items:
+            self.merge_combo.setCurrentText(stored_merge)
+        self.merge_combo.currentTextChanged.connect(self._on_merge_changed)
+        layout.addRow(lbl("MERGE WITH :"), self.merge_combo)
 
         DISABLED_STYLE = """
             QComboBox, QSpinBox {
@@ -970,6 +1001,7 @@ class TextPropertyEditor(QWidget):
             is_link      = val == "LINK"
             is_system    = val == "SYSTEM"
             is_batch_no  = val == "BATCH NO"
+            is_merge     = val == "MERGE"
 
             # ── SYSTEM-only: SYSTEM VALUE + EXTRA ────────────────────
             if is_system:
@@ -1024,13 +1056,6 @@ class TextPropertyEditor(QWidget):
                 )
                 self.same_with_combo.setEnabled(is_same_with)
 
-            # ── BATCH NO-only — must run AFTER if/else so _lock_all_fields can't re-enable ──
-            self.batch_no_combo.setEnabled(is_batch_no)
-            self.wh_combo.setEnabled(is_batch_no)
-            if not is_batch_no:
-                self.batch_no_combo.setCurrentIndex(-1)
-                self.wh_combo.setCurrentIndex(-1)
-
             self.link_combo.setEnabled(is_link)
             if is_link:
                 stored_link = getattr(self.item, "design_link", "")
@@ -1040,6 +1065,19 @@ class TextPropertyEditor(QWidget):
                     self._clear_link_fields()
             else:
                 self.item.design_link = ""
+
+            # ── BATCH NO-only ─────────────────────────────────────────
+            self.batch_no_combo.setEnabled(is_batch_no)
+            self.wh_combo.setEnabled(is_batch_no)
+            if not is_batch_no:
+                self.batch_no_combo.setCurrentIndex(-1)
+                self.wh_combo.setCurrentIndex(-1)
+
+            # ── MERGE-only ────────────────────────────────────────────
+            self.merge_combo.setEnabled(is_merge)
+            if not is_merge:
+                self.merge_combo.setCurrentIndex(-1)
+                self.item.design_merge = ""
 
             # ── Always enforce SYSTEM-only fields at the end ──────────
             if not is_system:
@@ -1184,12 +1222,11 @@ class TextPropertyEditor(QWidget):
         for w in [self.align_combo, self.font_combo, self.angle_combo, self.inverse_combo,
                 self.editor_combo, self.wrap_combo, self.data_type_combo,
                 self.table_combo, self.group_combo, self.link_combo,
+                self.merge_combo,
                 self.visible_combo, self.save_field_combo, self.mandatory_combo,
                 self.batch_no_combo, self.wh_combo]:
             w.setEnabled(not locked)
-        # SYSTEM fields are managed exclusively by _on_type_changed — never touched here
         self.trim_box.setEnabled(not locked)
-        # Keep SAME WITH combo accessible only when locked (i.e. type IS SAME WITH)
         if locked:
             self.same_with_combo.setEnabled(True)
 
@@ -1229,6 +1266,12 @@ class TextPropertyEditor(QWidget):
             self.item.design_link = ""
             self._clear_link_fields()
 
+    def _on_merge_changed(self, value):
+        if value and value not in ("", "—"):
+            self.item.design_merge = value
+        else:
+            self.item.design_merge = ""
+            
     def _apply_link_fields(self, source_name):
         """Copy GROUP, TABLE, QUERY, FIELD, RESULT from the linked LOOKUP source."""
         scene = self.item.scene()
@@ -2138,6 +2181,7 @@ class BarcodeEditorPage(QWidget):
                 "design_type": getattr(item, "design_type", "FIX"),
                 "design_system_value": getattr(item, "design_system_value", "USER ID"),
                 "design_system_extra": getattr(item, "design_system_extra", ""),
+                "design_merge": getattr(item, "design_merge", ""),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -2170,6 +2214,7 @@ class BarcodeEditorPage(QWidget):
                 item.design_system_value = d.get("design_system_value", "USER ID")
                 item.design_system_extra = d.get("design_system_extra", "")
                 item.component_name       = d.get("name","Text")
+                item.design_merge = d.get("design_merge", "")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
                 item = SelectableLineItem(0, 0, d.get("x2",100), d.get("y2",0))
@@ -2467,6 +2512,7 @@ class BarcodeEditorPage(QWidget):
             item.design_type          = "FIX"
             item.design_system_value = "USER ID"
             item.design_system_extra = ""
+            item.design_merge = ""
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
@@ -2723,6 +2769,7 @@ class BarcodeEditorPage(QWidget):
             item.design_type          = "FIX"
             item.design_system_value = "USER ID"
             item.design_system_extra = ""
+            item.design_merge = ""
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
