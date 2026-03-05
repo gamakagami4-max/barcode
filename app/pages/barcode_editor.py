@@ -626,6 +626,68 @@ _FIELD_DISABLED = """
 """
 
 
+# --- Custom Scene Items ---
+
+class SelectableTextItem(QGraphicsTextItem):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_color = QColor("#000000")
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedChange:
+            if value:
+                self._original_color = QColor("#000000")
+                self.setDefaultTextColor(QColor("#EF4444"))
+            else:
+                self.setDefaultTextColor(self._original_color)
+        return super().itemChange(change, value)
+
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if getattr(self, "design_inverse", False):
+            painter.save()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor("#000000")))
+            painter.drawRect(self.boundingRect())
+            painter.restore()
+            original_color = self.defaultTextColor()
+            if not self.isSelected():
+                self.setDefaultTextColor(QColor("#FFFFFF"))
+            super().paint(painter, option, widget)
+            if not self.isSelected():
+                self.setDefaultTextColor(original_color)
+        else:
+            super().paint(painter, option, widget)
+
+
+class SelectableLineItem(QGraphicsLineItem):
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if self.isSelected():
+            original_pen = self.pen()
+            red_pen = QPen(original_pen)
+            red_pen.setColor(QColor("#EF4444"))
+            self.setPen(red_pen)
+            super().paint(painter, option, widget)
+            self.setPen(original_pen)
+        else:
+            super().paint(painter, option, widget)
+
+
+class SelectableRectItem(QGraphicsRectItem):
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        if self.isSelected():
+            original_pen = self.pen()
+            red_pen = QPen(original_pen)
+            red_pen.setColor(QColor("#EF4444"))
+            self.setPen(red_pen)
+            super().paint(painter, option, widget)
+            self.setPen(original_pen)
+        else:
+            super().paint(painter, option, widget)
+
+
 # --- Property Editors ---
 
 class TextPropertyEditor(QWidget):
@@ -1049,14 +1111,12 @@ class TextPropertyEditor(QWidget):
         if not source_item:
             return
 
-        # Copy values from source to this item's data attributes
         self.item.design_group  = getattr(source_item, "design_group",  "")
         self.item.design_table  = getattr(source_item, "design_table",  "")
         self.item.design_query  = getattr(source_item, "design_query",  "")
         self.item.design_field  = getattr(source_item, "design_field",  "")
         self.item.design_result = getattr(source_item, "design_result", "")
 
-        # Reflect in UI — grey + read-only, showing source values
         self.group_combo.setEnabled(False)
         self.group_combo._current = self.item.design_group
         self.group_combo._label.setText(self.item.design_group)
@@ -1078,7 +1138,6 @@ class TextPropertyEditor(QWidget):
         self.result_combo.setStyleSheet(_LINE_DISABLED)
 
     def _clear_link_fields(self):
-        """Reset GROUP, TABLE, QUERY, FIELD, RESULT to empty/disabled when link is cleared."""
         self.item.design_group  = ""
         self.item.design_table  = ""
         self.item.design_query  = ""
@@ -1116,59 +1175,22 @@ class TextPropertyEditor(QWidget):
         from PySide6.QtGui import QTextCursor, QTextBlockFormat
         alignment = align_map.get(value, Qt.AlignLeft)
 
-        was_selected = self.item.isSelected()
-        
-        # Save current color before any changes
-        current_color = self.item.defaultTextColor()
-
         if value == "LEFT JUSTIFY":
             self.item.setTextWidth(-1)
         else:
             w = self.item.boundingRect().width()
             self.item.setTextWidth(w if w > 0 else 200)
 
-        self.item._ignore_selection_color = True
-        try:
-            cursor = self.item.textCursor()
-            cursor.select(QTextCursor.SelectionType.Document)
-            fmt = QTextBlockFormat()
-            fmt.setAlignment(alignment)
-            cursor.mergeBlockFormat(fmt)
-            self.item.setTextCursor(cursor)
-        finally:
-            self.item._ignore_selection_color = False
-
-        # Only set _original_color if it doesn't exist, don't overwrite it!
-        if not hasattr(self.item, '_original_color'):
-            self.item._original_color = QColor("#000000")
-        
-        # Determine target color based on selection state
-        target_color = QColor("#EF4444") if was_selected else self.item._original_color
-        
-        # Force full repaint by briefly removing and re-adding to scene
-        scene = self.item.scene()
-        if scene:
-            pos = self.item.pos()
-            z = self.item.zValue()
-            rotation = self.item.rotation()
-            
-            # CRITICAL: Keep ignore true during ENTIRE scene manipulation
-            self.item._ignore_selection_color = True
-            
-            scene.removeItem(self.item)
-            scene.addItem(self.item)
-            self.item.setPos(pos)
-            self.item.setZValue(z)
-            self.item.setRotation(rotation)
-            
-            if was_selected:
-                self.item.setSelected(True)
-            
-            # Set color while still ignoring selection changes
-            self.item.setDefaultTextColor(target_color)
-            
-            # Only release the lock at the very end
-            self.item._ignore_selection_color = False
+        # Use the document's own cursor — never call setTextCursor() on the item
+        # because that triggers an internal Qt event that fires itemChange
+        # with a deselect/reselect cycle which resets the text color.
+        doc = self.item.document()
+        doc_cursor = QTextCursor(doc)
+        doc_cursor.select(QTextCursor.SelectionType.Document)
+        fmt = QTextBlockFormat()
+        fmt.setAlignment(alignment)
+        doc_cursor.mergeBlockFormat(fmt)
+        # doc_cursor goes out of scope here — no setTextCursor call, no color side-effects
 
         self.item._design_alignment = value
         self.update_callback()
@@ -1395,72 +1417,6 @@ class BarcodePropertyEditor(QWidget):
         self.item.design_visible = (value == "TRUE"); self.update_callback()
 
     def _update_visibility_indicator(self): pass
-
-
-# --- Custom Scene Items ---
-
-class SelectableTextItem(QGraphicsTextItem):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._original_color = QColor("#000000")
-        self._ignore_selection_color = False
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemSelectedChange and not self._ignore_selection_color:
-            print(f"[itemChange LIVE] value={value}, _ignore={self._ignore_selection_color}, color before={self.defaultTextColor().name()}")
-            if value:
-                self._original_color = QColor("#000000")
-                self.setDefaultTextColor(QColor("#EF4444"))
-            else:
-                self.setDefaultTextColor(self._original_color)
-            print(f"[itemChange LIVE] color after={self.defaultTextColor().name()}")
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        option.state &= ~QStyle.State_Selected
-        if getattr(self, "design_inverse", False):
-            painter.save()
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(QColor("#000000")))
-            painter.drawRect(self.boundingRect())
-            painter.restore()
-            # Draw text in white when inverse
-            original_color = self.defaultTextColor()
-            if not self.isSelected():
-                self.setDefaultTextColor(QColor("#FFFFFF"))
-            super().paint(painter, option, widget)
-            if not self.isSelected():
-                self.setDefaultTextColor(original_color)
-        else:
-            super().paint(painter, option, widget)
-
-
-class SelectableLineItem(QGraphicsLineItem):
-    def paint(self, painter, option, widget=None):
-        option.state &= ~QStyle.State_Selected
-        if self.isSelected():
-            original_pen = self.pen()
-            red_pen = QPen(original_pen)
-            red_pen.setColor(QColor("#EF4444"))
-            self.setPen(red_pen)
-            super().paint(painter, option, widget)
-            self.setPen(original_pen)
-        else:
-            super().paint(painter, option, widget)
-
-
-class SelectableRectItem(QGraphicsRectItem):
-    def paint(self, painter, option, widget=None):
-        option.state &= ~QStyle.State_Selected
-        if self.isSelected():
-            original_pen = self.pen()
-            red_pen = QPen(original_pen)
-            red_pen.setColor(QColor("#EF4444"))
-            self.setPen(red_pen)
-            super().paint(painter, option, widget)
-            self.setPen(original_pen)
-        else:
-            super().paint(painter, option, widget)
 
 
 class BarcodeItem(QGraphicsItemGroup):
@@ -1937,7 +1893,7 @@ class BarcodeEditorPage(QWidget):
             self._design_name  = ""
             self._sticker_name = ""
             self._h_in = self._w_in = 0.0
-            self._dp_fg = 0
+            self._dp_fg = 1
         self._canvas_w, self._canvas_h = w, h
         self.scene.setSceneRect(QRectF(0, 0, w, h))
         self._update_design_subtitle()
@@ -1993,7 +1949,7 @@ class BarcodeEditorPage(QWidget):
             self._design_name  = str(row_data[1]) if row_data and len(row_data) > 1 else ""
             self._sticker_name = ""
             self._h_in = self._w_in = 0.0
-            self._dp_fg = 0
+            self._dp_fg = 1
             w, h = self._canvas_w, self._canvas_h
         self._update_design_subtitle()
         self.general_tab.sync_from_design(
@@ -2499,7 +2455,6 @@ class BarcodeEditorPage(QWidget):
         self._sync_same_with_items()
 
     def _sync_same_with_items(self):
-        """After any item change, sync all SAME WITH dependents from their source."""
         name_to_item = {}
         for scene_item in self.scene.items():
             if scene_item.group(): continue
@@ -2519,9 +2474,7 @@ class BarcodeEditorPage(QWidget):
                 scene_item.design_same_with = ""
                 SameWithRegistry.unregister(scene_item)
                 continue
-            # Keep registry up-to-date so live-edit sync always works
             SameWithRegistry.register(scene_item, source)
-            # Sync all visual + data properties
             if scene_item.toPlainText() != source.toPlainText():
                 scene_item.setPlainText(source.toPlainText())
             if scene_item.font() != source.font():
@@ -2532,7 +2485,6 @@ class BarcodeEditorPage(QWidget):
             scene_item.design_visible = getattr(source, "design_visible", True)
 
     def _rebuild_same_with_registry(self):
-        """Rebuild SameWithRegistry from current scene items."""
         name_to_item = {}
         for scene_item in self.scene.items():
             if scene_item.group():
@@ -2569,7 +2521,6 @@ class BarcodeEditorPage(QWidget):
                     scene_item.design_same_with = new_name
                 if getattr(scene_item, "design_link", "") == old_name:
                     scene_item.design_link = new_name
-            # Update live combos in the currently open editor
             editor = getattr(self, "current_editor", None)
             if editor and isinstance(editor, TextPropertyEditor):
                 for combo in (editor.same_with_combo, editor.link_combo):
@@ -2607,7 +2558,6 @@ class BarcodeEditorPage(QWidget):
             li = self.component_list.item(i)
             if getattr(li, 'graphics_item', None) == selected: self.component_list.setCurrentItem(li); break
         self.component_list.blockSignals(False)
-        # Rebuild SameWithRegistry before opening editor so lock state is correct on load
         self._rebuild_same_with_registry()
         self.current_editor = None
         if isinstance(selected, BarcodeItem): self.current_editor = BarcodePropertyEditor(selected, self.update_component_list)
