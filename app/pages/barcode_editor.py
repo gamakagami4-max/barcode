@@ -982,6 +982,56 @@ class TextPropertyEditor(QWidget):
         self.merge_combo.currentTextChanged.connect(self._on_merge_changed)
         layout.addRow(lbl("MERGE WITH :"), self.merge_combo)
 
+        # ── KONVERSI TIMBANGAN-only fields ────────────────────────
+        self.timbangan_combo = make_chevron_combo([""])
+        self.weight_combo    = make_chevron_combo([""])
+        self.um_combo        = make_chevron_combo([""])
+        try:
+            scene = self.item.scene()
+            if scene:
+                kt_names = []
+                for scene_item in scene.items():
+                    if scene_item.group():
+                        continue
+                    if scene_item is self.item:
+                        continue
+                    if not isinstance(scene_item, SelectableTextItem):
+                        continue
+                    name = getattr(scene_item, "component_name", "") or "Text"
+                    kt_names.append(name)
+                if kt_names:
+                    opts = [""] + kt_names
+                    for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
+                        combo._items = opts
+                        combo._current = ""
+                        combo._label.setText("")
+                        combo.setPlaceholderText("— select label —")
+                else:
+                    for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
+                        combo._items = ["—"]
+                        combo._current = "—"
+                        combo._label.setText("—")
+        except Exception:
+            pass
+        stored_timbangan = getattr(self.item, "design_timbangan", "")
+        stored_weight    = getattr(self.item, "design_weight",    "")
+        stored_um        = getattr(self.item, "design_um",        "")
+        if stored_timbangan and stored_timbangan in self.timbangan_combo._items:
+            self.timbangan_combo.setCurrentText(stored_timbangan)
+        if stored_weight and stored_weight in self.weight_combo._items:
+            self.weight_combo.setCurrentText(stored_weight)
+        if stored_um and stored_um in self.um_combo._items:
+            self.um_combo.setCurrentText(stored_um)
+        self.timbangan_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_timbangan", v if v not in ("", "—") else ""))
+        self.weight_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_weight", v if v not in ("", "—") else ""))
+        self.um_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_um", v if v not in ("", "—") else ""))
+        layout.addRow(lbl("TIMBANGAN :"), self.timbangan_combo)
+        layout.addRow(lbl("WEIGHT :"),    self.weight_combo)
+        layout.addRow(lbl("U/M :"),       self.um_combo)
+
         DISABLED_STYLE = """
             QComboBox, QSpinBox {
                 background-color: #F8FAFC;
@@ -1002,6 +1052,7 @@ class TextPropertyEditor(QWidget):
             is_system    = val == "SYSTEM"
             is_batch_no  = val == "BATCH NO"
             is_merge     = val == "MERGE"
+            is_konversi  = val == "KONVERSI TIMBANGAN"
 
             # ── SYSTEM-only: SYSTEM VALUE + EXTRA ────────────────────
             if is_system:
@@ -1078,6 +1129,18 @@ class TextPropertyEditor(QWidget):
             if not is_merge:
                 self.merge_combo.setCurrentIndex(-1)
                 self.item.design_merge = ""
+
+            # ── KONVERSI TIMBANGAN-only ───────────────────────────────
+            self.timbangan_combo.setEnabled(is_konversi)
+            self.weight_combo.setEnabled(is_konversi)
+            self.um_combo.setEnabled(is_konversi)
+            if not is_konversi:
+                self.timbangan_combo.setCurrentIndex(-1)
+                self.weight_combo.setCurrentIndex(-1)
+                self.um_combo.setCurrentIndex(-1)
+                self.item.design_timbangan = ""
+                self.item.design_weight    = ""
+                self.item.design_um        = ""
 
             # ── Always enforce SYSTEM-only fields at the end ──────────
             if not is_system:
@@ -1223,6 +1286,7 @@ class TextPropertyEditor(QWidget):
                 self.editor_combo, self.wrap_combo, self.data_type_combo,
                 self.table_combo, self.group_combo, self.link_combo,
                 self.merge_combo,
+                self.timbangan_combo, self.weight_combo, self.um_combo,
                 self.visible_combo, self.save_field_combo, self.mandatory_combo,
                 self.batch_no_combo, self.wh_combo]:
             w.setEnabled(not locked)
@@ -2182,6 +2246,9 @@ class BarcodeEditorPage(QWidget):
                 "design_system_value": getattr(item, "design_system_value", "USER ID"),
                 "design_system_extra": getattr(item, "design_system_extra", ""),
                 "design_merge": getattr(item, "design_merge", ""),
+                "design_timbangan": getattr(item, "design_timbangan", ""),
+                "design_weight":    getattr(item, "design_weight",    ""),
+                "design_um":        getattr(item, "design_um",        ""),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -2215,6 +2282,9 @@ class BarcodeEditorPage(QWidget):
                 item.design_system_extra = d.get("design_system_extra", "")
                 item.component_name       = d.get("name","Text")
                 item.design_merge = d.get("design_merge", "")
+                item.design_timbangan = d.get("design_timbangan", "")
+                item.design_weight    = d.get("design_weight",    "")
+                item.design_um        = d.get("design_um",        "")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
                 item = SelectableLineItem(0, 0, d.get("x2",100), d.get("y2",0))
@@ -2513,6 +2583,9 @@ class BarcodeEditorPage(QWidget):
             item.design_system_value = "USER ID"
             item.design_system_extra = ""
             item.design_merge = ""
+            item.design_timbangan = ""
+            item.design_weight    = ""
+            item.design_um        = ""
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
@@ -2708,9 +2781,18 @@ class BarcodeEditorPage(QWidget):
                     scene_item.design_same_with = new_name
                 if getattr(scene_item, "design_link", "") == old_name:
                     scene_item.design_link = new_name
+                if getattr(scene_item, "design_merge", "") == old_name:
+                    scene_item.design_merge = new_name
+                if getattr(scene_item, "design_timbangan", "") == old_name:
+                    scene_item.design_timbangan = new_name
+                if getattr(scene_item, "design_weight", "") == old_name:
+                    scene_item.design_weight = new_name
+                if getattr(scene_item, "design_um", "") == old_name:
+                    scene_item.design_um = new_name
             editor = getattr(self, "current_editor", None)
             if editor and isinstance(editor, TextPropertyEditor):
-                for combo in (editor.same_with_combo, editor.link_combo):
+                for combo in (editor.same_with_combo, editor.link_combo, editor.merge_combo,
+                            editor.timbangan_combo, editor.weight_combo, editor.um_combo):
                     combo._items = [new_name if i == old_name else i for i in combo._items]
                     if combo._current == old_name:
                         combo._current = new_name
@@ -2770,6 +2852,9 @@ class BarcodeEditorPage(QWidget):
             item.design_system_value = "USER ID"
             item.design_system_extra = ""
             item.design_merge = ""
+            item.design_timbangan = ""
+            item.design_weight    = ""
+            item.design_um        = ""
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0,0,100,50); item.setPen(QPen(Qt.black,2))
