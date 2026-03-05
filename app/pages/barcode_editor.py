@@ -2655,7 +2655,7 @@ class BarcodeEditorPage(QWidget):
                     combo._items = [new_name if i == old_name else i for i in combo._items]
                     if combo._current == old_name:
                         combo._current = new_name
-                        combo._label.setText(new_name)
+                        combo._set_label_text(new_name)
         self.update_component_list()
 
     def sync_selection_from_list(self, li):
