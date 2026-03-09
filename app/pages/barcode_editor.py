@@ -985,7 +985,13 @@ class BarcodeEditorPage(QWidget):
             mc = editor.merge_combo
             mc._items    = [new_name if x == old_name else x for x in mc._items]
             mc._selected = [new_name if x == old_name else x for x in mc._selected]
-            mc._refresh_button_label()
+            # Refresh the displayed label — try known method names defensively.
+            for _refresh in ("_refresh_button_label", "_update_label",
+                             "_refresh_label", "_update_display", "refresh"):
+                fn = getattr(mc, _refresh, None)
+                if callable(fn):
+                    fn()
+                    break
 
     def sync_selection_from_list(self, li):
         item = getattr(li, 'graphics_item', None)
