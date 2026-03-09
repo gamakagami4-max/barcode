@@ -67,7 +67,7 @@ class TextPropertyEditor(
 
         # ── ALIGNMENT ────────────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
-        stored_align = getattr(self.item, "_design_alignment", None)
+        stored_align = getattr(self.item, "design_alignment", None)
         if stored_align in ("LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"):
             self.align_combo._current = stored_align
             self.align_combo._label.setText(stored_align)
@@ -311,6 +311,57 @@ class TextPropertyEditor(
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
 
+        # Restore persisted values for fields that write directly to item attrs
+        self.editor_combo.setCurrentText(
+            getattr(self.item, "design_editor", "ENABLED") or "ENABLED"
+        )
+        self.data_type_combo.setCurrentText(
+            getattr(self.item, "design_data_type", "STRING") or "STRING"
+        )
+        _ml = getattr(self.item, "design_max_length", 1)
+        try:
+            self.max_length_spin.setValue(int(_ml))
+        except (TypeError, ValueError):
+            pass
+        self.save_field_combo.setCurrentText(
+            getattr(self.item, "design_save_field", "-- NOT SAVE --") or "-- NOT SAVE --"
+        )
+        _col = getattr(self.item, "design_column", 1)
+        try:
+            self.column_spin.setValue(int(_col))
+        except (TypeError, ValueError):
+            pass
+        self.mandatory_combo.setCurrentText(
+            getattr(self.item, "design_mandatory", "FALSE") or "FALSE"
+        )
+        self.format_edit.setText(getattr(self.item, "design_format", "") or "")
+        _trim = getattr(self.item, "design_trim", False)
+        self._trim_checked = bool(_trim)
+        self._set_trim_style(self._trim_checked)
+
+        # Now connect so future changes persist immediately
+        self.editor_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_editor", v)
+        )
+        self.data_type_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_data_type", v)
+        )
+        self.max_length_spin.valueChanged.connect(
+            lambda v: setattr(self.item, "design_max_length", v)
+        )
+        self.save_field_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_save_field", v)
+        )
+        self.column_spin.valueChanged.connect(
+            lambda v: setattr(self.item, "design_column", v)
+        )
+        self.mandatory_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_mandatory", v)
+        )
+        self.format_edit.textChanged.connect(
+            lambda v: setattr(self.item, "design_format", v)
+        )
+
         # Trigger initial enable/disable state
         self._on_type_changed(getattr(self.item, "design_type", "FIX"))
 
@@ -457,7 +508,7 @@ class TextPropertyEditor(
         fmt = QTextBlockFormat()
         fmt.setAlignment(alignment)
         doc_cursor.mergeBlockFormat(fmt)
-        self.item._design_alignment = value
+        self.item.design_alignment = value
         self.update_callback()
 
     def _apply_font_family(self, value: str):
@@ -529,6 +580,7 @@ class TextPropertyEditor(
     def _toggle_trim(self, event):
         self._trim_checked = not self._trim_checked
         self._set_trim_style(self._trim_checked)
+        self.item.design_trim = self._trim_checked
 
     def apply_text_changes(self, text: str):
         self.item.setPlainText(text)

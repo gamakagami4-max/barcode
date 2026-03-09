@@ -675,6 +675,16 @@ class BarcodeEditorPage(QWidget):
                 "design_timbangan":    getattr(item, "design_timbangan",     ""),
                 "design_weight":       getattr(item, "design_weight",        ""),
                 "design_um":           getattr(item, "design_um",            ""),
+                # editor / input / formatting fields
+                "design_alignment":    getattr(item, "design_alignment",     "LEFT JUSTIFY"),
+                "design_editor":       getattr(item, "design_editor",        "ENABLED"),
+                "design_data_type":    getattr(item, "design_data_type",     "STRING"),
+                "design_max_length":   getattr(item, "design_max_length",    1),
+                "design_save_field":   getattr(item, "design_save_field",    "-- NOT SAVE --"),
+                "design_column":       getattr(item, "design_column",        1),
+                "design_mandatory":    getattr(item, "design_mandatory",     "FALSE"),
+                "design_format":       getattr(item, "design_format",        ""),
+                "design_trim":         getattr(item, "design_trim",          False),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -705,11 +715,16 @@ class BarcodeEditorPage(QWidget):
                 for attr in ("inverse", "design_same_with", "design_link", "design_group",
                              "design_table", "design_query", "design_field", "design_result",
                              "design_type", "design_system_value", "design_system_extra",
-                             "design_merge", "design_timbangan", "design_weight", "design_um"):
+                             "design_merge", "design_timbangan", "design_weight", "design_um",
+                             "design_alignment", "design_editor", "design_data_type",
+                             "design_save_field", "design_mandatory", "design_format"):
                     key = attr.replace("design_", "") if attr.startswith("design_") else attr
                     setattr(item, attr, d.get(attr, d.get(key, "")))
-                item.design_inverse = d.get("inverse", False)
-                item.design_type    = d.get("design_type", "FIX")
+                item.design_inverse     = d.get("inverse", False)
+                item.design_type        = d.get("design_type", "FIX")
+                item.design_max_length  = int(d.get("design_max_length", 1) or 1)
+                item.design_column      = int(d.get("design_column", 1) or 1)
+                item.design_trim        = bool(d.get("design_trim", False))
                 item.component_name = d.get("name", "Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -1016,11 +1031,16 @@ class BarcodeEditorPage(QWidget):
             item.component_name = "Text"
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
                          "design_query", "design_field", "design_result", "design_merge",
-                         "design_timbangan", "design_weight", "design_um"):
+                         "design_timbangan", "design_weight", "design_um",
+                         "design_alignment", "design_editor", "design_data_type",
+                         "design_save_field", "design_mandatory", "design_format"):
                 setattr(item, attr, "")
             item.design_type         = "FIX"
             item.design_system_value = "USER ID"
             item.design_system_extra = ""
+            item.design_max_length   = 1
+            item.design_column       = 1
+            item.design_trim         = False
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0, 0, 100, 50); item.setPen(QPen(Qt.black, 2))
@@ -1085,9 +1105,12 @@ class BarcodeEditorPage(QWidget):
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
                          "design_query", "design_field", "design_result", "design_merge",
-                         "design_timbangan", "design_weight", "design_um"):
+                         "design_timbangan", "design_weight", "design_um",
+                         "design_alignment", "design_editor", "design_data_type",
+                         "design_save_field", "design_mandatory", "design_format"):
                 setattr(item, attr, "")
             item.design_type = "FIX"; item.design_system_value = "USER ID"; item.design_system_extra = ""
+            item.design_max_length = 1; item.design_column = 1; item.design_trim = False
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
