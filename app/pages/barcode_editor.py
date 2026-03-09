@@ -29,6 +29,7 @@ from components.barcode_editor.scene_items import (
 from components.barcode_editor.same_with_mixin import SameWithRegistry
 from components.barcode_editor.text_property_editor import TextPropertyEditor
 from components.barcode_editor.property_editors import LinePropertyEditor, RectanglePropertyEditor, BarcodePropertyEditor
+from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
 from components.barcode_editor.general_tab import GeneralTab
 
 
@@ -658,21 +659,22 @@ class BarcodeEditorPage(QWidget):
                 "font_size": font.pointSize(), "font_family": font.family(),
                 "bold": font.bold(), "italic": font.italic(),
                 "color": item.defaultTextColor().name(),
-                "inverse":            getattr(item, "design_inverse",       False),
-                "design_same_with":   getattr(item, "design_same_with",     ""),
-                "design_link":        getattr(item, "design_link",          ""),
-                "design_group":       getattr(item, "design_group",         ""),
-                "design_table":       getattr(item, "design_table",         ""),
-                "design_query":       getattr(item, "design_query",         ""),
-                "design_field":       getattr(item, "design_field",         ""),
-                "design_result":      getattr(item, "design_result",        ""),
-                "design_type":        getattr(item, "design_type",          "FIX"),
-                "design_system_value": getattr(item, "design_system_value", "USER ID"),
-                "design_system_extra": getattr(item, "design_system_extra", ""),
-                "design_merge":       getattr(item, "design_merge",         ""),
-                "design_timbangan":   getattr(item, "design_timbangan",     ""),
-                "design_weight":      getattr(item, "design_weight",        ""),
-                "design_um":          getattr(item, "design_um",            ""),
+                "inverse":             getattr(item, "design_inverse",       False),
+                "design_same_with":    getattr(item, "design_same_with",     ""),
+                "design_link":         getattr(item, "design_link",          ""),
+                "design_group":        getattr(item, "design_group",         ""),
+                "design_table":        getattr(item, "design_table",         ""),
+                "design_query":        getattr(item, "design_query",         ""),
+                "design_field":        getattr(item, "design_field",         ""),
+                "design_result":       getattr(item, "design_result",        ""),
+                "design_type":         getattr(item, "design_type",          "FIX"),
+                "design_system_value": getattr(item, "design_system_value",  "USER ID"),
+                "design_system_extra": getattr(item, "design_system_extra",  ""),
+                # design_merge stores a comma-separated list of component names
+                "design_merge":        getattr(item, "design_merge",         ""),
+                "design_timbangan":    getattr(item, "design_timbangan",     ""),
+                "design_weight":       getattr(item, "design_weight",        ""),
+                "design_um":           getattr(item, "design_um",            ""),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -891,20 +893,61 @@ class BarcodeEditorPage(QWidget):
         new_name = name or "Unnamed"
         item.component_name = new_name
         if old_name != new_name:
-            for si in self.scene.items():
-                for attr in ("design_same_with", "design_link", "design_merge",
-                             "design_timbangan", "design_weight", "design_um"):
-                    if getattr(si, attr, "") == old_name:
-                        setattr(si, attr, new_name)
-            editor = getattr(self, "current_editor", None)
-            if editor and isinstance(editor, TextPropertyEditor):
-                for combo in (editor.same_with_combo, editor.link_combo, editor.merge_combo,
-                              editor.timbangan_combo, editor.weight_combo, editor.um_combo):
-                    combo._items = [new_name if x == old_name else x for x in combo._items]
-                    if combo._current == old_name:
-                        combo._current = new_name
-                        combo._set_label_text(new_name)
+            self._propagate_rename(old_name, new_name)
         self.update_component_list()
+
+    def _propagate_rename(self, old_name: str, new_name: str):
+        """
+        Update every scene item that references old_name in any name-ref
+        attribute.  design_merge is comma-separated (multi-select), so each
+        segment is checked individually.  All other fields are single values.
+        """
+        SINGLE_NAME_ATTRS = (
+            "design_same_with",
+            "design_link",
+            "design_timbangan",
+            "design_weight",
+            "design_um",
+        )
+        for si in self.scene.items():
+            # ── single-value name-ref fields ──────────────────────────────
+            for attr in SINGLE_NAME_ATTRS:
+                if getattr(si, attr, "") == old_name:
+                    setattr(si, attr, new_name)
+
+            # ── design_merge: comma-separated multi-name field ─────────────
+            raw = getattr(si, "design_merge", "")
+            if raw:
+                parts = [
+                    new_name if seg.strip() == old_name else seg.strip()
+                    for seg in raw.split(",")
+                ]
+                setattr(si, "design_merge", ",".join(parts))
+
+        # ── Refresh open editor combos that show the old name ─────────────
+        editor = getattr(self, "current_editor", None)
+        if editor is None or not isinstance(editor, TextPropertyEditor):
+            return
+
+        # Single-select chevron combos
+        for combo in (
+            editor.same_with_combo,
+            editor.link_combo,
+            editor.timbangan_combo,
+            editor.weight_combo,
+            editor.um_combo,
+        ):
+            combo._items = [new_name if x == old_name else x for x in combo._items]
+            if getattr(combo, "_current", None) == old_name:
+                combo._current = new_name
+                combo._set_label_text(new_name)
+
+        # Multi-select merge combo
+        if isinstance(editor.merge_combo, MultiSelectCombo):
+            mc = editor.merge_combo
+            mc._items    = [new_name if x == old_name else x for x in mc._items]
+            mc._selected = [new_name if x == old_name else x for x in mc._selected]
+            mc._refresh_button_label()
 
     def sync_selection_from_list(self, li):
         item = getattr(li, 'graphics_item', None)

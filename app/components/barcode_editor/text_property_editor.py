@@ -14,7 +14,7 @@ from components.barcode_editor.same_with_mixin import SameWithMixin, SameWithReg
 from components.barcode_editor.lookup_mixin import LookupMixin
 from components.barcode_editor.link_mixin import LinkMixin
 from components.barcode_editor.system_mixin import SystemMixin
-from components.barcode_editor.merge_konversi_mixin import MergeKonversiMixin
+from components.barcode_editor.merge_konversi_mixin import MergeKonversiMixin, MultiSelectCombo
 
 LABEL_W = 70
 
@@ -172,12 +172,8 @@ class TextPropertyEditor(
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(_lbl("LINK TO :"), self.link_combo)
 
-        # ── MERGE combo ───────────────────────────────────────────────────────
-        self.merge_combo = self._build_scene_name_combo()
-        stored_merge = getattr(self.item, "design_merge", "")
-        if stored_merge and stored_merge in self.merge_combo._items:
-            self.merge_combo.setCurrentText(stored_merge)
-        self.merge_combo.currentTextChanged.connect(self._on_merge_changed)
+        # ── MERGE combo (multi-select) ────────────────────────────────────────
+        self.merge_combo = self._build_merge_combo()
         layout.addRow(_lbl("MERGE WITH :"), self.merge_combo)
 
         # ── KONVERSI TIMBANGAN combos ─────────────────────────────────────────
@@ -325,7 +321,43 @@ class TextPropertyEditor(
                 and getattr(self.item, "design_type", "") == "SAME WITH"):
             self._apply_same_with_link(stored_same_with)
 
-    # ── Helper: build a name combo from scene items ───────────────────────────
+    # ── Helper: build the multi-select MERGE combo ────────────────────────────
+
+    def _build_merge_combo(self) -> MultiSelectCombo:
+        """
+        Build a MultiSelectCombo populated with every *other* text component
+        name on the canvas, then restore any previously saved selection from
+        self.item.design_merge (comma-separated string).
+        """
+        from components.barcode_editor.scene_items import SelectableTextItem
+
+        names: list[str] = []
+        try:
+            scene = self.item.scene()
+            if scene:
+                for si in scene.items():
+                    if si.group() or si is self.item:
+                        continue
+                    if not isinstance(si, SelectableTextItem):
+                        continue
+                    name = getattr(si, "component_name", "") or "Text"
+                    names.append(name)
+        except Exception:
+            pass
+
+        combo = MultiSelectCombo(placeholder="— select components —")
+        combo.set_items(names)
+
+        # Restore previously saved selection (stored as "Name1,Name2,Name3")
+        stored = getattr(self.item, "design_merge", "")
+        if stored:
+            combo.set_selected(stored)   # accepts comma-separated string
+
+        # Connect AFTER restoring so the initial restore doesn't dirty the item
+        combo.selectionChanged.connect(self._on_merge_changed)
+        return combo
+
+    # ── Helper: build a single-select name combo from scene items ─────────────
 
     def _build_scene_name_combo(self, exclude_same_with=False, only_lookup=False):
         from components.barcode_editor.scene_items import SelectableTextItem
@@ -355,14 +387,14 @@ class TextPropertyEditor(
     # ── _on_type_changed: thin orchestrator ──────────────────────────────────
 
     def _on_type_changed(self, val: str):
-        is_input    = val == "INPUT"
-        is_lookup   = val == "LOOKUP"
+        is_input     = val == "INPUT"
+        is_lookup    = val == "LOOKUP"
         is_same_with = val == "SAME WITH"
-        is_link     = val == "LINK"
-        is_system   = val == "SYSTEM"
-        is_batch_no = val == "BATCH NO"
-        is_merge    = val == "MERGE"
-        is_konversi = val == "KONVERSI TIMBANGAN"
+        is_link      = val == "LINK"
+        is_system    = val == "SYSTEM"
+        is_batch_no  = val == "BATCH NO"
+        is_merge     = val == "MERGE"
+        is_konversi  = val == "KONVERSI TIMBANGAN"
 
         setattr(self.item, "design_type", val)
 
