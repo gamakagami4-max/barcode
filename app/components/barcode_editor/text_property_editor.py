@@ -113,7 +113,6 @@ class TextPropertyEditor(
             self.left_spin.blockSignals(False)
 
         self.angle_combo.currentTextChanged.connect(_apply_angle)
-        layout.addRow(_lbl("ANGLE :"), self.angle_combo)
 
         # ── ALIGNMENT ────────────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
@@ -169,6 +168,7 @@ class TextPropertyEditor(
         layout.addRow(_lbl("FONT SIZE :"), self.size_spin)
         layout.addRow(_lbl("TOP :"),       self.top_spin)
         layout.addRow(_lbl("LEFT :"),      self.left_spin)
+        layout.addRow(_lbl("ANGLE :"), self.angle_combo)
 
         # ── INVERSE ───────────────────────────────────────────────────────────
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
