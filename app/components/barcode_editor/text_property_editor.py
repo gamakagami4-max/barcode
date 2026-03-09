@@ -235,6 +235,9 @@ class TextPropertyEditor(
         self.result_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_result", v if v not in ("", "—") else "")
         )
+        self.table_extra.textChanged.connect(
+            lambda v: setattr(self.item, "design_query", v)
+        )
         self.restore_lookup_values(
             getattr(self.item, "design_group",  ""),
             getattr(self.item, "design_table",  ""),

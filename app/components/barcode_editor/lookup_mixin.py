@@ -65,6 +65,9 @@ class LookupMixin:
         self._clear_field_combos()
 
     def _on_table_changed(self, table_name: str):
+        # Save selected table immediately
+        setattr(self.item, "design_table", table_name)
+
         if not table_name:
             self._clear_field_combos()
             return
@@ -80,9 +83,6 @@ class LookupMixin:
             combo._label.setText("")
             combo.setEnabled(bool(fields))
             combo.setCurrentIndex(-1)
-
-        # Save selected table into item
-        setattr(self.item, "design_table", table_name)
 
     def _clear_field_combos(self):
         self._field_list = []
@@ -111,12 +111,17 @@ class LookupMixin:
                                stored_result, stored_query):
         """Restore persisted LOOKUP values when loading a saved design."""
         if stored_group and stored_group in self._conn_map:
-            self.group_combo.setCurrentText(stored_group)   # triggers _on_group_changed
-            if stored_table and stored_table in self._table_map:
-                self.table_combo.setCurrentText(stored_table)  # triggers _on_table_changed
-                if stored_field and stored_field in self._field_list:
+            self.group_combo.setCurrentText(stored_group)
+            self._on_group_changed(stored_group)   # force table load
+
+            if stored_table:
+                self.table_combo.setCurrentText(stored_table)
+                self._on_table_changed(stored_table)  # force field load
+
+                if stored_field:
                     self.field_edit.setCurrentText(stored_field)
-                if stored_result and stored_result in self._field_list:
+
+                if stored_result:
                     self.result_combo.setCurrentText(stored_result)
         if stored_query:
             self.table_extra.setText(stored_query)
