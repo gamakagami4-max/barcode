@@ -249,13 +249,31 @@ class TextPropertyEditor(
         self.text_input.textChanged.connect(self.apply_text_changes)
         layout.addRow(_lbl("TEXT :"), self.text_input)
 
-        self.caption_input = QLineEdit("LABEL 1")
+        self.caption_input = QLineEdit()
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.caption_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.caption_input.setText(getattr(self.item, "design_caption", "") or "")
+        self.caption_input.textChanged.connect(
+            lambda v: setattr(self.item, "design_caption", v)
+        )
         layout.addRow(_lbl("CAPTION :"), self.caption_input)
 
         self.wrap_combo      = make_chevron_combo(["NO", "YES"])
         self.wrap_width_spin = make_spin(0, 5000, 1)
+        self.wrap_combo.setCurrentText(
+            "YES" if getattr(self.item, "design_wrap_text", False) else "NO"
+        )
+        self.wrap_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_wrap_text", v == "YES")
+        )
+        _ww = getattr(self.item, "design_wrap_width", 1)
+        try:
+            self.wrap_width_spin.setValue(int(_ww) if _ww else 1)
+        except (TypeError, ValueError):
+            pass
+        self.wrap_width_spin.valueChanged.connect(
+            lambda v: setattr(self.item, "design_wrap_width", v)
+        )
         layout.addRow(_lbl("WRAP TEXT :"),  self.wrap_combo)
         layout.addRow(_lbl("WRAP WIDTH :"), self.wrap_width_spin)
 

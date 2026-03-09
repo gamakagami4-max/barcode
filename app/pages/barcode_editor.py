@@ -685,6 +685,9 @@ class BarcodeEditorPage(QWidget):
                 "design_mandatory":    getattr(item, "design_mandatory",     "FALSE"),
                 "design_format":       getattr(item, "design_format",        ""),
                 "design_trim":         getattr(item, "design_trim",          False),
+                "design_caption":      getattr(item, "design_caption",       ""),
+                "design_wrap_text":    getattr(item, "design_wrap_text",     False),
+                "design_wrap_width":   getattr(item, "design_wrap_width",    1),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -717,7 +720,8 @@ class BarcodeEditorPage(QWidget):
                              "design_type", "design_system_value", "design_system_extra",
                              "design_merge", "design_timbangan", "design_weight", "design_um",
                              "design_alignment", "design_editor", "design_data_type",
-                             "design_save_field", "design_mandatory", "design_format"):
+                             "design_save_field", "design_mandatory", "design_format",
+                             "design_caption"):
                     key = attr.replace("design_", "") if attr.startswith("design_") else attr
                     setattr(item, attr, d.get(attr, d.get(key, "")))
                 item.design_inverse     = d.get("inverse", False)
@@ -725,6 +729,8 @@ class BarcodeEditorPage(QWidget):
                 item.design_max_length  = int(d.get("design_max_length", 1) or 1)
                 item.design_column      = int(d.get("design_column", 1) or 1)
                 item.design_trim        = bool(d.get("design_trim", False))
+                item.design_wrap_text   = bool(d.get("design_wrap_text", False))
+                item.design_wrap_width  = int(d.get("design_wrap_width", 1) or 1)
                 item.component_name = d.get("name", "Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -1041,6 +1047,9 @@ class BarcodeEditorPage(QWidget):
             item.design_max_length   = 1
             item.design_column       = 1
             item.design_trim         = False
+            item.design_caption      = ""
+            item.design_wrap_text    = False
+            item.design_wrap_width   = 1
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             item = SelectableRectItem(0, 0, 100, 50); item.setPen(QPen(Qt.black, 2))
@@ -1111,6 +1120,7 @@ class BarcodeEditorPage(QWidget):
                 setattr(item, attr, "")
             item.design_type = "FIX"; item.design_system_value = "USER ID"; item.design_system_extra = ""
             item.design_max_length = 1; item.design_column = 1; item.design_trim = False
+            item.design_caption = ""; item.design_wrap_text = False; item.design_wrap_width = 1
             setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
