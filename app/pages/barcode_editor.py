@@ -52,6 +52,15 @@ def _get_meta(name: str):
     return ('fa5s.cube', '#64748B', '#FFFFFF', '#475569')
 
 
+def _init_text_item(item: SelectableTextItem):
+    """Zero out the QTextDocument margin so the bounding rect starts at local
+    (0, 0) with no padding.  The default margin is 4 px; when the item is
+    rotated 90°/270° that horizontal padding becomes a vertical offset in scene
+    coordinates, producing a hard floor of ~30 px that the user cannot drag past.
+    Call this immediately after every SelectableTextItem is created."""
+    item.document().setDocumentMargin(0)
+
+
 class ComponentItemDelegate(QStyledItemDelegate):
     ROW_H = 38; ACCENT_W = 3; CHIP_SIZE = 24; PAD = 8; TRASH_SIZE = 18
 
@@ -646,6 +655,8 @@ class BarcodeEditorPage(QWidget):
             "x": round(item.pos().x(), 2), "y": round(item.pos().y(), 2),
             "z": item.zValue(), "visible": getattr(item, "design_visible", True),
             "rotation": item.rotation(), "name": getattr(item, "component_name", ""),
+            "aabb_x": round(item.mapToScene(item.boundingRect()).boundingRect().left(), 2),
+            "aabb_y": round(item.mapToScene(item.boundingRect()).boundingRect().top(), 2),
         }
         if isinstance(item, BarcodeItem):
             base.update({"type": "barcode", "design": item.design,
@@ -670,12 +681,10 @@ class BarcodeEditorPage(QWidget):
                 "design_type":         getattr(item, "design_type",          "FIX"),
                 "design_system_value": getattr(item, "design_system_value",  "USER ID"),
                 "design_system_extra": getattr(item, "design_system_extra",  ""),
-                # design_merge stores a comma-separated list of component names
                 "design_merge":        getattr(item, "design_merge",         ""),
                 "design_timbangan":    getattr(item, "design_timbangan",     ""),
                 "design_weight":       getattr(item, "design_weight",        ""),
                 "design_um":           getattr(item, "design_um",            ""),
-                # editor / input / formatting fields
                 "design_alignment":    getattr(item, "design_alignment",     "LEFT JUSTIFY"),
                 "design_editor":       getattr(item, "design_editor",        "ENABLED"),
                 "design_data_type":    getattr(item, "design_data_type",     "STRING"),
@@ -704,24 +713,27 @@ class BarcodeEditorPage(QWidget):
 
     def deserialize_canvas(self, elements: list[dict]):
         flags = (QGraphicsItem.ItemIsMovable
-                 | QGraphicsItem.ItemIsSelectable
-                 | QGraphicsItem.ItemSendsGeometryChanges)
+                | QGraphicsItem.ItemIsSelectable
+                | QGraphicsItem.ItemSendsGeometryChanges)
         for d in elements:
             kind = d.get("type")
             item = None
             if kind == "text":
                 item = SelectableTextItem(d.get("text", ""))
+                # Zero document margin immediately — must happen before any
+                # bounding-rect or position calculations to avoid the 30px offset.
+                _init_text_item(item)
                 font = QFont(d.get("font_family", "Arial"), d.get("font_size", 10))
                 font.setBold(d.get("bold", False)); font.setItalic(d.get("italic", False))
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color", "#000000")))
                 for attr in ("inverse", "design_same_with", "design_link", "design_group",
-                             "design_table", "design_query", "design_field", "design_result",
-                             "design_type", "design_system_value", "design_system_extra",
-                             "design_merge", "design_timbangan", "design_weight", "design_um",
-                             "design_alignment", "design_editor", "design_data_type",
-                             "design_save_field", "design_mandatory", "design_format",
-                             "design_caption"):
+                            "design_table", "design_query", "design_field", "design_result",
+                            "design_type", "design_system_value", "design_system_extra",
+                            "design_merge", "design_timbangan", "design_weight", "design_um",
+                            "design_alignment", "design_editor", "design_data_type",
+                            "design_save_field", "design_mandatory", "design_format",
+                            "design_caption"):
                     key = attr.replace("design_", "") if attr.startswith("design_") else attr
                     setattr(item, attr, d.get(attr, d.get(key, "")))
                 item.design_inverse     = d.get("inverse", False)
@@ -751,11 +763,22 @@ class BarcodeEditorPage(QWidget):
                 item.bg.setRect(0, 0, item.container_width, item.container_height)
             if item is None:
                 continue
-            item.setPos(d.get("x", 0), d.get("y", 0))
             item.setZValue(d.get("z", 0))
             item.design_visible = d.get("visible", True)
             item.setVisible(True)
-            item.setRotation(d.get("rotation", 0))
+            _rotation = d.get("rotation", 0)
+            item.setRotation(_rotation)
+            if _rotation != 0:
+                br = item.boundingRect()
+                item.setTransformOriginPoint(br.center())
+            # x/y in JSON is visual AABB top-left — back-calculate pos()
+            item.setPos(0, 0)
+            _aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
+            _off_x = _aabb0.left()
+            _off_y = _aabb0.top()
+            _vis_x = d.get("aabb_x") if d.get("aabb_x") is not None else d.get("x", 0)
+            _vis_y = d.get("aabb_y") if d.get("aabb_y") is not None else d.get("y", 0)
+            item.setPos(_vis_x - _off_x, _vis_y - _off_y)
             self.scene.addItem(item)
             li = QListWidgetItem(self.get_component_display_name(item))
             li.graphics_item = item
@@ -931,12 +954,9 @@ class BarcodeEditorPage(QWidget):
             "design_um",
         )
         for si in self.scene.items():
-            # ── single-value name-ref fields ──────────────────────────────
             for attr in SINGLE_NAME_ATTRS:
                 if getattr(si, attr, "") == old_name:
                     setattr(si, attr, new_name)
-
-            # ── design_merge: comma-separated multi-name field ─────────────
             raw = getattr(si, "design_merge", "")
             if raw:
                 parts = [
@@ -945,12 +965,10 @@ class BarcodeEditorPage(QWidget):
                 ]
                 setattr(si, "design_merge", ",".join(parts))
 
-        # ── Refresh open editor combos that show the old name ─────────────
         editor = getattr(self, "current_editor", None)
         if editor is None or not isinstance(editor, TextPropertyEditor):
             return
 
-        # Single-select chevron combos
         for combo in (
             editor.same_with_combo,
             editor.link_combo,
@@ -963,7 +981,6 @@ class BarcodeEditorPage(QWidget):
                 combo._current = new_name
                 combo._set_label_text(new_name)
 
-        # Multi-select merge combo
         if isinstance(editor.merge_combo, MultiSelectCombo):
             mc = editor.merge_combo
             mc._items    = [new_name if x == old_name else x for x in mc._items]
@@ -1033,6 +1050,8 @@ class BarcodeEditorPage(QWidget):
                  | QGraphicsItem.ItemSendsGeometryChanges)
         if kind == "text":
             item = SelectableTextItem("LABEL_VAR")
+            # Zero document margin immediately so AABB = actual text bounds.
+            _init_text_item(item)
             item.setFont(QFont("Arial", 10))
             item.component_name = "Text"
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
@@ -1107,6 +1126,8 @@ class BarcodeEditorPage(QWidget):
         kind = data.get('type')
         if kind == 'text':
             item = SelectableTextItem(data.get('text', ''))
+            # Zero document margin immediately so AABB = actual text bounds.
+            _init_text_item(item)
             font = QFont(data.get('font_family', 'Arial'), data.get('font_size', 10))
             font.setBold(data.get('bold', False)); font.setItalic(data.get('italic', False))
             item.setFont(font)

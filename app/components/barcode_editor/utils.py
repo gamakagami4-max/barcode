@@ -121,11 +121,43 @@ _LINE_DISABLED = """
 # ── Canvas helpers ────────────────────────────────────────────────────────────
 
 def keep_within_bounds(item, new_pos):
+    """Constrain item movement so its visual AABB stays within the scene rect.
+
+    The OLD implementation clamped pos() directly to scene bounds:
+        x = max(scene_rect.left(), new_pos.x())
+
+    That is wrong for rotated items because pos() is the local origin, not the
+    visual top-left.  At 90°/270° the AABB top-left is offset from pos() by
+    off_x = (width - height) / 2 ≈ 23-30 px for typical text labels.  Clamping
+    pos.x >= 0 therefore prevented the AABB from reaching x=0, producing the
+    hard ~30 px floor that users could not drag past.
+
+    The correct approach:
+      1. Compute the current AABB→pos() offset (rotation-dependent, but
+         constant for a given rotation — independent of translation).
+      2. Project new_pos into AABB space, clamp there, project back.
+    """
     scene_rect = item.scene().sceneRect()
-    rect = item.sceneBoundingRect()
-    x = max(scene_rect.left(), min(new_pos.x(), scene_rect.right()  - rect.width()))
-    y = max(scene_rect.top(),  min(new_pos.y(), scene_rect.bottom() - rect.height()))
-    return QPointF(x, y)
+
+    # Current AABB in scene coordinates
+    aabb = item.mapToScene(item.boundingRect()).boundingRect()
+
+    # Offset between pos() and AABB top-left — constant for a given rotation.
+    off_x = aabb.left() - item.pos().x()
+    off_y = aabb.top()  - item.pos().y()
+
+    # Where the AABB top-left would land at new_pos
+    new_aabb_x = new_pos.x() + off_x
+    new_aabb_y = new_pos.y() + off_y
+
+    # Clamp AABB to scene bounds
+    clamped_x = max(scene_rect.left(),
+                    min(new_aabb_x, scene_rect.right()  - aabb.width()))
+    clamped_y = max(scene_rect.top(),
+                    min(new_aabb_y, scene_rect.bottom() - aabb.height()))
+
+    # Convert back to pos() space
+    return QPointF(clamped_x - off_x, clamped_y - off_y)
 
 
 def setup_item_logic(item, on_move_callback):

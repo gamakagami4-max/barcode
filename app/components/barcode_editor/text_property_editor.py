@@ -41,6 +41,10 @@ def _lbl(text: str) -> QLabel:
     return l
 
 
+# Map Qt rotation angle -> display label
+_QT_ANGLE_TO_DISPLAY = {0: "0", 270: "90", 180: "180", 90: "270"}
+
+
 class TextPropertyEditor(
     SameWithMixin,
     LookupMixin,
@@ -64,6 +68,52 @@ class TextPropertyEditor(
         layout.setHorizontalSpacing(4)
         layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         layout.setLabelAlignment(Qt.AlignLeft)
+
+        # ── ANGLE ─────────────────────────────────────────────────────────────
+        self.angle_combo = make_chevron_combo(["0", "90", "180", "270"])
+        _angle_map = {"0": 0, "90": 270, "180": 180, "270": 90}
+
+        # Restore the current rotation BEFORE connecting the signal so that
+        # _apply_angle does NOT fire on load and accidentally snap the item.
+        _current_qt_angle = int(round(self.item.rotation())) % 360
+        _display_val = _QT_ANGLE_TO_DISPLAY.get(_current_qt_angle, "0")
+        self.angle_combo.blockSignals(True)
+        self.angle_combo._current = _display_val
+        self.angle_combo._label.setText(_display_val)
+        self.angle_combo.blockSignals(False)
+
+        def _apply_angle(v):
+            angle = _angle_map.get(v, 0)
+            if not hasattr(self, "top_spin"):
+                return
+
+            saved_left = self.left_spin.value()
+            saved_top  = self.top_spin.value()
+
+            br = self.item.boundingRect()
+
+            # Always set transform origin BEFORE applying rotation
+            self.item.setTransformOriginPoint(br.center())
+            self.item.setRotation(angle)
+
+            # Use Qt's own mapToScene for the real AABB — no manual trig needed.
+            # This correctly accounts for document margins, padding, and the
+            # transform origin, eliminating the ~30px drift seen with manual math.
+            aabb = self.item.mapToScene(br).boundingRect()
+            off_x = aabb.left() - self.item.pos().x()
+            off_y = aabb.top()  - self.item.pos().y()
+
+            self.item.setPos(saved_left - off_x, saved_top - off_y)
+
+            self.top_spin.blockSignals(True)
+            self.left_spin.blockSignals(True)
+            self.top_spin.setValue(saved_top)
+            self.left_spin.setValue(saved_left)
+            self.top_spin.blockSignals(False)
+            self.left_spin.blockSignals(False)
+
+        self.angle_combo.currentTextChanged.connect(_apply_angle)
+        layout.addRow(_lbl("ANGLE :"), self.angle_combo)
 
         # ── ALIGNMENT ────────────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
@@ -96,23 +146,29 @@ class TextPropertyEditor(
         layout.addRow(_lbl("FONT NAME :"), self.font_combo)
 
         # ── SIZE / POSITION ───────────────────────────────────────────────────
-        self.size_spin  = make_spin(1, 100, int(self.item.font().pointSize()))
-        self.top_spin   = make_spin(0, 5000, int(self.item.pos().y()))
-        self.left_spin  = make_spin(0, 5000, int(self.item.pos().x()))
+        self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
+
+        # Remove the QTextDocument default margin (4px) so the bounding rect
+        # starts exactly at local (0, 0) with no padding. Without this the AABB
+        # is inset by the margin, which swaps axes on 90°/270° rotation and
+        # produces a hard minimum offset of ~30px that cannot be scrolled past.
+        self.item.document().setDocumentMargin(0)
+
+        # Always set transform origin before reading AABB — regardless of whether
+        # the item is currently rotated. This ensures the first rotation from 0°
+        # uses the same origin as all subsequent rotations, preventing a one-time
+        # coordinate jump on the very first angle change.
+        _br = self.item.boundingRect()
+        self.item.setTransformOriginPoint(_br.center())
+        _init_scene_rect = self.item.mapToScene(_br).boundingRect()
+        self.top_spin  = make_spin(-5000, 5000, int(round(_init_scene_rect.top())))
+        self.left_spin = make_spin(-5000, 5000, int(round(_init_scene_rect.left())))
         self.size_spin.valueChanged.connect(self.apply_font_changes)
-        self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
-        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
+        self.top_spin.valueChanged.connect(lambda v: self._move_to_visual(target_y=v))
+        self.left_spin.valueChanged.connect(lambda v: self._move_to_visual(target_x=v))
         layout.addRow(_lbl("FONT SIZE :"), self.size_spin)
         layout.addRow(_lbl("TOP :"),       self.top_spin)
         layout.addRow(_lbl("LEFT :"),      self.left_spin)
-
-        # ── ANGLE ─────────────────────────────────────────────────────────────
-        self.angle_combo = make_chevron_combo(["0", "90", "180", "270"])
-        _angle_map = {"0": 0, "90": 270, "180": 180, "270": 90}
-        self.angle_combo.currentTextChanged.connect(
-            lambda v: self.item.setRotation(_angle_map.get(v, 0))
-        )
-        layout.addRow(_lbl("ANGLE :"), self.angle_combo)
 
         # ── INVERSE ───────────────────────────────────────────────────────────
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
@@ -393,11 +449,6 @@ class TextPropertyEditor(
     # ── Helper: build the multi-select MERGE combo ────────────────────────────
 
     def _build_merge_combo(self) -> MultiSelectCombo:
-        """
-        Build a MultiSelectCombo populated with every *other* text component
-        name on the canvas, then restore any previously saved selection from
-        self.item.design_merge (comma-separated string).
-        """
         from components.barcode_editor.scene_items import SelectableTextItem
 
         names: list[str] = []
@@ -417,12 +468,10 @@ class TextPropertyEditor(
         combo = MultiSelectCombo(placeholder="— select components —")
         combo.set_items(names)
 
-        # Restore previously saved selection (stored as "Name1,Name2,Name3")
         stored = getattr(self.item, "design_merge", "")
         if stored:
-            combo.set_selected(stored)   # accepts comma-separated string
+            combo.set_selected(stored)
 
-        # Connect AFTER restoring so the initial restore doesn't dirty the item
         combo.selectionChanged.connect(self._on_merge_changed)
         return combo
 
@@ -470,7 +519,7 @@ class TextPropertyEditor(
         # SAME WITH (locks everything else)
         self.enable_for_same_with(is_same_with)
         if is_same_with:
-            return  # remaining enables are irrelevant while locked
+            return
 
         # INPUT
         self.data_type_combo.setEnabled(is_input)
@@ -614,10 +663,31 @@ class TextPropertyEditor(
             self._sync_same_with_targets()
         self.update_callback()
 
+    def _move_visual_tl(self, want_x: int, want_y: int):
+        self._move_to_visual(target_x=want_x, target_y=want_y)
+
+    def _get_rotation_offset(self):
+        scene_rect = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        pos = self.item.pos()
+        off_x = scene_rect.left() - pos.x()
+        off_y = scene_rect.top() - pos.y()
+        return off_x, off_y
+
+    def _move_to_visual(self, target_x=None, target_y=None):
+        off_x, off_y = self._get_rotation_offset()
+        if target_x is not None:
+            self.item.setX(target_x - off_x)
+        if target_y is not None:
+            self.item.setY(target_y - off_y)
+        self.update_position_fields(self.item.pos())
+
     def update_position_fields(self, pos):
+        scene_rect = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        new_top  = int(round(scene_rect.top()))
+        new_left = int(round(scene_rect.left()))
         self.top_spin.blockSignals(True)
         self.left_spin.blockSignals(True)
-        self.top_spin.setValue(int(pos.y()))
-        self.left_spin.setValue(int(pos.x()))
+        self.top_spin.setValue(new_top)
+        self.left_spin.setValue(new_left)
         self.top_spin.blockSignals(False)
         self.left_spin.blockSignals(False)
