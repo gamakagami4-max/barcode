@@ -65,22 +65,23 @@ class LookupMixin:
         self._clear_field_combos()
 
     def _on_table_changed(self, table_name: str):
-        table_pk = self._table_map.get(table_name)
-        if table_pk is None:
+        if not table_name:
             self._clear_field_combos()
             return
 
-        fields = _fetch_fields_for_table(table_pk)
+        fields = _fetch_fields_for_table(table_name)
+
         self._field_list = fields
         opts = fields if fields else [""]
 
         for combo in (self.field_edit, self.result_combo):
-            combo._items   = opts
+            combo._items = opts
             combo._current = ""
             combo._label.setText("")
             combo.setEnabled(bool(fields))
             combo.setCurrentIndex(-1)
 
+        # Save selected table into item
         setattr(self.item, "design_table", table_name)
 
     def _clear_field_combos(self):

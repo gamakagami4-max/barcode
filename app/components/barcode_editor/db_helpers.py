@@ -85,7 +85,6 @@ def _fetch_fields_for_table(table_name: str) -> list[str]:
                 SELECT mtflnm
                 FROM barcodesap.mmfield
                 WHERE mttbnm = %s
-                  AND madlfg <> '1'
                 ORDER BY mtflnm
                 """,
                 (table_name,),
