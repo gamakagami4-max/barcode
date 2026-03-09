@@ -703,7 +703,7 @@ class BarcodeListPage(QWidget):
             "w_in":         0.0,
             "h_px":         400,
             "w_px":         600,
-            "dp_fg":        0,
+            "dp_fg":        1,
             "db_fg":        0,
             "flag": 0, "cont": 0, "print_": 0, "print_flag": 0, "ad_fg": 0,
         }
