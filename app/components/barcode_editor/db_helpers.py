@@ -2,72 +2,103 @@
 
 
 def _fetch_connections() -> list[dict]:
-    """Return list of {pk, name} for all active DB connections."""
+    """Return list of {pk, name} for DB connections."""
     try:
         from server.db import get_connection
+
         conn = get_connection()
         try:
             cur = conn.cursor()
+
             cur.execute(
                 """
-                SELECT mcconm, mcconm
-                  FROM barcodesap.mconnc
-                 ORDER BY mcconm
+                SELECT mcconm
+                FROM barcodesap.mconnc
+                ORDER BY mcconm
                 """
             )
-            return [{"pk": row[0], "name": str(row[1]).strip()} for row in cur.fetchall()]
+
+            return [
+                {
+                    "pk": str(row[0]).strip(),
+                    "name": str(row[0]).strip()
+                }
+                for row in cur.fetchall()
+            ]
+
         finally:
             conn.close()
+
     except Exception as e:
         print(f"[_fetch_connections] {e}")
         return []
 
 
-def _fetch_tables_for_connection(connection_pk: int) -> list[dict]:
-    """Return list of {pk, name} for tables belonging to connection_pk."""
+def _fetch_tables_for_connection(connection_name: str) -> list[dict]:
+    """Return tables for a connection."""
     try:
         from server.db import get_connection
+
         conn = get_connection()
         try:
             cur = conn.cursor()
+
             cur.execute(
                 """
-                SELECT matbnmiy, matbnm
-                  FROM barcodesap.mmstbnm
-                 WHERE maconciy = %s
-                   AND madlfg <> '1'
-                 ORDER BY matbnm
+                SELECT DISTINCT mttbnm
+                FROM barcodesap.mtable
+                WHERE mtconm = %s
+                ORDER BY mttbnm
                 """,
-                (connection_pk,),
+                (connection_name,),
             )
-            return [{"pk": row[0], "name": str(row[1]).strip()} for row in cur.fetchall()]
+
+            rows = cur.fetchall()
+
+            return [
+                {
+                    "pk": str(row[0]).strip(),
+                    "name": str(row[0]).strip()
+                }
+                for row in rows
+            ]
+
         finally:
             conn.close()
+
     except Exception as e:
         print(f"[_fetch_tables_for_connection] {e}")
         return []
 
 
-def _fetch_fields_for_table(table_pk: int) -> list[str]:
-    """Return list of field names for the given table PK."""
+def _fetch_fields_for_table(table_name: str) -> list[str]:
+    """Return field names for a table."""
     try:
         from server.db import get_connection
+
         conn = get_connection()
         try:
             cur = conn.cursor()
+
             cur.execute(
                 """
-                SELECT mflid, mtflnm
-                  FROM barcodesap.mmfield
-                 WHERE matbnmiy = %s
-                   AND madlfg <> '1'
-                 ORDER BY mtflnm
+                SELECT mtflnm
+                FROM barcodesap.mmfield
+                WHERE mttbnm = %s
+                  AND madlfg <> '1'
+                ORDER BY mtflnm
                 """,
-                (table_pk,),
+                (table_name,),
             )
-            return [str(row[1]).strip() for row in cur.fetchall()]
+
+            return [
+                str(row[0]).strip()
+                for row in cur.fetchall()
+            ]
+
         finally:
             conn.close()
+
     except Exception as e:
         print(f"[_fetch_fields_for_table] {e}")
         return []
