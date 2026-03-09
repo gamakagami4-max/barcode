@@ -2,7 +2,7 @@ import qtawesome as qta
 from PySide6.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QLabel,
     QLineEdit, QFrame, QPushButton,
-    QGraphicsOpacityEffect
+    QGraphicsOpacityEffect, QScrollArea, QWidget,
 )
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QPoint
 from PySide6.QtCore import QEvent
@@ -11,6 +11,9 @@ from PySide6.QtCore import QEvent
 FILTER_PANEL_ANIM_DURATION = 200
 FILTER_OPTION_HEIGHT = 36
 DROPDOWN_WIDTH = 200
+
+# Max visible rows before scroll kicks in
+DROPDOWN_MAX_VISIBLE = 6
 
 # Minimal palette
 _BG = "#FFFFFF"
@@ -83,13 +86,16 @@ class FilterTriggerButton(QFrame):
 
 
 class AnimatedFilterPanel(QFrame):
-    """Panel that slides down to show filter options."""
+    """Panel that slides down to show filter options, scrollable when overflowing."""
+
+    optionSelected = Signal(str)
 
     def __init__(self, options: list[str], selected: str, parent=None):
         super().__init__(parent)
         self._options = options
         self._selected = selected
         self._height_anim = None
+        self._opacity_anim = None
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity_effect)
         self._opacity_effect.setOpacity(0.0)
@@ -100,28 +106,81 @@ class AnimatedFilterPanel(QFrame):
             AnimatedFilterPanel {{
                 background: {_BG};
                 border: 1px solid {_BORDER};
-                border-top: none;
-                border-radius: 0 0 6px 6px;
+                border-radius: 6px;
             }}
         """)
         self._build_options()
 
-    def get_target_height(self):
-        return min(16 + len(self._options) * (FILTER_OPTION_HEIGHT + 2), 260)
+    def get_target_height(self) -> int:
+        """
+        Height is capped at DROPDOWN_MAX_VISIBLE rows.
+        If there are more items, the scroll area handles overflow.
+        """
+        visible_rows = min(len(self._options), DROPDOWN_MAX_VISIBLE)
+        # 8px top padding + 8px bottom padding + rows + gaps between rows
+        inner_h = 8 + 8 + visible_rows * FILTER_OPTION_HEIGHT + max(0, visible_rows - 1) * 2
+        return inner_h
 
     def _build_options(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 6)
-        layout.setSpacing(2)
-        self._buttons = []
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # ── Scroll area wraps the option list ──────────────────────────────
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 4px 2px 4px 0px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D5DB;
+                min-height: 24px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0;
+                background: none;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+
+        # Container widget inside scroll area
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        inner_layout = QVBoxLayout(container)
+        inner_layout.setContentsMargins(6, 6, 6, 6)
+        inner_layout.setSpacing(2)
+
+        self._buttons: list[QPushButton] = []
         for opt in self._options:
             btn = QPushButton(opt)
             btn.setFixedHeight(FILTER_OPTION_HEIGHT)
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda checked=False, o=opt: self._on_option_clicked(o))
             self._style_button(btn, opt == self._selected)
-            layout.addWidget(btn)
+            inner_layout.addWidget(btn)
             self._buttons.append(btn)
+
+        self._scroll.setWidget(container)
+        outer_layout.addWidget(self._scroll)
 
     def _style_button(self, btn: QPushButton, selected: bool):
         if selected:
@@ -161,7 +220,7 @@ class AnimatedFilterPanel(QFrame):
             self._style_button(btn, btn.text() == option)
         self.optionSelected.emit(option)
 
-    optionSelected = Signal(str)
+    # ── Animation ──────────────────────────────────────────────────────────
 
     def show_animated(self):
         target_h = self.get_target_height()
@@ -178,6 +237,7 @@ class AnimatedFilterPanel(QFrame):
 
     def hide_animated(self):
         current_h = self.height()
+
         self._height_anim = QPropertyAnimation(self, b"minimumHeight")
         self._height_anim.setDuration(FILTER_PANEL_ANIM_DURATION)
         self._height_anim.setStartValue(current_h)
@@ -210,56 +270,32 @@ class StandardSearchBar(QFrame):
 
     def __init__(self, filter_options=None, table_headers=None):
         self._just_opened = False
-        """
-        Initialize the search bar with filter options.
-        
-        :param filter_options: Legacy parameter - list of filter options (deprecated, use table_headers instead)
-        :param table_headers: List of table headers to use as filter options (recommended)
-        
-        Usage:
-            # New way (recommended) - automatically use table headers
-            search_bar = StandardSearchBar(table_headers=table_comp.headers())
-            
-            # Old way (still supported) - manually specify options
-            search_bar = StandardSearchBar(filter_options=["CODE", "NAME", "STATUS"])
-            
-            # Auto-detect mode (searches parent for StandardTable)
-            search_bar = StandardSearchBar()  # Will auto-detect from parent's StandardTable
-        """
         super().__init__()
         self.setObjectName("SearchBarCard")
-        
+
         # Use table_headers if provided, otherwise fall back to filter_options
         if table_headers is not None:
             self._filter_options = list(table_headers)
         elif filter_options is not None:
             self._filter_options = list(filter_options)
         else:
-            # Auto-detect mode - will be populated after being added to parent
             self._filter_options = []
             self._auto_detect = True
-            
+
         self._current_filter = self._filter_options[0] if self._filter_options else ""
         self._setup_style()
         self._init_ui()
-    
+
     def showEvent(self, event):
-        """Override showEvent to auto-detect table headers when widget is shown"""
         super().showEvent(event)
-        
-        # Only auto-detect once, and only if no options were provided
         if hasattr(self, '_auto_detect') and self._auto_detect and not self._filter_options:
             self._auto_detect_headers()
-    
+
     def _auto_detect_headers(self):
-        """Automatically detect table headers from parent widget's StandardTable"""
         parent = self.parent()
         if not parent:
             return
-        
-        # Search for StandardTable in parent's children
         from components.standard_table import StandardTable
-        
         for child in parent.findChildren(StandardTable):
             if hasattr(child, 'headers'):
                 headers = child.headers()
@@ -267,8 +303,6 @@ class StandardSearchBar(QFrame):
                     self._filter_options = headers
                     self._current_filter = self._filter_options[0]
                     self._filter_trigger.set_current(self._current_filter)
-                    
-                    # Rebuild the filter panel with new options
                     self._filter_panel.deleteLater()
                     self._filter_panel = AnimatedFilterPanel(
                         self._filter_options, self._current_filter, self
@@ -353,19 +387,16 @@ class StandardSearchBar(QFrame):
         self.search_input.textChanged.connect(self._on_text_changed)
 
     def _toggle_filter_panel(self):
-        
         win = self.window()
         if not win:
             return
 
         # OPEN DROPDOWN
         if not self._filter_panel.isVisible():
-
             pt_global = self._filter_trigger.mapToGlobal(
                 QPoint(0, self._filter_trigger.height())
             )
             pos_in_window = win.mapFromGlobal(pt_global)
-
             target_h = self._filter_panel.get_target_height()
 
             self._filter_panel.setParent(win)
@@ -373,27 +404,21 @@ class StandardSearchBar(QFrame):
                 pos_in_window.x(),
                 pos_in_window.y(),
                 DROPDOWN_WIDTH,
-                target_h
+                target_h,
             )
-
             self._filter_panel.show()
             self._filter_panel.raise_()
             self._filter_trigger.set_open(True)
 
             self._just_opened = True
             win.installEventFilter(self)
-
             self._filter_panel.show_animated()
-
 
         # CLOSE DROPDOWN
         else:
             self._filter_trigger.set_open(False)
             self._filter_panel.hide_animated()
-
-            # 🔥 remove event filter when closed
             win.removeEventFilter(self)
-
 
     def _on_filter_option_selected(self, option: str):
         self._current_filter = option
@@ -424,8 +449,8 @@ class StandardSearchBar(QFrame):
             def currentText(self):
                 return self._bar._current_filter
         return _FilterComboCompat(self)
-    def eventFilter(self, obj, event):
 
+    def eventFilter(self, obj, event):
         if self._just_opened:
             self._just_opened = False
             return False
@@ -433,39 +458,28 @@ class StandardSearchBar(QFrame):
         if not self._filter_panel.isVisible():
             return super().eventFilter(obj, event)
 
-        # 🔥 close if search bar/page becomes hidden
         if not self.isVisible():
             self._close_filter_panel()
             return False
 
-        # 🔥 close if window loses focus
-        if event.type() in (
-            QEvent.WindowDeactivate,
-            QEvent.FocusOut,
-        ):
+        if event.type() in (QEvent.WindowDeactivate, QEvent.FocusOut):
             self._close_filter_panel()
             return False
 
-        # 🔥 outside click detection
         if event.type() == QEvent.MouseButtonPress:
             pos = event.globalPosition().toPoint()
-
             if not self._filter_panel.geometry().contains(pos) and \
-            not self._filter_trigger.geometry().contains(
-                self._filter_trigger.mapFromGlobal(pos)
-            ):
+               not self._filter_trigger.geometry().contains(
+                   self._filter_trigger.mapFromGlobal(pos)
+               ):
                 self._close_filter_panel()
 
         return super().eventFilter(obj, event)
-
-
-
 
     def _close_filter_panel(self):
         if self._filter_panel.isVisible():
             self._filter_trigger.set_open(False)
             self._filter_panel.hide_animated()
-
             win = self.window()
             if win:
                 win.removeEventFilter(self)
