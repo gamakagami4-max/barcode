@@ -1062,7 +1062,7 @@ class BarcodeEditorPage(QWidget):
                 1 for si in self.scene.items()
                 if isinstance(si, QGraphicsTextItem) and not si.group()
             )
-            _label = f"label{text_count + 1}"
+            _label = f"LABEL{text_count + 1}"
             item = SelectableTextItem(_label)
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
