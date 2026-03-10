@@ -31,7 +31,10 @@ class MergeKonversiMixin:
         self.merge_combo.setEnabled(enabled)
         if not enabled:
             self.merge_combo.clear_selection()
+            self.merge_combo.set_placeholder("" if not enabled else "— select components —")  
             self.item.design_merge = ""
+        else:
+            self.merge_combo.set_placeholder("— select components —")
 
     def enable_for_konversi(self, enabled: bool):
         for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
@@ -375,6 +378,12 @@ class MultiSelectCombo(QWidget):
             self._popup.close()
             self._popup = None
             self._list_widget = None
+
+    def set_placeholder(self, text: str):
+        """Update the placeholder text shown when nothing is selected."""
+        self._placeholder = text
+        self._refresh_tags()
+        
 
     # ── list sync ─────────────────────────────────────────────────────────────
 

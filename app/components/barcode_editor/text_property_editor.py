@@ -525,6 +525,9 @@ class TextPropertyEditor(
                 self.clear_same_with_fields()
             if _prev == "LINK" and not is_link:              # ← ADD THIS
                 self.clear_link_fields()
+            if _prev == "SYSTEM" and not is_system:          # ← ADD THIS
+                self.clear_system_fields()  
+
 
         self._last_type = val
 

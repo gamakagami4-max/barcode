@@ -82,3 +82,18 @@ class SystemMixin:
         else:
             self.system_extra_combo.setEnabled(False)
             self.system_extra_combo.setCurrentIndex(-1)
+
+    def clear_system_fields(self):
+        """Clear SYSTEM selections when switching away."""
+        setattr(self.item, "design_system_value", "")
+        setattr(self.item, "design_system_extra", "")
+
+        self.system_value_combo._current = ""
+        self.system_value_combo._label.setText("")
+        self.system_value_combo.setCurrentIndex(-1)
+
+        self.system_extra_combo._items   = [""]
+        self.system_extra_combo._current = ""
+        self.system_extra_combo._label.setText("")
+        self.system_extra_combo.setCurrentIndex(-1)
+        self.system_extra_combo.setEnabled(False)
