@@ -60,12 +60,10 @@ class InlineChecklistWidget(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        # Outer: arrow column on left, checklist box on right
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(4)
 
-        # ── Arrow column (outside the box) ────────────────────────────────────
         _arrow_style = (
             "QPushButton{background:transparent;border:none;color:#94A3B8;"
             "font-size:9px;padding:0px;min-width:14px;max-width:14px;}"
@@ -98,7 +96,6 @@ class InlineChecklistWidget(QWidget):
         a_lay.addWidget(self._btn_dn)
         outer.addWidget(arrow_col, 0, Qt.AlignVCenter)
 
-        # ── Checklist box ─────────────────────────────────────────────────────
         self._container = QFrame()
         self._container.setObjectName("checklistContainer")
         self._container.setStyleSheet(
@@ -134,11 +131,7 @@ class InlineChecklistWidget(QWidget):
         cl.addWidget(self._scroll)
 
         outer.addWidget(self._container)
-
-        # Track which item is focused (last clicked) for arrow movement
         self._focused_name: str | None = None
-
-        # Start in disabled/collapsed state
         self._apply_disabled_appearance()
 
     def _apply_disabled_appearance(self):
@@ -166,8 +159,6 @@ class InlineChecklistWidget(QWidget):
         else:
             self._apply_disabled_appearance()
 
-    # ── Public API (drop-in for MultiSelectCombo) ─────────────────────────────
-
     def set_items(self, items: list[str]):
         self._items = list(items)
         self._selected.clear()
@@ -185,8 +176,6 @@ class InlineChecklistWidget(QWidget):
 
     def get_selected(self) -> list[str]:
         return [i for i in self._items if i in self._selected]
-
-    # ── Internal slots ────────────────────────────────────────────────────────
 
     def _toggle(self, name: str):
         self._selected.discard(name) if name in self._selected else self._selected.add(name)
@@ -207,13 +196,11 @@ class InlineChecklistWidget(QWidget):
             r_lay.setContentsMargins(2, 0, 2, 0)
             r_lay.setSpacing(6)
 
-            # Checkbox
             box = QLabel()
             box.setFixedSize(13, 13)
             box.setAlignment(Qt.AlignCenter)
             box.setCursor(Qt.PointingHandCursor)
 
-            # Text label
             txt = QLabel(name)
             txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
             txt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -223,9 +210,7 @@ class InlineChecklistWidget(QWidget):
             r_lay.addWidget(txt)
             r_lay.addStretch()
 
-            # Checkbox click = toggle check
             box.mousePressEvent = lambda _e, n=name: self._toggle_only(n)
-            # Row / text click = focus only (for arrow movement), no check toggle
             row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n)
             txt.mousePressEvent   = lambda _e, n=name: self._focus_row(n)
 
@@ -233,25 +218,20 @@ class InlineChecklistWidget(QWidget):
             self._rows[name] = (row_w, box, txt)
 
         self._refresh_row_styles()
-        # Set inner widget height to exact content size so scroll area can overflow it.
-        # Set scroll area height to content up to MAX_H — beyond that scrollbar appears.
         ROW_H, SPACING, MARGINS, MAX_H = 22, 2, 8, 160
         n = len(self._items)
         content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
         self._scroll.setFixedHeight(min(content_h, MAX_H))
 
     def _toggle_only(self, name: str):
-        """Toggle checkbox and set focus to this row."""
         self._focused_name = name
         self._toggle(name)
 
     def _focus_row(self, name: str):
-        """Mark row as focused for arrow movement, without toggling the checkbox."""
         self._focused_name = name
         self._refresh_row_styles()
 
     def _move_focused(self, direction: int):
-        """Move the focused row up (-1) or down (+1)."""
         name = self._focused_name
         if not name or name not in self._items:
             return
@@ -265,8 +245,8 @@ class InlineChecklistWidget(QWidget):
 
     def _refresh_row_styles(self):
         for name, (row_w, box, txt) in self._rows.items():
-            is_checked  = name in self._selected
-            is_focused  = name == self._focused_name
+            is_checked = name in self._selected
+            is_focused = name == self._focused_name
 
             if is_checked:
                 box.setText("✓")
@@ -310,7 +290,6 @@ class TextPropertyEditor(
         self.update_callback = update_callback
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        # LookupMixin state
         self.init_lookup_state()
 
         layout = QFormLayout(self)
@@ -335,20 +314,15 @@ class TextPropertyEditor(
             angle = _angle_map.get(v, 0)
             if not hasattr(self, "top_spin"):
                 return
-
             saved_left = self.left_spin.value()
             saved_top  = self.top_spin.value()
-
             br = self.item.boundingRect()
             self.item.setTransformOriginPoint(br.center())
             self.item.setRotation(angle)
-
             aabb = self.item.mapToScene(br).boundingRect()
             off_x = aabb.left() - self.item.pos().x()
             off_y = aabb.top()  - self.item.pos().y()
-
             self.item.setPos(saved_left - off_x, saved_top - off_y)
-
             self.top_spin.blockSignals(True)
             self.left_spin.blockSignals(True)
             self.top_spin.setValue(saved_top)
@@ -358,7 +332,7 @@ class TextPropertyEditor(
 
         self.angle_combo.currentTextChanged.connect(_apply_angle)
 
-        # ── ALIGNMENT ────────────────────────────────────────────────────────
+        # ── ALIGNMENT ─────────────────────────────────────────────────────────
         self.align_combo = make_chevron_combo(["LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"])
         stored_align = getattr(self.item, "design_alignment", None)
         if stored_align in ("LEFT JUSTIFY", "CENTER", "RIGHT JUSTIFY"):
@@ -376,7 +350,7 @@ class TextPropertyEditor(
                     self.align_combo._label.setText("RIGHT JUSTIFY")
         layout.addRow(_lbl("ALIGNMENT :"), self.align_combo)
 
-        # ── FONT ─────────────────────────────────────────────────────────────
+        # ── FONT ──────────────────────────────────────────────────────────────
         self.font_combo = make_chevron_combo([
             "STANDARD", "ARIAL", "ARIAL BLACK", "ARIAL BLACK (GT)", "ARIAL BLACK NEW",
             "ARIAL BOLD", "ARIAL NARROW BOLD", "EUROSTILE BOLD OLD",
@@ -404,7 +378,7 @@ class TextPropertyEditor(
         layout.addRow(_lbl("FONT SIZE :"), self.size_spin)
         layout.addRow(_lbl("TOP :"),       self.top_spin)
         layout.addRow(_lbl("LEFT :"),      self.left_spin)
-        layout.addRow(_lbl("ANGLE :"), self.angle_combo)
+        layout.addRow(_lbl("ANGLE :"),     self.angle_combo)
 
         # ── INVERSE ───────────────────────────────────────────────────────────
         self.inverse_combo = make_chevron_combo(["NO", "YES"])
@@ -442,11 +416,11 @@ class TextPropertyEditor(
         )
 
         # ── INPUT fields ──────────────────────────────────────────────────────
-        self.data_type_combo  = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
-        self.max_length_spin  = make_spin(0, 9999, 1)
+        self.data_type_combo = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
+        self.max_length_spin = make_spin(0, 9999, 1)
         self.max_length_spin.setSpecialValueText("")
-        layout.addRow(_lbl("DATA TYPE :"),   self.data_type_combo)
-        layout.addRow(_lbl("MAX LENGTH :"),  self.max_length_spin)
+        layout.addRow(_lbl("DATA TYPE :"),  self.data_type_combo)
+        layout.addRow(_lbl("MAX LENGTH :"), self.max_length_spin)
 
         # ── SAME WITH combo ───────────────────────────────────────────────────
         self.same_with_combo = self._build_scene_name_combo(exclude_same_with=True)
@@ -491,21 +465,21 @@ class TextPropertyEditor(
         self.group_combo  = make_chevron_combo([""])
         self.table_combo  = make_chevron_combo([""])
         self.table_extra  = QLineEdit()
-        self.field_edit   = InlineChecklistWidget()          # ← changed
-        self.result_combo = MultiSelectCombo(placeholder="— select result field —")
+        self.field_edit   = InlineChecklistWidget()
+        self.result_combo = make_chevron_combo([""])   # ← chevron combo, consistent style
 
         self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
         self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         for combo, ph in (
-            (self.group_combo, "— select connection —"),
-            (self.table_combo, "— select table —"),
+            (self.group_combo,  "— select connection —"),
+            (self.table_combo,  "— select table —"),
+            (self.result_combo, "— select result field —"),
         ):
             combo.setPlaceholderText(ph)
             combo.setCurrentIndex(-1)
             combo.setEnabled(False)
         self.field_edit.setEnabled(False)
-        self.result_combo.setEnabled(False)
 
         layout.addRow(_lbl("GROUP :"),  self.group_combo)
         layout.addRow(_lbl("TABLE :"),  self.table_combo)
@@ -513,15 +487,15 @@ class TextPropertyEditor(
         layout.addRow(_lbl("FIELD :"),  self.field_edit)
         layout.addRow(_lbl("RESULT :"), self.result_combo)
 
-        # Wire up LOOKUP cascade
         self.build_connection_combo()
         self.group_combo.currentTextChanged.connect(self._on_group_changed)
         self.table_combo.currentTextChanged.connect(self._on_table_changed)
         self.field_edit.selectionChanged.connect(
             lambda names: setattr(self.item, "design_field", ",".join(names))
         )
-        self.result_combo.selectionChanged.connect(
-            lambda names: setattr(self.item, "design_result", ",".join(names))
+        # result_combo is now a chevron combo → use currentTextChanged
+        self.result_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_result", v)
         )
         self.table_extra.textChanged.connect(
             lambda v: setattr(self.item, "design_query", v)
@@ -583,11 +557,10 @@ class TextPropertyEditor(
         self.trim_box.mousePressEvent = self._toggle_trim
         trim_layout.addWidget(self.trim_box)
         trim_lbl = QLabel("TRIM")
-        label_style = (
+        trim_lbl.setStyleSheet(
             f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; "
             "background: transparent; border: none;"
         )
-        trim_lbl.setStyleSheet(label_style)
         trim_layout.addWidget(trim_lbl)
         trim_layout.addStretch()
         layout.addRow(_lbl(""), trim_row)
@@ -621,7 +594,6 @@ class TextPropertyEditor(
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
 
-        # Restore persisted values
         self.editor_combo.setCurrentText(
             getattr(self.item, "design_editor", "ENABLED") or "ENABLED"
         )
@@ -649,7 +621,6 @@ class TextPropertyEditor(
         self._trim_checked = bool(_trim)
         self._set_trim_style(self._trim_checked)
 
-        # Connect so future changes persist immediately
         self.editor_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_editor", v)
         )
@@ -672,10 +643,8 @@ class TextPropertyEditor(
             lambda v: setattr(self.item, "design_format", v)
         )
 
-        # Trigger initial enable/disable state
         self._on_type_changed(getattr(self.item, "design_type", "FIX"))
 
-        # Restore SAME WITH link if previously set
         stored_same_with = getattr(self.item, "design_same_with", "")
         if (stored_same_with
                 and stored_same_with in self.same_with_combo._items
@@ -686,7 +655,6 @@ class TextPropertyEditor(
 
     def _build_merge_combo(self) -> MultiSelectCombo:
         from components.barcode_editor.scene_items import SelectableTextItem
-
         names: list[str] = []
         try:
             scene = self.item.scene()
@@ -700,14 +668,11 @@ class TextPropertyEditor(
                     names.append(name)
         except Exception:
             pass
-
         combo = MultiSelectCombo(placeholder="— select components —")
         combo.set_items(names)
-
         stored = getattr(self.item, "design_merge", "")
         if stored:
             combo.set_selected(stored)
-
         combo.selectionChanged.connect(self._on_merge_changed)
         return combo
 
@@ -732,7 +697,6 @@ class TextPropertyEditor(
                     names.append(name)
         except Exception:
             pass
-
         combo = make_chevron_combo([""] + names if names else ["—"])
         combo.setPlaceholderText("—")
         combo.setCurrentIndex(-1)
@@ -754,23 +718,17 @@ class TextPropertyEditor(
 
         _prev = getattr(self, "_last_type", None)
         if _prev is not None:
-            if _prev == "LOOKUP" and not is_lookup:
-                self.clear_lookup_fields()
-            if _prev == "SAME WITH" and not is_same_with:
-                self.clear_same_with_fields()
-            if _prev == "LINK" and not is_link:
-                self.clear_link_fields()
-            if _prev == "SYSTEM" and not is_system:
-                self.clear_system_fields()
+            if _prev == "LOOKUP"    and not is_lookup:    self.clear_lookup_fields()
+            if _prev == "SAME WITH" and not is_same_with: self.clear_same_with_fields()
+            if _prev == "LINK"      and not is_link:      self.clear_link_fields()
+            if _prev == "SYSTEM"    and not is_system:    self.clear_system_fields()
 
         self._last_type = val
 
-        # SAME WITH (locks everything else)
         self.enable_for_same_with(is_same_with)
         if is_same_with:
             return
 
-        # INPUT
         self.data_type_combo.setEnabled(is_input)
         self.max_length_spin.setEnabled(is_input)
         if is_input:
@@ -787,14 +745,12 @@ class TextPropertyEditor(
             self.max_length_spin.setValue(0)
             self.max_length_spin.setStyleSheet(_DISABLED_COMBO_STYLE)
 
-        # Delegate to mixins
         self.enable_for_lookup(is_lookup)
         self.enable_for_link(is_link)
         self.enable_for_system(is_system)
         self.enable_for_merge(is_merge)
         self.enable_for_konversi(is_konversi)
 
-        # BATCH NO
         self.batch_no_combo.setEnabled(is_batch_no)
         self.wh_combo.setEnabled(is_batch_no)
         if not is_batch_no:
@@ -828,29 +784,29 @@ class TextPropertyEditor(
 
     def _apply_font_family(self, value: str):
         font_map = {
-            "STANDARD":              "Arial",
-            "ARIAL":                 "Arial",
-            "ARIAL BLACK":           "Arial Black",
-            "ARIAL BLACK (GT)":      "Arial Black",
-            "ARIAL BLACK NEW":       "Arial Black",
-            "ARIAL BOLD":            "Arial",
-            "ARIAL NARROW BOLD":     "Arial Narrow",
-            "EUROSTILE BOLD OLD":    "Eurostile",
-            "FUTURA-CONDENSED-BOL":  "Futura",
-            "FUTURA-NORMAL":         "Futura",
-            "GLORIOLA STD BOLD":     "Arial",
-            "GLORIOLA STD LIGHT":    "Arial",
-            "HELVETICANEUE":         "Helvetica Neue",
-            "MONTSERRAT BOLD":       "Montserrat",
-            "MONTSERRAT SBOLD-CAE":  "Montserrat",
-            "MONTSERRAT SEMI BOLD":  "Montserrat",
-            "MYRIAD PRO":            "Myriad Pro",
-            "NEO SANS":              "Neo Sans",
-            "NEO SANS BOLD":         "Neo Sans",
-            "OCR-B":                 "OCR B",
-            "SWIS721":               "Swiss 721",
-            "TAHOMA":                "Tahoma",
-            "UNIVERS CONDENSED":     "Univers Condensed",
+            "STANDARD":             "Arial",
+            "ARIAL":                "Arial",
+            "ARIAL BLACK":          "Arial Black",
+            "ARIAL BLACK (GT)":     "Arial Black",
+            "ARIAL BLACK NEW":      "Arial Black",
+            "ARIAL BOLD":           "Arial",
+            "ARIAL NARROW BOLD":    "Arial Narrow",
+            "EUROSTILE BOLD OLD":   "Eurostile",
+            "FUTURA-CONDENSED-BOL": "Futura",
+            "FUTURA-NORMAL":        "Futura",
+            "GLORIOLA STD BOLD":    "Arial",
+            "GLORIOLA STD LIGHT":   "Arial",
+            "HELVETICANEUE":        "Helvetica Neue",
+            "MONTSERRAT BOLD":      "Montserrat",
+            "MONTSERRAT SBOLD-CAE": "Montserrat",
+            "MONTSERRAT SEMI BOLD": "Montserrat",
+            "MYRIAD PRO":           "Myriad Pro",
+            "NEO SANS":             "Neo Sans",
+            "NEO SANS BOLD":        "Neo Sans",
+            "OCR-B":                "OCR B",
+            "SWIS721":              "Swiss 721",
+            "TAHOMA":               "Tahoma",
+            "UNIVERS CONDENSED":    "Univers Condensed",
         }
         bold_fonts = {
             "ARIAL BOLD", "ARIAL BLACK", "ARIAL BLACK (GT)", "ARIAL BLACK NEW",

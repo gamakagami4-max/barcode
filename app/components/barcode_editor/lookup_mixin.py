@@ -67,7 +67,7 @@ class LookupMixin:
     def clear_lookup_fields(self):
         """Clear all LOOKUP field values on the item and reset the widgets."""
         for attr in ("design_group", "design_table", "design_query",
-                    "design_field", "design_result"):
+                     "design_field", "design_result"):
             setattr(self.item, attr, "")
 
         self.group_combo._items   = [""]
@@ -85,26 +85,43 @@ class LookupMixin:
         self._table_map = {}
 
         # Re-populate connections so switching back to LOOKUP still works
-        self.build_connection_combo()  # ← replaces clearing _conn_map
-        
+        self.build_connection_combo()
+
     def _on_table_changed(self, table_name: str):
         setattr(self.item, "design_table", table_name)
         if not table_name:
             self._clear_field_combos()
             return
+
         fields = _fetch_fields_for_table(table_name)
         self._field_list = fields
-        for combo in (self.field_edit, self.result_combo):
-            combo.set_items(fields if fields else [])
-            combo.clear_selection()
-            combo.setEnabled(bool(fields))
+
+        # field_edit is InlineChecklistWidget — uses set_items / clear_selection API
+        self.field_edit.set_items(fields if fields else [])
+        self.field_edit.clear_selection()
+        self.field_edit.setEnabled(bool(fields))
+
+        # result_combo is a chevron combo — update its internal item list directly
+        self.result_combo._items   = fields if fields else [""]
+        self.result_combo._current = ""
+        self.result_combo._label.setText("")
+        self.result_combo.setCurrentIndex(-1)
+        self.result_combo.setEnabled(bool(fields))
 
     def _clear_field_combos(self):
         self._field_list = []
-        for combo in (self.field_edit, self.result_combo):
-            combo.set_items([])
-            combo.clear_selection()
-            combo.setEnabled(False)
+
+        # field_edit is InlineChecklistWidget
+        self.field_edit.set_items([])
+        self.field_edit.clear_selection()
+        self.field_edit.setEnabled(False)
+
+        # result_combo is a chevron combo
+        self.result_combo._items   = [""]
+        self.result_combo._current = ""
+        self.result_combo._label.setText("")
+        self.result_combo.setCurrentIndex(-1)
+        self.result_combo.setEnabled(False)
 
     # ── populate combos from DB on init ──────────────────────────────────────
 
@@ -121,7 +138,7 @@ class LookupMixin:
         return conn_names
 
     def restore_lookup_values(self, stored_group, stored_table, stored_field,
-                           stored_result, stored_query):
+                              stored_result, stored_query):
         if stored_group and stored_group in self._conn_map:
             self.group_combo.setCurrentText(stored_group)
             self._on_group_changed(stored_group)
@@ -129,8 +146,9 @@ class LookupMixin:
                 self.table_combo.setCurrentText(stored_table)
                 self._on_table_changed(stored_table)
                 if stored_field:
-                    self.field_edit.set_selected(stored_field)   # ← was setCurrentText
+                    self.field_edit.set_selected(stored_field)
                 if stored_result:
-                    self.result_combo.set_selected(stored_result) # ← was setCurrentText
+                    # result_combo is now a chevron combo — use setCurrentText
+                    self.result_combo.setCurrentText(stored_result)
         if stored_query:
             self.table_extra.setText(stored_query)

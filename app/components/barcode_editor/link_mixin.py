@@ -37,22 +37,22 @@ class LinkMixin:
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _set_combo_value(self, combo, val: str):
-        """Set value on a chevron combo, InlineChecklistWidget, or MultiSelectCombo safely."""
+        """Set value on a chevron combo or InlineChecklistWidget safely."""
         from components.barcode_editor.text_property_editor import InlineChecklistWidget
-        from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
-        if isinstance(combo, (InlineChecklistWidget, MultiSelectCombo)):
+        if isinstance(combo, InlineChecklistWidget):
             combo.set_selected(val)
         else:
+            # Standard chevron combo
             combo._current = val
             combo._label.setText(val)
 
     def _clear_combo_value(self, combo):
-        """Clear value on a chevron combo, InlineChecklistWidget, or MultiSelectCombo safely."""
+        """Clear value on a chevron combo or InlineChecklistWidget safely."""
         from components.barcode_editor.text_property_editor import InlineChecklistWidget
-        from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
-        if isinstance(combo, (InlineChecklistWidget, MultiSelectCombo)):
+        if isinstance(combo, InlineChecklistWidget):
             combo.clear_selection()
         else:
+            # Standard chevron combo
             combo._current = ""
             combo._label.setText("")
 
