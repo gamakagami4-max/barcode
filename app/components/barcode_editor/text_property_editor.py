@@ -1,9 +1,10 @@
 """TextPropertyEditor — orchestrates all type-specific mixins."""
 
 from PySide6.QtWidgets import (
-    QWidget, QFormLayout, QLabel, QLineEdit, QSizePolicy, QHBoxLayout
+    QWidget, QFormLayout, QLabel, QLineEdit, QSizePolicy, QHBoxLayout,
+    QFrame, QScrollArea, QVBoxLayout, QPushButton,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QTextCursor, QTextBlockFormat
 
 from components.barcode_editor.utils import (
@@ -45,6 +46,253 @@ def _lbl(text: str) -> QLabel:
 _QT_ANGLE_TO_DISPLAY = {0: "0", 270: "90", 180: "180", 90: "270"}
 
 
+# ── Inline checklist widget (replaces MultiSelectCombo for field_edit) ────────
+
+class InlineChecklistWidget(QWidget):
+    selectionChanged = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items: list[str] = []
+        self._selected: set[str] = set()
+        self._rows: dict[str, tuple] = {}   # name -> (row_widget, box_label, text_label)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._build_ui()
+
+    def _build_ui(self):
+        # Outer: arrow column on left, checklist box on right
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+
+        # ── Arrow column (outside the box) ────────────────────────────────────
+        _arrow_style = (
+            "QPushButton{background:transparent;border:none;color:#94A3B8;"
+            "font-size:9px;padding:0px;min-width:14px;max-width:14px;}"
+            "QPushButton:hover{color:#6366F1;}"
+            "QPushButton:disabled{color:#E2E8F0;}"
+        )
+        arrow_col = QWidget()
+        arrow_col.setFixedWidth(14)
+        arrow_col.setStyleSheet("background:transparent;")
+        a_lay = QVBoxLayout(arrow_col)
+        a_lay.setContentsMargins(0, 0, 0, 0)
+        a_lay.setSpacing(2)
+        a_lay.setAlignment(Qt.AlignVCenter)
+
+        self._btn_up = QPushButton("▲")
+        self._btn_up.setFixedSize(14, 14)
+        self._btn_up.setStyleSheet(_arrow_style)
+        self._btn_up.setCursor(Qt.PointingHandCursor)
+        self._btn_up.setFocusPolicy(Qt.NoFocus)
+        self._btn_up.clicked.connect(lambda: self._move_focused(-1))
+
+        self._btn_dn = QPushButton("▼")
+        self._btn_dn.setFixedSize(14, 14)
+        self._btn_dn.setStyleSheet(_arrow_style)
+        self._btn_dn.setCursor(Qt.PointingHandCursor)
+        self._btn_dn.setFocusPolicy(Qt.NoFocus)
+        self._btn_dn.clicked.connect(lambda: self._move_focused(+1))
+
+        a_lay.addWidget(self._btn_up)
+        a_lay.addWidget(self._btn_dn)
+        outer.addWidget(arrow_col, 0, Qt.AlignVCenter)
+
+        # ── Checklist box ─────────────────────────────────────────────────────
+        self._container = QFrame()
+        self._container.setObjectName("checklistContainer")
+        self._container.setStyleSheet(
+            "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
+        )
+        cl = QVBoxLayout(self._container)
+        cl.setContentsMargins(0, 4, 0, 4)
+        cl.setSpacing(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setMinimumHeight(0)
+        self._scroll.setMaximumHeight(150)
+        self._scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._scroll.setStyleSheet(
+            "QScrollArea{background:transparent;border:none;}"
+            "QScrollBar:vertical{background:#F8FAFC;width:6px;border-radius:3px;}"
+            "QScrollBar::handle:vertical{background:#CBD5E1;border-radius:3px;min-height:20px;}"
+            "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0px;}"
+        )
+        self._rows_widget = QWidget()
+        self._rows_widget.setStyleSheet("background:transparent;")
+        self._rows_layout = QVBoxLayout(self._rows_widget)
+        self._rows_layout.setContentsMargins(6, 4, 6, 4)
+        self._rows_layout.setSpacing(2)
+        self._scroll.setWidget(self._rows_widget)
+        cl.addWidget(self._scroll)
+
+        outer.addWidget(self._container)
+
+        # Track which item is focused (last clicked) for arrow movement
+        self._focused_name: str | None = None
+
+        # Start in disabled/collapsed state
+        self._apply_disabled_appearance()
+
+    def _apply_disabled_appearance(self):
+        self._scroll.setFixedHeight(28)
+        self._container.setStyleSheet(
+            "QFrame#checklistContainer { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; }"
+        )
+
+    def _apply_enabled_appearance(self):
+        self._container.setStyleSheet(
+            "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
+        )
+
+    def setEnabled(self, enabled: bool):
+        super().setEnabled(enabled)
+        if enabled:
+            self._apply_enabled_appearance()
+            ROW_H, SPACING, MARGINS = 22, 2, 8
+            n = len(self._items)
+            if n == 0:
+                self._scroll.setFixedHeight(28)
+            else:
+                content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
+                self._scroll.setFixedHeight(min(max(content_h, ROW_H + MARGINS), 150))
+        else:
+            self._apply_disabled_appearance()
+
+    # ── Public API (drop-in for MultiSelectCombo) ─────────────────────────────
+
+    def set_items(self, items: list[str]):
+        self._items = list(items)
+        self._selected.clear()
+        self._rebuild_rows()
+
+    def clear_selection(self):
+        self._selected.clear()
+        self._refresh_row_styles()
+        self.selectionChanged.emit([])
+
+    def set_selected(self, value):
+        names = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
+        self._selected = set(n for n in names if n in self._items)
+        self._refresh_row_styles()
+
+    def get_selected(self) -> list[str]:
+        return [i for i in self._items if i in self._selected]
+
+    # ── Internal slots ────────────────────────────────────────────────────────
+
+    def _toggle(self, name: str):
+        self._selected.discard(name) if name in self._selected else self._selected.add(name)
+        self._refresh_row_styles()
+        self.selectionChanged.emit(self.get_selected())
+
+    def _rebuild_rows(self):
+        for row_w, _, _ in self._rows.values():
+            self._rows_layout.removeWidget(row_w)
+            row_w.deleteLater()
+        self._rows.clear()
+
+        for name in self._items:
+            row_w = QWidget()
+            row_w.setStyleSheet("background:transparent;")
+            row_w.setFixedHeight(22)
+            r_lay = QHBoxLayout(row_w)
+            r_lay.setContentsMargins(2, 0, 2, 0)
+            r_lay.setSpacing(6)
+
+            # Checkbox
+            box = QLabel()
+            box.setFixedSize(13, 13)
+            box.setAlignment(Qt.AlignCenter)
+            box.setCursor(Qt.PointingHandCursor)
+
+            # Text label
+            txt = QLabel(name)
+            txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
+            txt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            txt.setCursor(Qt.PointingHandCursor)
+
+            r_lay.addWidget(box)
+            r_lay.addWidget(txt)
+            r_lay.addStretch()
+
+            # Checkbox click = toggle check
+            box.mousePressEvent = lambda _e, n=name: self._toggle_only(n)
+            # Row / text click = focus only (for arrow movement), no check toggle
+            row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n)
+            txt.mousePressEvent   = lambda _e, n=name: self._focus_row(n)
+
+            self._rows_layout.addWidget(row_w)
+            self._rows[name] = (row_w, box, txt)
+
+        self._refresh_row_styles()
+        # Resize scroll area to hug content, capped at max height.
+        # Calculate directly from item count — sizeHint is unreliable before
+        # Qt has completed a layout pass.
+        ROW_H, SPACING, MARGINS = 22, 2, 8
+        n = len(self._items)
+        content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
+        self._scroll.setFixedHeight(min(max(content_h, ROW_H + MARGINS), 150))
+
+    def _toggle_only(self, name: str):
+        """Toggle checkbox and set focus to this row."""
+        self._focused_name = name
+        self._toggle(name)
+
+    def _focus_row(self, name: str):
+        """Mark row as focused for arrow movement, without toggling the checkbox."""
+        self._focused_name = name
+        self._refresh_row_styles()
+
+    def _move_focused(self, direction: int):
+        """Move the focused row up (-1) or down (+1)."""
+        name = self._focused_name
+        if not name or name not in self._items:
+            return
+        idx = self._items.index(name)
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(self._items):
+            return
+        self._items[idx], self._items[new_idx] = self._items[new_idx], self._items[idx]
+        self._rebuild_rows()
+        self.selectionChanged.emit(self.get_selected())
+
+    def _refresh_row_styles(self):
+        for name, (row_w, box, txt) in self._rows.items():
+            is_checked  = name in self._selected
+            is_focused  = name == self._focused_name
+
+            if is_checked:
+                box.setText("✓")
+                box.setStyleSheet(
+                    "QLabel{border:1.5px solid #6366F1;border-radius:3px;"
+                    "background:#6366F1;color:white;font-size:8px;font-weight:bold;}"
+                )
+            else:
+                box.setText("")
+                box.setStyleSheet(
+                    "QLabel{border:1.5px solid #CBD5E1;border-radius:3px;background:white;}"
+                )
+
+            if is_focused and is_checked:
+                txt.setStyleSheet("color:#4338CA;font-size:11px;background:transparent;border:none;font-weight:600;")
+                row_w.setStyleSheet("background:#EEF2FF;border-radius:4px;")
+            elif is_focused:
+                txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;font-weight:600;")
+                row_w.setStyleSheet("background:#F1F5F9;border-radius:4px;")
+            elif is_checked:
+                txt.setStyleSheet("color:#4338CA;font-size:11px;background:transparent;border:none;")
+                row_w.setStyleSheet("background:transparent;")
+            else:
+                txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
+                row_w.setStyleSheet("background:transparent;")
+
+
+# ── TextPropertyEditor ────────────────────────────────────────────────────────
+
 class TextPropertyEditor(
     SameWithMixin,
     LookupMixin,
@@ -73,8 +321,6 @@ class TextPropertyEditor(
         self.angle_combo = make_chevron_combo(["0", "90", "180", "270"])
         _angle_map = {"0": 0, "90": 270, "180": 180, "270": 90}
 
-        # Restore the current rotation BEFORE connecting the signal so that
-        # _apply_angle does NOT fire on load and accidentally snap the item.
         _current_qt_angle = int(round(self.item.rotation())) % 360
         _display_val = _QT_ANGLE_TO_DISPLAY.get(_current_qt_angle, "0")
         self.angle_combo.blockSignals(True)
@@ -91,14 +337,9 @@ class TextPropertyEditor(
             saved_top  = self.top_spin.value()
 
             br = self.item.boundingRect()
-
-            # Always set transform origin BEFORE applying rotation
             self.item.setTransformOriginPoint(br.center())
             self.item.setRotation(angle)
 
-            # Use Qt's own mapToScene for the real AABB — no manual trig needed.
-            # This correctly accounts for document margins, padding, and the
-            # transform origin, eliminating the ~30px drift seen with manual math.
             aabb = self.item.mapToScene(br).boundingRect()
             off_x = aabb.left() - self.item.pos().x()
             off_y = aabb.top()  - self.item.pos().y()
@@ -147,16 +388,8 @@ class TextPropertyEditor(
         # ── SIZE / POSITION ───────────────────────────────────────────────────
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
 
-        # Remove the QTextDocument default margin (4px) so the bounding rect
-        # starts exactly at local (0, 0) with no padding. Without this the AABB
-        # is inset by the margin, which swaps axes on 90°/270° rotation and
-        # produces a hard minimum offset of ~30px that cannot be scrolled past.
         self.item.document().setDocumentMargin(0)
 
-        # Always set transform origin before reading AABB — regardless of whether
-        # the item is currently rotated. This ensures the first rotation from 0°
-        # uses the same origin as all subsequent rotations, preventing a one-time
-        # coordinate jump on the very first angle change.
         _br = self.item.boundingRect()
         self.item.setTransformOriginPoint(_br.center())
         _init_scene_rect = self.item.mapToScene(_br).boundingRect()
@@ -255,21 +488,21 @@ class TextPropertyEditor(
         self.group_combo  = make_chevron_combo([""])
         self.table_combo  = make_chevron_combo([""])
         self.table_extra  = QLineEdit()
-        self.field_edit   = make_chevron_combo([""])
-        self.result_combo = make_chevron_combo([""])
+        self.field_edit   = InlineChecklistWidget()          # ← changed
+        self.result_combo = MultiSelectCombo(placeholder="— select result field —")
 
         self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
         self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         for combo, ph in (
-            (self.group_combo,  "— select connection —"),
-            (self.table_combo,  "— select table —"),
-            (self.field_edit,   "— select field —"),
-            (self.result_combo, "— select result field —"),
+            (self.group_combo, "— select connection —"),
+            (self.table_combo, "— select table —"),
         ):
             combo.setPlaceholderText(ph)
             combo.setCurrentIndex(-1)
             combo.setEnabled(False)
+        self.field_edit.setEnabled(False)
+        self.result_combo.setEnabled(False)
 
         layout.addRow(_lbl("GROUP :"),  self.group_combo)
         layout.addRow(_lbl("TABLE :"),  self.table_combo)
@@ -281,11 +514,11 @@ class TextPropertyEditor(
         self.build_connection_combo()
         self.group_combo.currentTextChanged.connect(self._on_group_changed)
         self.table_combo.currentTextChanged.connect(self._on_table_changed)
-        self.field_edit.currentTextChanged.connect(
-            lambda v: setattr(self.item, "design_field",  v if v not in ("", "—") else "")
+        self.field_edit.selectionChanged.connect(
+            lambda names: setattr(self.item, "design_field", ",".join(names))
         )
-        self.result_combo.currentTextChanged.connect(
-            lambda v: setattr(self.item, "design_result", v if v not in ("", "—") else "")
+        self.result_combo.selectionChanged.connect(
+            lambda names: setattr(self.item, "design_result", ",".join(names))
         )
         self.table_extra.textChanged.connect(
             lambda v: setattr(self.item, "design_query", v)
@@ -385,7 +618,7 @@ class TextPropertyEditor(
         self.font_combo.currentTextChanged.connect(self._apply_font_family)
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
 
-        # Restore persisted values for fields that write directly to item attrs
+        # Restore persisted values
         self.editor_combo.setCurrentText(
             getattr(self.item, "design_editor", "ENABLED") or "ENABLED"
         )
@@ -413,7 +646,7 @@ class TextPropertyEditor(
         self._trim_checked = bool(_trim)
         self._set_trim_style(self._trim_checked)
 
-        # Now connect so future changes persist immediately
+        # Connect so future changes persist immediately
         self.editor_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_editor", v)
         )
@@ -516,18 +749,16 @@ class TextPropertyEditor(
 
         setattr(self.item, "design_type", val)
 
-        # Only clear when the user actively switches away (not on initial load)
         _prev = getattr(self, "_last_type", None)
         if _prev is not None:
             if _prev == "LOOKUP" and not is_lookup:
                 self.clear_lookup_fields()
             if _prev == "SAME WITH" and not is_same_with:
                 self.clear_same_with_fields()
-            if _prev == "LINK" and not is_link:              # ← ADD THIS
+            if _prev == "LINK" and not is_link:
                 self.clear_link_fields()
-            if _prev == "SYSTEM" and not is_system:          # ← ADD THIS
-                self.clear_system_fields()  
-
+            if _prev == "SYSTEM" and not is_system:
+                self.clear_system_fields()
 
         self._last_type = val
 
@@ -567,7 +798,6 @@ class TextPropertyEditor(
             self.batch_no_combo.setCurrentIndex(-1)
             self.wh_combo.setCurrentIndex(-1)
 
-        # SAME WITH combo is only active when type == SAME WITH
         self.same_with_combo.setEnabled(is_same_with)
 
     # ── Standard property-apply methods ──────────────────────────────────────

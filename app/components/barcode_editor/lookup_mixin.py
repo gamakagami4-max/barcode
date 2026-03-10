@@ -88,33 +88,23 @@ class LookupMixin:
         self.build_connection_combo()  # ← replaces clearing _conn_map
         
     def _on_table_changed(self, table_name: str):
-        # Save selected table immediately
         setattr(self.item, "design_table", table_name)
-
         if not table_name:
             self._clear_field_combos()
             return
-
         fields = _fetch_fields_for_table(table_name)
-
         self._field_list = fields
-        opts = fields if fields else [""]
-
         for combo in (self.field_edit, self.result_combo):
-            combo._items = opts
-            combo._current = ""
-            combo._label.setText("")
+            combo.set_items(fields if fields else [])
+            combo.clear_selection()
             combo.setEnabled(bool(fields))
-            combo.setCurrentIndex(-1)
 
     def _clear_field_combos(self):
         self._field_list = []
         for combo in (self.field_edit, self.result_combo):
-            combo._items   = [""]
-            combo._current = ""
-            combo._label.setText("")
+            combo.set_items([])
+            combo.clear_selection()
             combo.setEnabled(False)
-            combo.setCurrentIndex(-1)
 
     # ── populate combos from DB on init ──────────────────────────────────────
 
@@ -131,20 +121,16 @@ class LookupMixin:
         return conn_names
 
     def restore_lookup_values(self, stored_group, stored_table, stored_field,
-                               stored_result, stored_query):
-        """Restore persisted LOOKUP values when loading a saved design."""
+                           stored_result, stored_query):
         if stored_group and stored_group in self._conn_map:
             self.group_combo.setCurrentText(stored_group)
-            self._on_group_changed(stored_group)   # force table load
-
+            self._on_group_changed(stored_group)
             if stored_table:
                 self.table_combo.setCurrentText(stored_table)
-                self._on_table_changed(stored_table)  # force field load
-
+                self._on_table_changed(stored_table)
                 if stored_field:
-                    self.field_edit.setCurrentText(stored_field)
-
+                    self.field_edit.set_selected(stored_field)   # ← was setCurrentText
                 if stored_result:
-                    self.result_combo.setCurrentText(stored_result)
+                    self.result_combo.set_selected(stored_result) # ← was setCurrentText
         if stored_query:
             self.table_extra.setText(stored_query)
