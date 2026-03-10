@@ -912,7 +912,7 @@ class BarcodeEditorPage(QWidget):
             return f"Line - {name or 'Line'}: {int(item.line().length())}px"
         if isinstance(item, QGraphicsRectItem):
             r = item.rect()
-            return f"Rectangle - {name or 'Rectangle'}: {int(r.width())}x{int(r.height())}"
+            return f"Rect - {name or 'Rect'}: {int(r.width())}x{int(r.height())}"
         return f"Item - {name or 'Item'}"
 
     def update_component_list(self):
@@ -1089,7 +1089,7 @@ class BarcodeEditorPage(QWidget):
                 1 for si in self.scene.items()
                 if isinstance(si, QGraphicsRectItem) and not si.group()
             )
-            _label = f"Rectangle{rect_count + 1}"
+            _label = f"Rect{rect_count + 1}"
             item = SelectableRectItem(0, 0, 100, 50); item.setPen(QPen(Qt.black, 2))
             item.component_name = _label; setup_item_logic(item, self.update_pos_label)
         elif kind == "line":
