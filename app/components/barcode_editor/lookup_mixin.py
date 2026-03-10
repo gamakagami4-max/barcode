@@ -64,6 +64,29 @@ class LookupMixin:
         setattr(self.item, "design_group", conn_name)
         self._clear_field_combos()
 
+    def clear_lookup_fields(self):
+        """Clear all LOOKUP field values on the item and reset the widgets."""
+        for attr in ("design_group", "design_table", "design_query",
+                    "design_field", "design_result"):
+            setattr(self.item, attr, "")
+
+        self.group_combo._items   = [""]
+        self.group_combo._current = ""
+        self.group_combo._label.setText("")
+        self.group_combo.setCurrentIndex(-1)
+
+        self.table_combo._items   = [""]
+        self.table_combo._current = ""
+        self.table_combo._label.setText("")
+        self.table_combo.setCurrentIndex(-1)
+
+        self.table_extra.setText("")
+        self._clear_field_combos()
+        self._table_map = {}
+
+        # Re-populate connections so switching back to LOOKUP still works
+        self.build_connection_combo()  # ← replaces clearing _conn_map
+        
     def _on_table_changed(self, table_name: str):
         # Save selected table immediately
         setattr(self.item, "design_table", table_name)

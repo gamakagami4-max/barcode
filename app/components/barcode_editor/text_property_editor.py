@@ -505,6 +505,10 @@ class TextPropertyEditor(
     # ── _on_type_changed: thin orchestrator ──────────────────────────────────
 
     def _on_type_changed(self, val: str):
+
+        if val != "LOOKUP":          # ← ADD THIS
+            self.clear_lookup_fields()  # ← ADD THIS
+
         is_input     = val == "INPUT"
         is_lookup    = val == "LOOKUP"
         is_same_with = val == "SAME WITH"
@@ -515,6 +519,8 @@ class TextPropertyEditor(
         is_konversi  = val == "KONVERSI TIMBANGAN"
 
         setattr(self.item, "design_type", val)
+
+       
 
         # SAME WITH (locks everything else)
         self.enable_for_same_with(is_same_with)
