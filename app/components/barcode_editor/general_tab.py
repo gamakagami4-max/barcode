@@ -192,11 +192,11 @@ class GeneralTab(QWidget):
         middle_layout.setSpacing(8)
         middle_layout.setAlignment(Qt.AlignTop)
 
-        middle_lbl = QLabel("SECTION 2 :")
+        middle_lbl = QLabel("-")
         middle_lbl.setStyleSheet(_LABEL_STYLE)
         middle_layout.addWidget(middle_lbl)
 
-        placeholder_lbl = QLabel("— coming soon —")
+        placeholder_lbl = QLabel("—")
         placeholder_lbl.setStyleSheet(
             f"color: {COLORS['text_mute']}; font-size: 10px; "
             "background: transparent; border: none;"
