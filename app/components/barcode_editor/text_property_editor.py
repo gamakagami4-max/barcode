@@ -523,6 +523,9 @@ class TextPropertyEditor(
                 self.clear_lookup_fields()
             if _prev == "SAME WITH" and not is_same_with:
                 self.clear_same_with_fields()
+            if _prev == "LINK" and not is_link:              # ← ADD THIS
+                self.clear_link_fields()
+
         self._last_type = val
 
         # SAME WITH (locks everything else)

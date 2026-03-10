@@ -87,3 +87,13 @@ class LinkMixin:
         self.table_extra.setEnabled(False)
         self.table_extra.clear()
         self.table_extra.setStyleSheet(_LINE_DISABLED)
+
+    def clear_link_fields(self):
+        """Clear LINK selection and reset all linked fields when switching away."""
+        self.item.design_link = ""
+
+        self.link_combo._current = ""
+        self.link_combo._label.setText("")
+        self.link_combo.setCurrentIndex(-1)
+
+        self._clear_link_fields()
