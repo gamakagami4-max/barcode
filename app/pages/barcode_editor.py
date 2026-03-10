@@ -356,6 +356,18 @@ class BarcodeEditorPage(QWidget):
         for btn in (self.btn_add_text, self.btn_add_rect, self.btn_add_line, self.btn_add_code):
             toolbar.addWidget(btn)
         toolbar.addStretch()
+
+        # Zoom level — Ctrl+scroll to zoom, label shows current level
+        self._zoom_level = 1.0
+        self.zoom_label = QLabel("100%")
+        self.zoom_label.setFixedWidth(44)
+        self.zoom_label.setAlignment(Qt.AlignCenter)
+        self.zoom_label.setStyleSheet(
+            "font-size:11px; color:#94A3B8; font-weight:500; background:transparent;"
+        )
+        self.zoom_label.setToolTip("Ctrl + Scroll to zoom")
+        toolbar.addWidget(self.zoom_label)
+
         editor_layout.addLayout(toolbar)
         editor_layout.addSpacing(18)
 
@@ -373,6 +385,7 @@ class BarcodeEditorPage(QWidget):
         self.view.setAlignment(Qt.AlignCenter)
         self.view.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         self.view.horizontalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
+        self.view.wheelEvent = self._view_wheel_event
 
         self._canvas_placeholder = QFrame()
         self._canvas_placeholder.setStyleSheet(
@@ -477,7 +490,7 @@ class BarcodeEditorPage(QWidget):
 
         # ── Splitter: components on top, properties on bottom ─────────────────
         splitter = QSplitter(Qt.Vertical)
-        splitter.setHandleWidth(3)
+        splitter.setHandleWidth(8)
         splitter.setStyleSheet("""
             QSplitter::handle {
                 background: #E2E8F0;
@@ -509,6 +522,7 @@ class BarcodeEditorPage(QWidget):
         self.btn_add_line.clicked.connect(lambda: self.add_element("line"))
         self.btn_add_code.clicked.connect(lambda: self.add_element("barcode"))
         self.save_btn.clicked.connect(self._on_save_clicked)
+
         self.scene.selectionChanged.connect(self.on_selection_changed)
 
         self._clipboard_item = None
@@ -1280,5 +1294,42 @@ class BarcodeEditorPage(QWidget):
             return
         if hasattr(editor, "update_position_fields"):
             editor.update_position_fields(pos)
+
+    def _view_wheel_event(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            if event.angleDelta().y() > 0:
+                self._zoom_in()
+            else:
+                self._zoom_out()
+            event.accept()
+        else:
+            # Default scroll behaviour
+            from PySide6.QtWidgets import QGraphicsView
+            QGraphicsView.wheelEvent(self.view, event)
+
+    def _zoom_in(self):
+        self._zoom_level = min(self._zoom_level * 1.25, 5.0)
+        self._apply_zoom()
+
+    def _zoom_out(self):
+        self._zoom_level = max(self._zoom_level / 1.25, 0.1)
+        self._apply_zoom()
+
+    def _zoom_fit(self):
+        if not self.view.isVisible():
+            return
+        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+        # Calculate what zoom level that corresponds to
+        transform = self.view.transform()
+        self._zoom_level = transform.m11()
+        self._update_zoom_label()
+
+    def _apply_zoom(self):
+        self.view.resetTransform()
+        self.view.scale(self._zoom_level, self._zoom_level)
+        self._update_zoom_label()
+
+    def _update_zoom_label(self):
+        self.zoom_label.setText(f"{int(self._zoom_level * 100)}%")
 
     def _update_design_subtitle(self): pass
