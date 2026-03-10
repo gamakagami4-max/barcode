@@ -169,3 +169,13 @@ class SameWithMixin:
         self.visible_combo.setCurrentText("TRUE" if getattr(self.item, "design_visible", True) else "FALSE")
         self.text_input.blockSignals(False)
         self.size_spin.blockSignals(False)
+
+    def clear_same_with_fields(self):
+        """Clear SAME WITH link and reset the combo when switching away."""
+        SameWithRegistry.unregister(self.item)
+        self.item.design_same_with = ""
+
+        self.same_with_combo._items   = [""]
+        self.same_with_combo._current = ""
+        self.same_with_combo._label.setText("")
+        self.same_with_combo.setCurrentIndex(-1)

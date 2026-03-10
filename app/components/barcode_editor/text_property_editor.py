@@ -505,10 +505,6 @@ class TextPropertyEditor(
     # ── _on_type_changed: thin orchestrator ──────────────────────────────────
 
     def _on_type_changed(self, val: str):
-
-        if val != "LOOKUP":          # ← ADD THIS
-            self.clear_lookup_fields()  # ← ADD THIS
-
         is_input     = val == "INPUT"
         is_lookup    = val == "LOOKUP"
         is_same_with = val == "SAME WITH"
@@ -520,7 +516,14 @@ class TextPropertyEditor(
 
         setattr(self.item, "design_type", val)
 
-       
+        # Only clear when the user actively switches away (not on initial load)
+        _prev = getattr(self, "_last_type", None)
+        if _prev is not None:
+            if _prev == "LOOKUP" and not is_lookup:
+                self.clear_lookup_fields()
+            if _prev == "SAME WITH" and not is_same_with:
+                self.clear_same_with_fields()
+        self._last_type = val
 
         # SAME WITH (locks everything else)
         self.enable_for_same_with(is_same_with)
