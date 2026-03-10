@@ -418,7 +418,7 @@ class TextPropertyEditor(
         # ── INPUT fields ──────────────────────────────────────────────────────
         self.data_type_combo = make_chevron_combo(["STRING", "INTEGER", "DECIMAL"])
         self.max_length_spin = make_spin(0, 9999, 1)
-        self.max_length_spin.setSpecialValueText("")
+        self.max_length_spin.setSpecialValueText(" ")
         layout.addRow(_lbl("DATA TYPE :"),  self.data_type_combo)
         layout.addRow(_lbl("MAX LENGTH :"), self.max_length_spin)
 
