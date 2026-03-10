@@ -53,12 +53,36 @@ def _get_meta(name: str):
 
 
 def _init_text_item(item: SelectableTextItem):
-    """Zero out the QTextDocument margin so the bounding rect starts at local
-    (0, 0) with no padding.  The default margin is 4 px; when the item is
-    rotated 90°/270° that horizontal padding becomes a vertical offset in scene
-    coordinates, producing a hard floor of ~30 px that the user cannot drag past.
-    Call this immediately after every SelectableTextItem is created."""
     item.document().setDocumentMargin(0)
+
+
+# ── Default barcode design attributes ─────────────────────────────────────────
+
+_BARCODE_DEFAULTS = {
+    "design_height_cm":      1.0,
+    "design_magnification":  "1",
+    "design_ratio":          "2",
+    "design_check_digit":    "-- NONE --",
+    "design_interpretation": "NO INTERPRETATION",
+    "design_type":           "FIX",
+    "design_editor":         "INVISIBLE",
+    "design_text":           "",
+    "design_caption":        "",
+    "design_group":          "",
+    "design_table":          "",
+    "design_field":          "",
+    "design_result":         "",
+    "design_format":         "",
+    "design_save_field":     "-- NOT SAVE --",
+    "design_column":         1,
+}
+
+
+def _apply_barcode_defaults(item: BarcodeItem):
+    """Set all new design attributes with defaults on a freshly created BarcodeItem."""
+    for attr, default in _BARCODE_DEFAULTS.items():
+        if not hasattr(item, attr):
+            setattr(item, attr, default)
 
 
 class ComponentItemDelegate(QStyledItemDelegate):
@@ -215,8 +239,6 @@ class BarcodeEditorPage(QWidget):
     _pending_code: str = ""
     _COUNTER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bc_counter.json")
 
-    # ── Code counter helpers ──────────────────────────────────────────────────
-
     @classmethod
     def _load_counter(cls) -> int:
         try:
@@ -260,8 +282,6 @@ class BarcodeEditorPage(QWidget):
         cls._save_counter(cls._load_counter(), "")
         return code
 
-    # ── Init ──────────────────────────────────────────────────────────────────
-
     def __init__(self):
         super().__init__()
         self._canvas_w     = 600
@@ -272,15 +292,12 @@ class BarcodeEditorPage(QWidget):
         self._h_in = self._w_in = 0.0
         self.init_ui()
 
-    # ── UI construction ───────────────────────────────────────────────────────
-
     def init_ui(self):
         self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Header / tab bar
         header_bar = QWidget()
         header_bar.setObjectName("headerBar")
         header_bar.setStyleSheet(
@@ -312,11 +329,9 @@ class BarcodeEditorPage(QWidget):
         header_layout.addWidget(self.save_btn)
         self.main_layout.addWidget(header_bar)
 
-        # Tab stack
         self._tab_stack = QStackedWidget()
         self._tab_stack.setStyleSheet("background: transparent;")
 
-        # General tab (wrapped in scroll area)
         general_scroll = QScrollArea()
         general_scroll.setWidgetResizable(True)
         general_scroll.setFrameShape(QFrame.NoFrame)
@@ -327,14 +342,12 @@ class BarcodeEditorPage(QWidget):
         general_scroll.setWidget(self.general_tab)
         self._tab_stack.addWidget(general_scroll)
 
-        # Editor tab
         editor_page = QWidget()
         editor_page.setStyleSheet(f"background: {COLORS['bg_main']};")
         editor_layout = QVBoxLayout(editor_page)
         editor_layout.setContentsMargins(40, 20, 40, 12)
         editor_layout.setSpacing(0)
 
-        # Toolbar
         self.btn_add_text = StandardButton("Text",    icon_name="fa5s.font",    variant="secondary")
         self.btn_add_rect = StandardButton("Rect",    icon_name="fa5s.square",  variant="secondary")
         self.btn_add_line = StandardButton("Line",    icon_name="fa5s.minus",   variant="secondary")
@@ -346,7 +359,6 @@ class BarcodeEditorPage(QWidget):
         editor_layout.addLayout(toolbar)
         editor_layout.addSpacing(18)
 
-        # Workspace: canvas + sidebar
         workspace = QHBoxLayout()
 
         self.scene = GridGraphicsScene(
@@ -382,7 +394,6 @@ class BarcodeEditorPage(QWidget):
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
 
-        # Sidebar
         self.sidebar = QFrame()
         self.sidebar.setMinimumWidth(280)
         self.sidebar.setStyleSheet(
@@ -392,7 +403,6 @@ class BarcodeEditorPage(QWidget):
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(10)
 
-        # Components header
         comp_header = QWidget(); comp_header.setStyleSheet("background: transparent; border: none;")
         ch_layout = QHBoxLayout(comp_header); ch_layout.setContentsMargins(2, 4, 2, 4)
         comp_icon = QLabel(); comp_icon.setPixmap(qta.icon("fa5s.layer-group", color="#6366F1").pixmap(13, 13))
@@ -424,7 +434,6 @@ class BarcodeEditorPage(QWidget):
         divider.setStyleSheet(f"background-color: {COLORS['border']}; min-height: 1px;")
         sidebar_layout.addWidget(divider)
 
-        # Properties header
         prop_header = QWidget()
         prop_header.setStyleSheet("QWidget { background: transparent; border: none; padding: 2px 0px; }")
         ph2_layout = QHBoxLayout(prop_header)
@@ -466,7 +475,6 @@ class BarcodeEditorPage(QWidget):
         self._tab_stack.addWidget(editor_page)
         self.main_layout.addWidget(self._tab_stack)
 
-        # Wire signals
         self.general_tab.stickerChanged.connect(self._on_sticker_canvas_resize)
         self.btn_add_text.clicked.connect(lambda: self.add_element("text"))
         self.btn_add_rect.clicked.connect(lambda: self.add_element("rect"))
@@ -480,8 +488,6 @@ class BarcodeEditorPage(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
         self._switch_tab(0)
-
-    # ── Shortcuts ─────────────────────────────────────────────────────────────
 
     def _setup_shortcuts(self):
         for seq, slot in (
@@ -503,14 +509,10 @@ class BarcodeEditorPage(QWidget):
             return
         super().keyPressEvent(event)
 
-    # ── Tab switching ─────────────────────────────────────────────────────────
-
     def _switch_tab(self, index: int):
         self._tab_stack.setCurrentIndex(index)
         for i, btn in enumerate(self._tab_btns):
             btn.setStyleSheet(TAB_ACTIVE_STYLE if i == index else TAB_INACTIVE_STYLE)
-
-    # ── Canvas resize ─────────────────────────────────────────────────────────
 
     def _on_sticker_canvas_resize(self, w_px: int, h_px: int):
         if w_px <= 0 or h_px <= 0:
@@ -526,8 +528,6 @@ class BarcodeEditorPage(QWidget):
         for btn in (self.btn_add_text, self.btn_add_rect, self.btn_add_line, self.btn_add_code):
             btn.setEnabled(enabled)
             btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
-
-    # ── Load / Reset ──────────────────────────────────────────────────────────
 
     def reset_for_new(self, form_data: dict | None = None):
         SameWithRegistry.clear()
@@ -659,9 +659,29 @@ class BarcodeEditorPage(QWidget):
             "aabb_y": round(item.mapToScene(item.boundingRect()).boundingRect().top(), 2),
         }
         if isinstance(item, BarcodeItem):
-            base.update({"type": "barcode", "design": item.design,
-                          "container_width": item.container_width,
-                          "container_height": item.container_height})
+            base.update({
+                "type":             "barcode",
+                "design":           item.design,
+                "container_width":  item.container_width,
+                "container_height": item.container_height,
+                # ── new fields ──────────────────────────────────────────────
+                "design_height_cm":      getattr(item, "design_height_cm",      1.0),
+                "design_magnification":  getattr(item, "design_magnification",  "1"),
+                "design_ratio":          getattr(item, "design_ratio",          "2"),
+                "design_check_digit":    getattr(item, "design_check_digit",    "-- NONE --"),
+                "design_interpretation": getattr(item, "design_interpretation", "NO INTERPRETATION"),
+                "design_type":           getattr(item, "design_type",           "FIX"),
+                "design_editor":         getattr(item, "design_editor",         "INVISIBLE"),
+                "design_text":           getattr(item, "design_text",           ""),
+                "design_caption":        getattr(item, "design_caption",        ""),
+                "design_group":          getattr(item, "design_group",          ""),
+                "design_table":          getattr(item, "design_table",          ""),
+                "design_field":          getattr(item, "design_field",          ""),
+                "design_result":         getattr(item, "design_result",         ""),
+                "design_format":         getattr(item, "design_format",         ""),
+                "design_save_field":     getattr(item, "design_save_field",     "-- NOT SAVE --"),
+                "design_column":         getattr(item, "design_column",         1),
+            })
             return base
         if isinstance(item, QGraphicsTextItem):
             font = item.font()
@@ -720,8 +740,6 @@ class BarcodeEditorPage(QWidget):
             item = None
             if kind == "text":
                 item = SelectableTextItem(d.get("text", ""))
-                # Zero document margin immediately — must happen before any
-                # bounding-rect or position calculations to avoid the 30px offset.
                 _init_text_item(item)
                 font = QFont(d.get("font_family", "Arial"), d.get("font_size", 10))
                 font.setBold(d.get("bold", False)); font.setItalic(d.get("italic", False))
@@ -761,6 +779,10 @@ class BarcodeEditorPage(QWidget):
                 item.container_height = d.get("container_height", 80)
                 item.component_name   = d.get("name", "Barcode")
                 item.bg.setRect(0, 0, item.container_width, item.container_height)
+                # ── restore new fields (fall back to defaults for old saves) ──
+                for attr, default in _BARCODE_DEFAULTS.items():
+                    setattr(item, attr, d.get(attr, default))
+                item.design_column = int(item.design_column or 1)
             if item is None:
                 continue
             item.setZValue(d.get("z", 0))
@@ -771,7 +793,6 @@ class BarcodeEditorPage(QWidget):
             if _rotation != 0:
                 br = item.boundingRect()
                 item.setTransformOriginPoint(br.center())
-            # x/y in JSON is visual AABB top-left — back-calculate pos()
             item.setPos(0, 0)
             _aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
             _off_x = _aabb0.left()
@@ -793,8 +814,6 @@ class BarcodeEditorPage(QWidget):
             "itrm": _json.dumps({"canvas_w": self._canvas_w, "canvas_h": self._canvas_h},
                                  separators=(",", ":")),
         }
-
-    # ── Save ──────────────────────────────────────────────────────────────────
 
     def _on_save_clicked(self):
         selected_sticker = self.general_tab.sticker_combo.currentText()
@@ -827,8 +846,6 @@ class BarcodeEditorPage(QWidget):
         })
         self.design_saved.emit(payload)
 
-    # ── Z-order ───────────────────────────────────────────────────────────────
-
     def sync_z_order_from_list(self):
         count = self.component_list.count()
         for i in range(count):
@@ -836,8 +853,6 @@ class BarcodeEditorPage(QWidget):
             gi = getattr(li, 'graphics_item', None)
             if gi:
                 gi.setZValue(count - i)
-
-    # ── Component management ──────────────────────────────────────────────────
 
     def delete_component(self, row, confirmed=False):
         li = self.component_list.item(row)
@@ -941,17 +956,9 @@ class BarcodeEditorPage(QWidget):
         self.update_component_list()
 
     def _propagate_rename(self, old_name: str, new_name: str):
-        """
-        Update every scene item that references old_name in any name-ref
-        attribute.  design_merge is comma-separated (multi-select), so each
-        segment is checked individually.  All other fields are single values.
-        """
         SINGLE_NAME_ATTRS = (
-            "design_same_with",
-            "design_link",
-            "design_timbangan",
-            "design_weight",
-            "design_um",
+            "design_same_with", "design_link",
+            "design_timbangan", "design_weight", "design_um",
         )
         for si in self.scene.items():
             for attr in SINGLE_NAME_ATTRS:
@@ -970,11 +977,8 @@ class BarcodeEditorPage(QWidget):
             return
 
         for combo in (
-            editor.same_with_combo,
-            editor.link_combo,
-            editor.timbangan_combo,
-            editor.weight_combo,
-            editor.um_combo,
+            editor.same_with_combo, editor.link_combo,
+            editor.timbangan_combo, editor.weight_combo, editor.um_combo,
         ):
             combo._items = [new_name if x == old_name else x for x in combo._items]
             if getattr(combo, "_current", None) == old_name:
@@ -985,7 +989,6 @@ class BarcodeEditorPage(QWidget):
             mc = editor.merge_combo
             mc._items    = [new_name if x == old_name else x for x in mc._items]
             mc._selected = [new_name if x == old_name else x for x in mc._selected]
-            # Refresh the displayed label — try known method names defensively.
             for _refresh in ("_refresh_button_label", "_update_label",
                              "_refresh_label", "_update_display", "refresh"):
                 fn = getattr(mc, _refresh, None)
@@ -1061,7 +1064,6 @@ class BarcodeEditorPage(QWidget):
             )
             _label = f"label{text_count + 1}"
             item = SelectableTextItem(_label)
-            # Zero document margin immediately so AABB = actual text bounds.
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
             item.component_name = _label
@@ -1089,6 +1091,7 @@ class BarcodeEditorPage(QWidget):
             item.component_name = "Line"; setup_item_logic(item, self.update_pos_label)
         elif kind == "barcode":
             item = BarcodeItem(self.update_pos_label)
+            _apply_barcode_defaults(item)   # ← set all new attrs with defaults
         if not isinstance(item, BarcodeItem):
             item.setFlags(flags)
         self.scene.addItem(item)
@@ -1099,8 +1102,6 @@ class BarcodeEditorPage(QWidget):
         item.setSelected(True)
         item.setPos(50, 50)
         self.sync_z_order_from_list()
-
-    # ── Copy / paste / duplicate ──────────────────────────────────────────────
 
     def _copy_selected(self):
         selected = self.scene.selectedItems()
@@ -1137,7 +1138,6 @@ class BarcodeEditorPage(QWidget):
         kind = data.get('type')
         if kind == 'text':
             item = SelectableTextItem(data.get('text', ''))
-            # Zero document margin immediately so AABB = actual text bounds.
             _init_text_item(item)
             font = QFont(data.get('font_family', 'Arial'), data.get('font_size', 10))
             font.setBold(data.get('bold', False)); font.setItalic(data.get('italic', False))
@@ -1170,6 +1170,8 @@ class BarcodeEditorPage(QWidget):
             item.container_height = data.get('container_height', 80)
             item.component_name = data.get('name', 'Barcode')
             item.bg.setRect(0, 0, item.container_width, item.container_height)
+            for attr, default in _BARCODE_DEFAULTS.items():
+                setattr(item, attr, data.get(attr, default))
         else:
             return None
         item.setPos(data.get('x', 0), data.get('y', 0))
@@ -1178,8 +1180,6 @@ class BarcodeEditorPage(QWidget):
         item.setVisible(True)
         item.setRotation(data.get('rotation', 0))
         return item
-
-    # ── SAME WITH helpers ─────────────────────────────────────────────────────
 
     def _sync_same_with_items(self):
         name_to_item = {
@@ -1222,8 +1222,6 @@ class BarcodeEditorPage(QWidget):
             source = name_to_item.get(ref_name)
             if source and source is not si and getattr(source, "design_type", "") != "SAME WITH":
                 SameWithRegistry.register(si, source)
-
-    # ── Position label update ─────────────────────────────────────────────────
 
     def update_pos_label(self, pos):
         editor = getattr(self, "current_editor", None)
