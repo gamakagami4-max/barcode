@@ -1055,11 +1055,16 @@ class BarcodeEditorPage(QWidget):
                  | QGraphicsItem.ItemIsSelectable
                  | QGraphicsItem.ItemSendsGeometryChanges)
         if kind == "text":
-            item = SelectableTextItem("LABEL_VAR")
+            text_count = sum(
+                1 for si in self.scene.items()
+                if isinstance(si, QGraphicsTextItem) and not si.group()
+            )
+            _label = f"label{text_count + 1}"
+            item = SelectableTextItem(_label)
             # Zero document margin immediately so AABB = actual text bounds.
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
-            item.component_name = "Text"
+            item.component_name = _label
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
                          "design_query", "design_field", "design_result", "design_merge",
                          "design_timbangan", "design_weight", "design_um",
