@@ -1062,7 +1062,7 @@ class BarcodeEditorPage(QWidget):
                 1 for si in self.scene.items()
                 if isinstance(si, QGraphicsTextItem) and not si.group()
             )
-            _label = f"LABEL{text_count + 1}"
+            _label = f"Label{text_count + 1}"
             item = SelectableTextItem(_label)
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
@@ -1083,15 +1083,32 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_text    = False
             item.design_wrap_width   = 1
             setup_item_logic(item, self.update_pos_label)
+        # AFTER
         elif kind == "rect":
+            rect_count = sum(
+                1 for si in self.scene.items()
+                if isinstance(si, QGraphicsRectItem) and not si.group()
+            )
+            _label = f"Rectangle{rect_count + 1}"
             item = SelectableRectItem(0, 0, 100, 50); item.setPen(QPen(Qt.black, 2))
-            item.component_name = "Rectangle"; setup_item_logic(item, self.update_pos_label)
+            item.component_name = _label; setup_item_logic(item, self.update_pos_label)
         elif kind == "line":
+            line_count = sum(
+                1 for si in self.scene.items()
+                if isinstance(si, QGraphicsLineItem) and not si.group()
+            )
+            _label = f"Line{line_count + 1}"
             item = SelectableLineItem(0, 0, 100, 0); item.setPen(QPen(Qt.black, 2))
-            item.component_name = "Line"; setup_item_logic(item, self.update_pos_label)
+            item.component_name = _label; setup_item_logic(item, self.update_pos_label)
         elif kind == "barcode":
+            barcode_count = sum(
+                1 for si in self.scene.items()
+                if isinstance(si, BarcodeItem) and not si.group()
+            )
+            _label = f"Barcode{barcode_count + 1}"
             item = BarcodeItem(self.update_pos_label)
-            _apply_barcode_defaults(item)   # ← set all new attrs with defaults
+            item.component_name = _label
+            _apply_barcode_defaults(item)
         if not isinstance(item, BarcodeItem):
             item.setFlags(flags)
         self.scene.addItem(item)
