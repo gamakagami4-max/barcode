@@ -689,7 +689,8 @@ class BarcodeEditorPage(QWidget):
                 "type": "text", "text": item.toPlainText(),
                 "font_size": font.pointSize(), "font_family": font.family(),
                 "bold": font.bold(), "italic": font.italic(),
-                "color": item.defaultTextColor().name(),
+                # AFTER
+                "color": item._original_color.name() if hasattr(item, "_original_color") else item.defaultTextColor().name(),
                 "inverse":             getattr(item, "design_inverse",       False),
                 "design_same_with":    getattr(item, "design_same_with",     ""),
                 "design_link":         getattr(item, "design_link",          ""),
@@ -844,6 +845,13 @@ class BarcodeEditorPage(QWidget):
             "h_in":         h_in,
             "w_in":         w_in,
         })
+        # AFTER
+        self.scene.clearSelection()
+        # Force-reset any text items that may still visually appear selected
+        for item in self.scene.items():
+            if isinstance(item, SelectableTextItem) and not item.isSelected():
+                item.setDefaultTextColor(item._original_color)
+        self.scene.update()
         self.design_saved.emit(payload)
 
     def sync_z_order_from_list(self):

@@ -7,15 +7,23 @@ from PySide6.QtGui import QColor, QPen, QBrush, QFont
 from components.barcode_editor.utils import keep_within_bounds
 
 
+# AFTER
 class SelectableTextItem(QGraphicsTextItem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._original_color = QColor("#000000")
 
+    def setDefaultTextColor(self, color: QColor):
+        # Never let red bleed into _original_color
+        if color != QColor("#EF4444"):
+            self._original_color = QColor(color)
+        super().setDefaultTextColor(color)
+
+    # AFTER
     def itemChange(self, change, value):
         if change == QGraphicsTextItem.ItemSelectedChange:
             if value:
-                self._original_color = QColor("#000000")
+                self._original_color = self.defaultTextColor()  # save actual current color
                 self.setDefaultTextColor(QColor("#EF4444"))
             else:
                 self.setDefaultTextColor(self._original_color)
