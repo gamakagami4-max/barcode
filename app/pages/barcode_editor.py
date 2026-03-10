@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QGraphicsRectItem, QGraphicsTextItem, QGraphicsLineItem,
     QListWidget, QListWidgetItem, QApplication, QScrollArea,
     QSizePolicy, QStackedWidget, QPushButton, QLineEdit,
-    QStyledItemDelegate, QStyle,
+    QStyledItemDelegate, QStyle, QSplitter,
 )
 from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal
 from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QCursor, QShortcut, QKeySequence
@@ -394,6 +394,7 @@ class BarcodeEditorPage(QWidget):
         self.view.setVisible(False)
         self._canvas_placeholder.setVisible(True)
 
+        # ── Sidebar ───────────────────────────────────────────────────────────
         self.sidebar = QFrame()
         self.sidebar.setMinimumWidth(280)
         self.sidebar.setStyleSheet(
@@ -403,6 +404,7 @@ class BarcodeEditorPage(QWidget):
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(10)
 
+        # ── Components header ─────────────────────────────────────────────────
         comp_header = QWidget(); comp_header.setStyleSheet("background: transparent; border: none;")
         ch_layout = QHBoxLayout(comp_header); ch_layout.setContentsMargins(2, 4, 2, 4)
         comp_icon = QLabel(); comp_icon.setPixmap(qta.icon("fa5s.layer-group", color="#6366F1").pixmap(13, 13))
@@ -416,6 +418,7 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addWidget(self.comp_count_badge)
         sidebar_layout.addWidget(comp_header)
 
+        # ── Component list ────────────────────────────────────────────────────
         self.component_list = DeleteSignalList()
         self.component_list.setSpacing(2)
         self.component_list.setMouseTracking(True)
@@ -428,11 +431,13 @@ class BarcodeEditorPage(QWidget):
         self.component_list.setItemDelegate(ComponentItemDelegate(self.component_list))
         self.component_list.delete_item_requested.connect(self.delete_component)
         self.component_list.itemClicked.connect(self.sync_selection_from_list)
-        sidebar_layout.addWidget(self.component_list, stretch=2)
 
-        divider = QFrame(); divider.setFrameShape(QFrame.HLine)
-        divider.setStyleSheet(f"background-color: {COLORS['border']}; min-height: 1px;")
-        sidebar_layout.addWidget(divider)
+        # ── Properties panel ──────────────────────────────────────────────────
+        prop_panel = QWidget()
+        prop_panel.setStyleSheet("background: transparent; border: none;")
+        prop_panel_layout = QVBoxLayout(prop_panel)
+        prop_panel_layout.setContentsMargins(0, 0, 0, 0)
+        prop_panel_layout.setSpacing(4)
 
         prop_header = QWidget()
         prop_header.setStyleSheet("QWidget { background: transparent; border: none; padding: 2px 0px; }")
@@ -453,7 +458,7 @@ class BarcodeEditorPage(QWidget):
         """)
         self.prop_name_input.textChanged.connect(self.update_current_component_name)
         ph2_layout.addWidget(self.prop_name_input, stretch=1)
-        sidebar_layout.addWidget(prop_header)
+        prop_panel_layout.addWidget(prop_header)
 
         self.scroll_area = ConstrainedScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -468,7 +473,30 @@ class BarcodeEditorPage(QWidget):
         self.inspector_layout = QVBoxLayout(self.inspector_widget)
         self.inspector_layout.setAlignment(Qt.AlignTop)
         self.scroll_area.setWidget(self.inspector_widget)
-        sidebar_layout.addWidget(self.scroll_area, stretch=3)
+        prop_panel_layout.addWidget(self.scroll_area)
+
+        # ── Splitter: components on top, properties on bottom ─────────────────
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setHandleWidth(3)
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background: #E2E8F0;
+                border-top: 1px solid #CBD5E1;
+                border-bottom: 1px solid #CBD5E1;
+            }
+            QSplitter::handle:hover {
+                background: #C7D2FE;
+            }
+            QSplitter::handle:pressed {
+                background: #A5B4FC;
+            }
+        """)
+        splitter.addWidget(self.component_list)
+        splitter.addWidget(prop_panel)
+        splitter.setSizes([200, 300])
+        splitter.setChildrenCollapsible(False)
+
+        sidebar_layout.addWidget(splitter, stretch=1)
 
         workspace.addWidget(self.sidebar, stretch=1)
         editor_layout.addLayout(workspace)
@@ -583,7 +611,6 @@ class BarcodeEditorPage(QWidget):
         self.general_tab.code_input.setText(self._design_code)
         self._switch_tab(0)
 
-    # AFTER
     def load_design(self, row_data: tuple, row_dict: dict | None):
         real_pk = str(row_dict.get("pk", "")) if row_dict else (str(row_data[0]) if row_data else "")
         stub = {"pk": real_pk, "name": "", "sticker_name": "", "h_in": 0.0,
@@ -666,7 +693,6 @@ class BarcodeEditorPage(QWidget):
                 "design":           item.design,
                 "container_width":  item.container_width,
                 "container_height": item.container_height,
-                # ── new fields ──────────────────────────────────────────────
                 "design_height_cm":      getattr(item, "design_height_cm",      1.0),
                 "design_magnification":  getattr(item, "design_magnification",  "1"),
                 "design_ratio":          getattr(item, "design_ratio",          "2"),
@@ -691,7 +717,6 @@ class BarcodeEditorPage(QWidget):
                 "type": "text", "text": item.toPlainText(),
                 "font_size": font.pointSize(), "font_family": font.family(),
                 "bold": font.bold(), "italic": font.italic(),
-                # AFTER
                 "color": item._original_color.name() if hasattr(item, "_original_color") else item.defaultTextColor().name(),
                 "inverse":             getattr(item, "design_inverse",       False),
                 "design_same_with":    getattr(item, "design_same_with",     ""),
@@ -782,7 +807,6 @@ class BarcodeEditorPage(QWidget):
                 item.container_height = d.get("container_height", 80)
                 item.component_name   = d.get("name", "Barcode")
                 item.bg.setRect(0, 0, item.container_width, item.container_height)
-                # ── restore new fields (fall back to defaults for old saves) ──
                 for attr, default in _BARCODE_DEFAULTS.items():
                     setattr(item, attr, d.get(attr, default))
                 item.design_column = int(item.design_column or 1)
@@ -847,9 +871,7 @@ class BarcodeEditorPage(QWidget):
             "h_in":         h_in,
             "w_in":         w_in,
         })
-        # AFTER
         self.scene.clearSelection()
-        # Force-reset any text items that may still visually appear selected
         for item in self.scene.items():
             if isinstance(item, SelectableTextItem) and not item.isSelected():
                 item.setDefaultTextColor(item._original_color)
@@ -1093,7 +1115,6 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_text    = False
             item.design_wrap_width   = 1
             setup_item_logic(item, self.update_pos_label)
-        # AFTER
         elif kind == "rect":
             rect_count = sum(
                 1 for si in self.scene.items()
