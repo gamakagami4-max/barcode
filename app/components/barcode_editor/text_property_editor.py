@@ -112,13 +112,17 @@ class InlineChecklistWidget(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setMinimumHeight(0)
-        self._scroll.setMaximumHeight(150)
+        self._scroll.setMaximumHeight(160)
         self._scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self._scroll.setStyleSheet(
             "QScrollArea{background:transparent;border:none;}"
-            "QScrollBar:vertical{background:#F8FAFC;width:6px;border-radius:3px;}"
-            "QScrollBar::handle:vertical{background:#CBD5E1;border-radius:3px;min-height:20px;}"
+            "QScrollBar:vertical{"
+            "  background:#F1F5F9;width:8px;border-radius:4px;margin:2px 2px 2px 0px;}"
+            "QScrollBar::handle:vertical{"
+            "  background:#94A3B8;border-radius:4px;min-height:24px;}"
+            "QScrollBar::handle:vertical:hover{background:#6366F1;}"
             "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0px;}"
         )
         self._rows_widget = QWidget()
@@ -152,13 +156,13 @@ class InlineChecklistWidget(QWidget):
         super().setEnabled(enabled)
         if enabled:
             self._apply_enabled_appearance()
-            ROW_H, SPACING, MARGINS = 22, 2, 8
+            ROW_H, SPACING, MARGINS, MAX_H = 22, 2, 8, 160
             n = len(self._items)
             if n == 0:
                 self._scroll.setFixedHeight(28)
             else:
                 content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
-                self._scroll.setFixedHeight(min(max(content_h, ROW_H + MARGINS), 150))
+                self._scroll.setFixedHeight(min(content_h, MAX_H))
         else:
             self._apply_disabled_appearance()
 
@@ -229,13 +233,12 @@ class InlineChecklistWidget(QWidget):
             self._rows[name] = (row_w, box, txt)
 
         self._refresh_row_styles()
-        # Resize scroll area to hug content, capped at max height.
-        # Calculate directly from item count — sizeHint is unreliable before
-        # Qt has completed a layout pass.
-        ROW_H, SPACING, MARGINS = 22, 2, 8
+        # Set inner widget height to exact content size so scroll area can overflow it.
+        # Set scroll area height to content up to MAX_H — beyond that scrollbar appears.
+        ROW_H, SPACING, MARGINS, MAX_H = 22, 2, 8, 160
         n = len(self._items)
         content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
-        self._scroll.setFixedHeight(min(max(content_h, ROW_H + MARGINS), 150))
+        self._scroll.setFixedHeight(min(content_h, MAX_H))
 
     def _toggle_only(self, name: str):
         """Toggle checkbox and set focus to this row."""
