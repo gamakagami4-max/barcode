@@ -916,7 +916,7 @@ class BarcodeEditorPage(QWidget):
                 continue
             li = QListWidgetItem(self.get_component_display_name(item))
             li.graphics_item = item
-            self.component_list.insertItem(0, li)
+            self.component_list.addItem(li)
         sel = self.scene.selectedItems()
         if sel:
             for i in range(self.component_list.count()):
@@ -1089,7 +1089,7 @@ class BarcodeEditorPage(QWidget):
         self.scene.addItem(item)
         li = QListWidgetItem(self.get_component_display_name(item))
         li.graphics_item = item
-        self.component_list.insertItem(0, li)
+        self.component_list.addItem(li)
         self.comp_count_badge.setText(str(self.component_list.count()))
         item.setSelected(True)
         item.setPos(50, 50)
@@ -1115,7 +1115,7 @@ class BarcodeEditorPage(QWidget):
         self.scene.addItem(item)
         li = QListWidgetItem(self.get_component_display_name(item))
         li.graphics_item = item
-        self.component_list.insertItem(0, li)
+        self.component_list.addItem(li)
         self.comp_count_badge.setText(str(self.component_list.count()))
         self.scene.clearSelection()
         item.setSelected(True)
