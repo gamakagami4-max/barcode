@@ -583,8 +583,10 @@ class BarcodeEditorPage(QWidget):
         self.general_tab.code_input.setText(self._design_code)
         self._switch_tab(0)
 
+    # AFTER
     def load_design(self, row_data: tuple, row_dict: dict | None):
-        stub = {"pk": "", "name": "", "sticker_name": "", "h_in": 0.0,
+        real_pk = str(row_dict.get("pk", "")) if row_dict else (str(row_data[0]) if row_data else "")
+        stub = {"pk": real_pk, "name": "", "sticker_name": "", "h_in": 0.0,
                 "w_in": 0.0, "h_px": 0, "w_px": 0, "dp_fg": 0}
         self.reset_for_new(stub)
         if row_dict:
