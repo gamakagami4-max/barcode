@@ -34,6 +34,28 @@ class LinkMixin:
             self.item.design_link = ""
             self._clear_link_fields()
 
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _set_combo_value(self, combo, val: str):
+        """Set value on a chevron combo, InlineChecklistWidget, or MultiSelectCombo safely."""
+        from components.barcode_editor.text_property_editor import InlineChecklistWidget
+        from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
+        if isinstance(combo, (InlineChecklistWidget, MultiSelectCombo)):
+            combo.set_selected(val)
+        else:
+            combo._current = val
+            combo._label.setText(val)
+
+    def _clear_combo_value(self, combo):
+        """Clear value on a chevron combo, InlineChecklistWidget, or MultiSelectCombo safely."""
+        from components.barcode_editor.text_property_editor import InlineChecklistWidget
+        from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
+        if isinstance(combo, (InlineChecklistWidget, MultiSelectCombo)):
+            combo.clear_selection()
+        else:
+            combo._current = ""
+            combo._label.setText("")
+
     # ── core logic ────────────────────────────────────────────────────────────
 
     def _apply_link_fields(self, source_name: str):
@@ -66,8 +88,7 @@ class LinkMixin:
         ):
             val = getattr(self.item, attr, "")
             combo.setEnabled(False)
-            combo._current = val
-            combo._label.setText(val)
+            self._set_combo_value(combo, val)
 
         self.table_extra.setEnabled(False)
         self.table_extra.setText(self.item.design_query)
@@ -81,8 +102,7 @@ class LinkMixin:
         for combo in (self.group_combo, self.table_combo,
                       self.field_edit, self.result_combo):
             combo.setEnabled(False)
-            combo._current = ""
-            combo._label.setText("")
+            self._clear_combo_value(combo)
 
         self.table_extra.setEnabled(False)
         self.table_extra.clear()
