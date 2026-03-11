@@ -515,7 +515,29 @@ class TextPropertyEditor(
         layout.addRow(_lbl("TABLE :"),  self.table_combo)
         layout.addRow(_lbl("QUERY :"),  self.table_extra)
         layout.addRow(_lbl("FIELD :"),  self.field_edit)
-        layout.addRow(_lbl("RESULT :"), self.result_combo)
+
+        # RESULT + TRIM checkbox on the same row
+        result_trim_row = QWidget()
+        result_trim_row.setStyleSheet("background:transparent;border:none;")
+        result_trim_layout = QHBoxLayout(result_trim_row)
+        result_trim_layout.setContentsMargins(0, 0, 0, 0)
+        result_trim_layout.setSpacing(6)
+        result_trim_layout.addWidget(self.result_combo, 1)
+
+        self._trim_checked = False
+        self.trim_box = QLabel()
+        self.trim_box.setFixedSize(14, 14)
+        self.trim_box.setCursor(Qt.PointingHandCursor)
+        self._set_trim_style(False)
+        self.trim_box.mousePressEvent = self._toggle_trim
+        trim_lbl = QLabel("TRIM")
+        trim_lbl.setStyleSheet(
+            f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; "
+            "background: transparent; border: none;"
+        )
+        result_trim_layout.addWidget(self.trim_box)
+        result_trim_layout.addWidget(trim_lbl)
+        layout.addRow(_lbl("RESULT :"), result_trim_row)
 
         self.build_connection_combo()
         self.group_combo.currentTextChanged.connect(self._on_group_changed)
@@ -578,28 +600,6 @@ class TextPropertyEditor(
         )
         layout.addRow(_lbl("WRAP TEXT :"),  self.wrap_combo)
         layout.addRow(_lbl("WRAP WIDTH :"), self.wrap_width_spin)
-
-        # Trim checkbox row
-        self._trim_checked = False
-        trim_row = QWidget()
-        trim_row.setStyleSheet("background: transparent; border: none;")
-        trim_layout = QHBoxLayout(trim_row)
-        trim_layout.setContentsMargins(0, 0, 0, 0)
-        trim_layout.setSpacing(6)
-        self.trim_box = QLabel()
-        self.trim_box.setFixedSize(14, 14)
-        self.trim_box.setCursor(Qt.PointingHandCursor)
-        self._set_trim_style(False)
-        self.trim_box.mousePressEvent = self._toggle_trim
-        trim_layout.addWidget(self.trim_box)
-        trim_lbl = QLabel("TRIM")
-        trim_lbl.setStyleSheet(
-            f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; "
-            "background: transparent; border: none;"
-        )
-        trim_layout.addWidget(trim_lbl)
-        trim_layout.addStretch()
-        layout.addRow(_lbl(""), trim_row)
 
         self.format_edit = QLineEdit()
         self.format_edit.setStyleSheet(MODERN_INPUT_STYLE)
