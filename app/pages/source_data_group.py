@@ -320,7 +320,25 @@ def _build_form_schema(
         {"name": "changed_no", "label": "Changed No", "type": "readonly"},
     ]
 
+_FIELDS_WRAP_PX = 320
 
+def _wrap_fields_by_width(fields_text: str, max_px: int = _FIELDS_WRAP_PX) -> str:
+        if not fields_text:
+            return fields_text
+        fm = _get_fm()
+        fields = [f.strip() for f in fields_text.split(",") if f.strip()]
+        lines, current = [], ""
+        for field in fields:
+            candidate = f"{current}, {field}" if current else field
+            if fm.horizontalAdvance(candidate) <= max_px:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = field
+        if current:
+            lines.append(current)
+        return "\n".join(lines)
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 class SourceDataPage(QWidget):
@@ -499,15 +517,7 @@ class SourceDataPage(QWidget):
 
         # FIELDS
         fields_text = row[12] if len(row) > 12 else ""
-        if fields_text and len(fields_text) > 60:
-            _flds = [f.strip() for f in fields_text.split(",") if f.strip()]
-            _per_line = 4
-            fields_display = "\n".join(
-                ", ".join(_flds[i:i + _per_line])
-                for i in range(0, len(_flds), _per_line)
-            )
-        else:
-            fields_display = fields_text
+        fields_display = _wrap_fields_by_width(fields_text)
         self.table.setItem(r, 3, self._make_item(fields_display))
 
         # QUERY
