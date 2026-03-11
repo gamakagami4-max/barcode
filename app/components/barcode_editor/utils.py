@@ -274,7 +274,15 @@ class _ComboDropdown(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
         content_h = self._PAD * 2 + len(self._options) * (self._ITEM_H + 2)
-        self.setFixedWidth(max(width, 160))
+
+        # ── FIX: auto-size width to fit the longest option text ──────────────
+        opt_font = QFont()
+        opt_font.setPointSize(9)
+        fm = QFontMetrics(opt_font)
+        max_text_w = max((fm.horizontalAdvance(o) for o in self._options), default=0)
+        # btn left+right padding (8+8) + scrollbar room (8) + border (2) + frame padding
+        min_content_w = max_text_w + 8 + 8 + 8 + 2 + self._PAD * 2
+        self.setFixedWidth(max(width, min_content_w, 160))
         self.setFixedHeight(min(content_h + 2, self._MAX_H))
 
     def _style_btn(self, btn, selected):
@@ -304,14 +312,25 @@ class _ComboDropdown(QFrame):
             self._style_btn(btn, btn.text() == option)
 
     def popup_below(self, trigger):
-        self.setFixedWidth(max(trigger.width(), 160))
         screen = QApplication.primaryScreen().availableGeometry()
+
+        # Resize width to at least trigger width (content width already set in _build)
+        new_w = max(self.width(), trigger.width())
+        self.setFixedWidth(new_w)
+
         pos_below = trigger.mapToGlobal(trigger.rect().bottomLeft())
+
+        # ── FIX: clamp x so dropdown never bleeds off the right (or left) edge ──
+        x = pos_below.x()
+        if x + self.width() > screen.right():
+            x = screen.right() - self.width()
+        x = max(screen.left(), x)
+
         if screen.bottom() - pos_below.y() < self.height():
             pos_above = trigger.mapToGlobal(trigger.rect().topLeft())
-            self.move(pos_above.x(), pos_above.y() - self.height())
+            self.move(x, pos_above.y() - self.height())
         else:
-            self.move(pos_below)
+            self.move(x, pos_below.y())
         self.show()
         self.raise_()
 
