@@ -85,7 +85,7 @@ class ComponentItemDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         # Force every row to be exactly ROW_H pixels tall
-        return QSize(option.rect.width(), self.ROW_H)
+        return QSize(0, self.ROW_H)
 
     def paint(self, painter, option, index):
         painter.save()
@@ -482,6 +482,7 @@ class BarcodeEditorPage(QWidget):
         self.component_list.viewport().setMouseTracking(True)
         self.component_list.setSelectionMode(QListWidget.SingleSelection)
         self.component_list.setFocusPolicy(Qt.NoFocus)
+        self.component_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.component_list.setStyleSheet(
             f"QListWidget {{ border: none; background: transparent; outline: none; }}\n{MODERN_SCROLLBAR_STYLE}"
         )
