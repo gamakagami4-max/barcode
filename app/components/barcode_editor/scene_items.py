@@ -96,19 +96,22 @@ class BarcodeItem(QGraphicsItemGroup):
         self._draw_bars(design)
 
     def _draw_bars(self, design: str):
-        if design == "MINIMAL":
-            bar_pattern = [4, 2, 4, 2, 4, 2, 4]
-        elif design == "EAN13":
-            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
-        elif design == "CODE39":
-            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
-        elif design == "QR MOCK":
+        _2D_DESIGNS = {"AZTEC (2D)", "DATA MATRIX (2D)", "QR (2D)"}
+        _EAN_DESIGNS = {"EAN 13", "EAN 8", "UPC A"}
+        _CODE39_DESIGNS = {"CODE 39", "CODE 93", "CODE 11", "INTERLEAVED 2 OF 5"}
+
+        if design in _2D_DESIGNS:
             sq = QGraphicsRectItem(40, 15, 50, 50)
             sq.setBrush(QBrush(Qt.black))
             sq.setPen(Qt.NoPen)
             self.addToGroup(sq)
             bar_pattern = []
+        elif design in _EAN_DESIGNS:
+            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
+        elif design in _CODE39_DESIGNS:
+            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
         else:
+            # CODE 128, CODE 128-A/B/C (default linear pattern)
             bar_pattern = [3, 2, 3, 2, 2, 3, 2, 3, 3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 3]
 
         x_offset = 15

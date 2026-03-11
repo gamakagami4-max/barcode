@@ -238,8 +238,20 @@ class BarcodePropertyEditor(QWidget):
 
         # ── BARCODE TYPE ──────────────────────────────────────────────────────
         self.barcode_type_combo = make_chevron_combo([
-            "CODE128", "AZTEC (2D)", "EAN13", "CODE39", "QR MOCK",
-            "MINIMAL", "PDF417", "DATAMATRIX",
+            "AZTEC (2D)",
+            "CODE 11",
+            "CODE 128",
+            "CODE 128-A",
+            "CODE 128-B",
+            "CODE 128-C",
+            "CODE 39",
+            "CODE 93",
+            "DATA MATRIX (2D)",
+            "EAN 13",
+            "EAN 8",
+            "INTERLEAVED 2 OF 5",
+            "QR (2D)",
+            "UPC A",
         ])
         self.barcode_type_combo.setCurrentText(
             getattr(self.item, "design", "CODE128")
@@ -541,20 +553,23 @@ class BarcodePropertyEditor(QWidget):
         self.item.bg.setBrush(QBrush(QColor(255, 255, 255, 100)))
         self.item.addToGroup(self.item.bg)
 
-        if new_design == "MINIMAL":
-            bar_pattern = [4, 2, 4, 2, 4, 2, 4]
-        elif new_design in ("EAN13",):
-            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
-        elif new_design == "CODE39":
-            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
-        elif new_design in ("QR MOCK", "AZTEC (2D)", "DATAMATRIX"):
+        _2D_DESIGNS = {"AZTEC (2D)", "DATA MATRIX (2D)", "QR (2D)"}
+        _EAN_DESIGNS = {"EAN 13", "EAN 8", "UPC A"}
+        _CODE39_DESIGNS = {"CODE 39", "CODE 93", "CODE 11", "INTERLEAVED 2 OF 5"}
+
+        if new_design in _2D_DESIGNS:
             from PySide6.QtWidgets import QGraphicsRectItem as _Rect
             sq = _Rect(40, 15, 50, 50)
             sq.setBrush(QBrush(_Qt.black))
             sq.setPen(_Qt.NoPen)
             self.item.addToGroup(sq)
             bar_pattern = []
+        elif new_design in _EAN_DESIGNS:
+            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
+        elif new_design in _CODE39_DESIGNS:
+            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
         else:
+            # CODE 128, CODE 128-A, CODE 128-B, CODE 128-C
             bar_pattern = [3, 2, 3, 2, 2, 3, 2, 3, 3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 3]
 
         x_offset = 15
@@ -574,7 +589,6 @@ class BarcodePropertyEditor(QWidget):
 
         self.item.setPos(old_scene_pos)
         self.update_callback()
-
     # ── Size / position ───────────────────────────────────────────────────────
 
     def update_size(self):
