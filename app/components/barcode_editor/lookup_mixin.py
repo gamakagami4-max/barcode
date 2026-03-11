@@ -26,6 +26,68 @@ class LookupMixin:
     def enable_for_lookup(self, enabled: bool):
         """Enable/disable the LOOKUP cascade depending on current type."""
         self.group_combo.setEnabled(enabled)
+
+        # Re-fetch immediately on enable so stale values are cleared right away
+        # (not only when the user clicks the dropdown).
+        if enabled:
+            self.build_connection_combo()
+            current_group = getattr(self.item, "design_group", "")
+            if current_group and current_group not in self.group_combo._items:
+                # Connection was deleted — wipe everything
+                setattr(self.item, "design_group", "")
+                setattr(self.item, "design_table", "")
+                setattr(self.item, "design_field", "")
+                setattr(self.item, "design_result", "")
+                self.group_combo.setCurrentIndex(-1)
+                self.table_combo._items = [""]
+                self.table_combo._current = ""
+                self.table_combo._label.setText("")
+                self.table_combo.setCurrentIndex(-1)
+                self.table_combo.setEnabled(False)
+                self._clear_field_combos()
+            elif current_group:
+                # Connection still exists — restore and check table too
+                self.group_combo.setCurrentText(current_group)
+                from components.barcode_editor.db_helpers import _fetch_tables_for_connection
+                tables = _fetch_tables_for_connection(self._conn_map[current_group])
+                self._table_map = {t["name"]: t["pk"] for t in tables}
+                current_table = getattr(self.item, "design_table", "")
+                if current_table and current_table not in self._table_map:
+                    # Table was deleted — wipe table + fields
+                    setattr(self.item, "design_table", "")
+                    setattr(self.item, "design_field", "")
+                    setattr(self.item, "design_result", "")
+                    self.table_combo._items = list(self._table_map.keys()) or [""]
+                    self.table_combo._current = ""
+                    self.table_combo._label.setText("")
+                    self.table_combo.setCurrentIndex(-1)
+                    self._clear_field_combos()
+
+        # Re-fetch connections live each time the dropdown opens so that
+        # deletions in Source Data Group are reflected immediately.
+        if enabled:
+            _original_open = self.group_combo._open
+
+            def _live_open():
+                self.build_connection_combo()
+                current = getattr(self.item, "design_group", "")
+                if current and current in self.group_combo._items:
+                    # Value still exists — restore it
+                    self.group_combo.setCurrentText(current)
+                elif current:
+                    # Value was deleted — clear it from item and widget
+                    setattr(self.item, "design_group", "")
+                    self.group_combo.setCurrentIndex(-1)
+                    self.table_combo._items = [""]
+                    self.table_combo._current = ""
+                    self.table_combo._label.setText("")
+                    self.table_combo.setCurrentIndex(-1)
+                    self.table_combo.setEnabled(False)
+                    self._clear_field_combos()
+                _original_open()
+
+            self.group_combo._open = _live_open
+
         if enabled:
             has_group = bool(self.group_combo.currentText())
             self.table_combo.setEnabled(has_group)
@@ -73,6 +135,32 @@ class LookupMixin:
 
         setattr(self.item, "design_group", conn_name)
         self._clear_field_combos()
+
+        # Re-fetch tables live each time the dropdown opens so that
+        # deletions in Source Data Group are reflected immediately.
+        _original_open = self.table_combo._open
+
+        def _live_table_open():
+            tables = _fetch_tables_for_connection(conn_pk)
+            self._table_map = {t["name"]: t["pk"] for t in tables}
+            self.table_combo._items = list(self._table_map.keys()) or [""]
+            if self.table_combo._dropdown:
+                self.table_combo._dropdown._options = self.table_combo._items
+                for btn in self.table_combo._dropdown._buttons:
+                    btn.deleteLater()
+                self.table_combo._dropdown._buttons = []
+                self.table_combo._dropdown._build(self.table_combo.width())
+            # If the currently selected table was deleted, clear it
+            current_table = getattr(self.item, "design_table", "")
+            if current_table and current_table not in self._table_map:
+                setattr(self.item, "design_table", "")
+                self.table_combo._current = ""
+                self.table_combo._label.setText("")
+                self.table_combo.setCurrentIndex(-1)
+                self._clear_field_combos()
+            _original_open()
+
+        self.table_combo._open = _live_table_open
 
     def clear_lookup_fields(self):
         """Clear all LOOKUP field values on the item and reset the widgets."""
