@@ -490,7 +490,7 @@ class BarcodeEditorPage(QWidget):
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet(
-            f"QScrollArea {{ background: {COLORS['prop_bg']}; border-radius: 8px; border: none; }}\n{MODERN_SCROLLBAR_STYLE}"
+            f"QScrollArea {{ background: {COLORS['canvas_bg']}; border-radius: 8px; border: none; }}\n{MODERN_SCROLLBAR_STYLE}"
         )
         self.scroll_area.verticalScrollBar().setStyleSheet(MODERN_SCROLLBAR_STYLE)
         self.inspector_widget = QWidget()

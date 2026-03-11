@@ -279,15 +279,9 @@ class InlineChecklistWidget(QWidget):
                     "QLabel{border:1.5px solid #CBD5E1;border-radius:3px;background:white;}"
                 )
 
-            if is_focused and is_checked:
-                txt.setStyleSheet("color:#4338CA;font-size:11px;background:transparent;border:none;font-weight:600;")
-                row_w.setStyleSheet("background:#EEF2FF;border-radius:4px;")
-            elif is_focused:
+            if is_focused:
                 txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;font-weight:600;")
-                row_w.setStyleSheet("background:#F1F5F9;border-radius:4px;")
-            elif is_checked:
-                txt.setStyleSheet("color:#4338CA;font-size:11px;background:transparent;border:none;")
-                row_w.setStyleSheet("background:transparent;")
+                row_w.setStyleSheet("background:#E1E7EF;border-radius:4px;")
             else:
                 txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
                 row_w.setStyleSheet("background:transparent;")
