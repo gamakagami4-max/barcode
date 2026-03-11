@@ -1,5 +1,7 @@
 """Custom QGraphicsItem subclasses used on the barcode design canvas."""
 
+import uuid
+
 from PySide6.QtWidgets import QGraphicsTextItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsItemGroup, QStyle
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QColor, QPen, QBrush, QFont
@@ -7,11 +9,11 @@ from PySide6.QtGui import QColor, QPen, QBrush, QFont
 from components.barcode_editor.utils import keep_within_bounds
 
 
-# AFTER
 class SelectableTextItem(QGraphicsTextItem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._original_color = QColor("#000000")
+        self.component_id = str(uuid.uuid4())  # stable unique ID, never changes
 
     def setDefaultTextColor(self, color: QColor):
         # Never let red bleed into _original_color
@@ -19,11 +21,10 @@ class SelectableTextItem(QGraphicsTextItem):
             self._original_color = QColor(color)
         super().setDefaultTextColor(color)
 
-    # AFTER
     def itemChange(self, change, value):
         if change == QGraphicsTextItem.ItemSelectedChange:
             if value:
-                self._original_color = self.defaultTextColor()  # save actual current color
+                self._original_color = self.defaultTextColor()
                 self.setDefaultTextColor(QColor("#EF4444"))
             else:
                 self.setDefaultTextColor(self._original_color)

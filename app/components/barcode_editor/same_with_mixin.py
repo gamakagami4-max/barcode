@@ -41,6 +41,9 @@ class SameWithMixin:
     Mixin for TextPropertyEditor.
     Requires self.item, self.update_callback, self.same_with_combo,
     and all other combo/spin widgets to be present (set up by the editor).
+
+    Stores component_id in item.design_same_with (not component_name),
+    so links survive component renames.
     """
 
     # ── public API called by _on_type_changed ─────────────────────────────────
@@ -50,9 +53,22 @@ class SameWithMixin:
         if enabled:
             self._lock_all_fields(True)
             self.same_with_combo.setEnabled(True)
-            source_name = self.same_with_combo.currentText()
-            if source_name and source_name not in ("", "(no other components)"):
-                self._apply_same_with_link(source_name)
+            # Resolve stored ID to display name and apply link
+            stored_id = getattr(self.item, "design_same_with", "")
+            if stored_id:
+                display_name = getattr(self.same_with_combo, "_id_map_inv", {}).get(stored_id, "")
+                if display_name and display_name in self.same_with_combo._items:
+                    self.same_with_combo.blockSignals(True)
+                    self.same_with_combo.setCurrentText(display_name)
+                    self.same_with_combo.blockSignals(False)
+                    self._apply_same_with_link(stored_id)
+            else:
+                # Try current selection in combo
+                current_name = self.same_with_combo.currentText()
+                if current_name and current_name not in ("", "(no other components)"):
+                    source_id = getattr(self.same_with_combo, "_id_map", {}).get(current_name, "")
+                    if source_id:
+                        self._apply_same_with_link(source_id)
         else:
             self._clear_same_with()
 
@@ -61,7 +77,15 @@ class SameWithMixin:
     def _on_same_with_changed(self, value):
         if self.type_combo.currentText() == "SAME WITH":
             if value and value not in ("", "(no other components)"):
-                self._apply_same_with_link(value)
+                # Translate display name -> component_id
+                source_id = getattr(self.same_with_combo, "_id_map", {}).get(value, "")
+                if source_id:
+                    self._apply_same_with_link(source_id)
+                else:
+                    SameWithRegistry.unregister(self.item)
+                    self.item.design_same_with = ""
+                    self._lock_all_fields(True)
+                    self.same_with_combo.setEnabled(True)
             else:
                 SameWithRegistry.unregister(self.item)
                 self.item.design_same_with = ""
@@ -72,7 +96,8 @@ class SameWithMixin:
 
     # ── core logic ────────────────────────────────────────────────────────────
 
-    def _apply_same_with_link(self, source_name: str):
+    def _apply_same_with_link(self, source_id: str):
+        """Look up source by component_id and apply the SAME WITH link."""
         scene = self.item.scene()
         if not scene:
             return
@@ -80,7 +105,7 @@ class SameWithMixin:
             (si for si in scene.items()
              if si is not self.item
              and isinstance(si, SelectableTextItem)
-             and getattr(si, "component_name", "") == source_name),
+             and getattr(si, "component_id", "") == source_id),
             None,
         )
         if not source_item:
@@ -94,7 +119,7 @@ class SameWithMixin:
         self.item.setDefaultTextColor(source_item.defaultTextColor())
         self.item.design_inverse = getattr(source_item, "design_inverse", False)
         self.item.design_visible = getattr(source_item, "design_visible", True)
-        self.item.design_same_with = source_name
+        self.item.design_same_with = source_id  # store ID, not name
         self._refresh_ui_from_item()
         self._lock_all_fields(True)
         self.update_callback()
@@ -175,7 +200,7 @@ class SameWithMixin:
         SameWithRegistry.unregister(self.item)
         self.item.design_same_with = ""
 
-        self.same_with_combo._items   = [""]
+        self.same_with_combo._items   = []
         self.same_with_combo._current = ""
         self.same_with_combo._label.setText("")
         self.same_with_combo.setCurrentIndex(-1)

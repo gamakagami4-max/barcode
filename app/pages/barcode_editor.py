@@ -1,5 +1,6 @@
 import os
 import json as _json
+import uuid
 
 import qtawesome as qta
 import shiboken6
@@ -84,25 +85,20 @@ class ComponentItemDelegate(QStyledItemDelegate):
     ROW_H = 38; ACCENT_W = 3; CHIP_SIZE = 24; PAD = 8; TRASH_SIZE = 18
 
     def sizeHint(self, option, index):
-        # Force every row to be exactly ROW_H pixels tall
         return QSize(0, self.ROW_H)
 
     def paint(self, painter, option, index):
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Grab display text and resolve icon/color metadata for this component type
         name = index.data(Qt.DisplayRole) or ""
         icon_name, badge_bg, badge_fg, accent = _get_meta(name)
 
-        # Determine row state for conditional styling
         selected = bool(option.state & QStyle.State_Selected)
         hovered  = bool(option.state & QStyle.State_MouseOver) and not selected
 
-        # Shrink rect slightly to leave a visible gap between rows
         r = option.rect.adjusted(4, 2, -4, -2)
 
-        # Draw the card background — colour shifts on hover/select
         bg = (QColor("#EEF2FF") if selected
               else QColor("#F8FAFC") if hovered
               else QColor("#FFFFFF"))
@@ -110,12 +106,10 @@ class ComponentItemDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(bg))
         painter.drawRoundedRect(r, 6, 6)
 
-        # Draw the thin coloured accent bar on the left edge
         accent_rect = QRect(r.left(), r.top() + 6, self.ACCENT_W, r.height() - 12)
         painter.setBrush(QBrush(QColor(accent)))
         painter.drawRoundedRect(accent_rect, 2, 2)
 
-        # Draw the icon chip (small rounded square) next to the accent bar
         chip_x = r.left() + self.ACCENT_W + self.PAD
         chip_y = r.top() + (r.height() - self.CHIP_SIZE) // 2
         chip_r = QRect(chip_x, chip_y, self.CHIP_SIZE, self.CHIP_SIZE)
@@ -124,35 +118,28 @@ class ComponentItemDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(chip_bg))
         painter.drawRoundedRect(chip_r, 5, 5)
 
-        # Draw the icon centered inside the chip
         px = qta.icon(icon_name, color=badge_bg).pixmap(13, 13)
         painter.drawPixmap(chip_x + (self.CHIP_SIZE - 13) // 2, chip_y + (self.CHIP_SIZE - 13) // 2, px)
-        
-        # Calculate where the trash button lives (far right of the row)
+
         trash_x = r.right() - self.TRASH_SIZE - self.PAD
         trash_y = r.top() + (r.height() - self.TRASH_SIZE) // 2
         trash_r = QRect(trash_x, trash_y, self.TRASH_SIZE, self.TRASH_SIZE)
 
-        # Store the trash rect in the model so editorEvent can detect clicks on it
         index.model().setData(index, trash_r, Qt.UserRole + 1)
 
-        # Draw red background behind trash icon only when row is active
         if hovered or selected:
             painter.setBrush(QBrush(QColor("#FEE2E2")))
             painter.drawRoundedRect(trash_r, 4, 4)
 
-        # Draw the trash icon itself — red when active, grey when idle
         trash_px = qta.icon(
             "fa5s.trash-alt",
             color="#EF4444" if (hovered or selected) else "#CBD5E1",
         ).pixmap(11, 11)
         painter.drawPixmap(trash_x + (self.TRASH_SIZE - 11) // 2, trash_y + (self.TRASH_SIZE - 11) // 2, trash_px)
-        
-        # Calculate the text area between the chip and the trash button
+
         text_x = chip_x + self.CHIP_SIZE + self.PAD
         text_w = trash_x - text_x - self.PAD
 
-        # Split "Type: Value" into two separate display strings if the separator exists
         display_type = name
         display_value = ''
         if ': ' in name:
@@ -163,7 +150,6 @@ class ComponentItemDelegate(QStyledItemDelegate):
         painter.setFont(type_font)
         painter.setPen(QColor('#1E293B') if selected else QColor('#334155'))
         if display_value:
-            # Two-line layout: bold type on top, muted value below
             type_fm = QFontMetrics(type_font)
             painter.drawText(
                 QRect(text_x, r.top() + 3, text_w, r.height() // 2),
@@ -180,7 +166,6 @@ class ComponentItemDelegate(QStyledItemDelegate):
                 value_fm.elidedText(display_value, Qt.ElideRight, text_w),
             )
         else:
-            # Single-line layout: just the name, vertically centred
             type_fm = QFontMetrics(type_font)
             painter.drawText(
                 QRect(text_x, r.top(), text_w, r.height()),
@@ -188,7 +173,6 @@ class ComponentItemDelegate(QStyledItemDelegate):
                 type_fm.elidedText(display_type, Qt.ElideRight, text_w),
             )
 
-        # Draw a 1px indigo border around the card when selected
         if selected:
             painter.setPen(QPen(QColor('#6366F1'), 1))
             painter.setBrush(Qt.NoBrush)
@@ -196,41 +180,35 @@ class ComponentItemDelegate(QStyledItemDelegate):
         painter.restore()
 
     def editorEvent(self, event, model, option, index):
-        # Check if the user released the mouse button over the trash icon
         if event.type() == QEvent.MouseButtonRelease:
-            trash_rect = index.data(Qt.UserRole + 1) # Retrieve the stored trash hit area
+            trash_rect = index.data(Qt.UserRole + 1)
             if trash_rect and trash_rect.contains(event.pos()):
-                # Emit the delete signal on the parent list widget with the row index
                 lw = self.parent()
                 if hasattr(lw, 'delete_item_requested'):
                     lw.delete_item_requested.emit(index.row())
-                return True # Exit
+                return True
         return super().editorEvent(event, model, option, index)
 
 
 class DeleteSignalList(QListWidget):
-    # Custom signal that fires with the row index when a delete is requested
     delete_item_requested = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setDragEnabled(True) # Allow items to be dragged
-        self.setAcceptDrops(True) # Allow items to be dropped back in
-        self.setDragDropMode(QListWidget.InternalMove) # Drag only within this list (no external drag/drop)
-        self.setDefaultDropAction(Qt.MoveAction) # Move the item instead of copying it
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
 
     def dropEvent(self, event):
-        # Let Qt handle the actual reorder first
         super().dropEvent(event)
-
-        # Walk up the widget tree to find the parent BarcodeEditorPage
         p = self.parent()
         while p:
             if isinstance(p, BarcodeEditorPage):
-                p.sync_z_order_from_list() # Reorder the canvas layers to match the new list order
-                p.update_component_list() # Refresh the list UI to reflect the updated state
+                p.sync_z_order_from_list()
+                p.update_component_list()
                 break
-            p = p.parent() # Keep climbing up if not found yet
+            p = p.parent()
 
 
 # ── Grid scene ────────────────────────────────────────────────────────────────
@@ -238,39 +216,32 @@ class DeleteSignalList(QListWidget):
 class GridGraphicsScene(QGraphicsScene):
     def __init__(self, rect, grid_size=20, color=QColor("#E2E8F0"), parent=None):
         super().__init__(rect, parent)
-        self.grid_size  = grid_size   # Spacing in pixels between grid lines
-        self.grid_color = color       # Colour of the grid lines
+        self.grid_size  = grid_size
+        self.grid_color = color
 
     def drawBackground(self, painter, rect):
-        # Let Qt draw the default background first
         super().drawBackground(painter, rect)
         sr = self.sceneRect()
 
-        # Fill the entire scene with a white background
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.drawRect(sr)
 
-        # Set up the pen for drawing grid lines
         painter.setPen(QPen(self.grid_color, 1))
 
-        # Snap the starting X and Y to the nearest grid multiple so lines stay aligned on scroll
         left = int(sr.left()) - (int(sr.left()) % self.grid_size)
         top  = int(sr.top())  - (int(sr.top())  % self.grid_size)
 
-        # Draw vertical lines from left to right
         x = left
         while x < sr.right():
             painter.drawLine(QPointF(x, sr.top()), QPointF(x, sr.bottom()))
             x += self.grid_size
 
-        # Draw horizontal lines from top to bottom
         y = top
         while y < sr.bottom():
             painter.drawLine(QPointF(sr.left(), y), QPointF(sr.right(), y))
             y += self.grid_size
 
-        # Draw a slightly thicker border around the whole scene to frame it
         painter.setPen(QPen(QColor("#94A3B8"), 1.5))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(sr)
@@ -401,7 +372,6 @@ class BarcodeEditorPage(QWidget):
             toolbar.addWidget(btn)
         toolbar.addStretch()
 
-        # Zoom level — Ctrl+scroll to zoom, label shows current level
         self._zoom_level = 1.0
         self.zoom_label = QLabel("100%")
         self.zoom_label.setFixedWidth(44)
@@ -461,7 +431,6 @@ class BarcodeEditorPage(QWidget):
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_layout.setSpacing(10)
 
-        # ── Components header ─────────────────────────────────────────────────
         comp_header = QWidget(); comp_header.setStyleSheet("background: transparent; border: none;")
         ch_layout = QHBoxLayout(comp_header); ch_layout.setContentsMargins(2, 4, 2, 4)
         comp_icon = QLabel(); comp_icon.setPixmap(qta.icon("fa5s.layer-group", color="#6366F1").pixmap(13, 13))
@@ -475,7 +444,6 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addWidget(self.comp_count_badge)
         sidebar_layout.addWidget(comp_header)
 
-        # ── Component list ────────────────────────────────────────────────────
         self.component_list = DeleteSignalList()
         self.component_list.setSpacing(2)
         self.component_list.setMouseTracking(True)
@@ -490,7 +458,6 @@ class BarcodeEditorPage(QWidget):
         self.component_list.delete_item_requested.connect(self.delete_component)
         self.component_list.itemClicked.connect(self.sync_selection_from_list)
 
-        # ── Properties panel ──────────────────────────────────────────────────
         prop_panel = QWidget()
         prop_panel.setStyleSheet("background: transparent; border: none;")
         prop_panel_layout = QVBoxLayout(prop_panel)
@@ -533,7 +500,6 @@ class BarcodeEditorPage(QWidget):
         self.scroll_area.setWidget(self.inspector_widget)
         prop_panel_layout.addWidget(self.scroll_area)
 
-        # ── Splitter: components on top, properties on bottom ─────────────────
         splitter = QSplitter(Qt.Vertical)
         splitter.setHandleWidth(8)
         splitter.setStyleSheet("""
@@ -542,12 +508,8 @@ class BarcodeEditorPage(QWidget):
                 border-top: 1px solid #CBD5E1;
                 border-bottom: 1px solid #CBD5E1;
             }
-            QSplitter::handle:hover {
-                background: #C7D2FE;
-            }
-            QSplitter::handle:pressed {
-                background: #A5B4FC;
-            }
+            QSplitter::handle:hover { background: #C7D2FE; }
+            QSplitter::handle:pressed { background: #A5B4FC; }
         """)
         splitter.addWidget(self.component_list)
         splitter.addWidget(prop_panel)
@@ -777,9 +739,11 @@ class BarcodeEditorPage(QWidget):
                 "font_size": font.pointSize(), "font_family": font.family(),
                 "bold": font.bold(), "italic": font.italic(),
                 "color": item._original_color.name() if hasattr(item, "_original_color") else item.defaultTextColor().name(),
+                # ── stable ID saved so links survive renames ──────────────────
+                "component_id":        getattr(item, "component_id",         ""),
                 "inverse":             getattr(item, "design_inverse",       False),
-                "design_same_with":    getattr(item, "design_same_with",     ""),
-                "design_link":         getattr(item, "design_link",          ""),
+                "design_same_with":    getattr(item, "design_same_with",     ""),  # stores component_id
+                "design_link":         getattr(item, "design_link",          ""),  # stores component_id
                 "design_group":        getattr(item, "design_group",         ""),
                 "design_table":        getattr(item, "design_table",         ""),
                 "design_query":        getattr(item, "design_query",         ""),
@@ -832,6 +796,11 @@ class BarcodeEditorPage(QWidget):
                 font.setBold(d.get("bold", False)); font.setItalic(d.get("italic", False))
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color", "#000000")))
+
+                # Restore stable component_id (or generate a new one for legacy data)
+                saved_id = d.get("component_id", "")
+                item.component_id = saved_id if saved_id else str(uuid.uuid4())
+
                 for attr in ("inverse", "design_same_with", "design_link", "design_group",
                             "design_table", "design_query", "design_field", "design_result",
                             "design_type", "design_system_value", "design_system_extra",
@@ -1039,20 +1008,26 @@ class BarcodeEditorPage(QWidget):
         if not sel:
             return
         item = sel[0]
-        old_name = getattr(item, "component_name", "")
-        new_name = name or "Unnamed"
-        item.component_name = new_name
+        item.component_name = name or "Unnamed"
+        # No need to propagate renames for SAME WITH / LINK — they use component_id now.
+        # Only update display name in combos that still use component_name
+        # (merge, timbangan, weight, um).
+        old_name = getattr(item, "_last_component_name", item.component_name)
+        new_name = item.component_name
+        item._last_component_name = new_name
         if old_name != new_name:
-            self._propagate_rename(old_name, new_name)
+            self._propagate_name_rename(old_name, new_name)
         self.update_component_list()
 
-    def _propagate_rename(self, old_name: str, new_name: str):
-        SINGLE_NAME_ATTRS = (
-            "design_same_with", "design_link",
-            "design_timbangan", "design_weight", "design_um",
-        )
+    def _propagate_name_rename(self, old_name: str, new_name: str):
+        """
+        Propagate renames only for attributes that still store component_name
+        (merge, timbangan, weight, um). SAME WITH and LINK now use component_id
+        so they don't need renaming.
+        """
+        NAME_ATTRS = ("design_timbangan", "design_weight", "design_um")
         for si in self.scene.items():
-            for attr in SINGLE_NAME_ATTRS:
+            for attr in NAME_ATTRS:
                 if getattr(si, attr, "") == old_name:
                     setattr(si, attr, new_name)
             raw = getattr(si, "design_merge", "")
@@ -1067,11 +1042,15 @@ class BarcodeEditorPage(QWidget):
         if editor is None or not isinstance(editor, TextPropertyEditor):
             return
 
-        for combo in (
-            editor.same_with_combo, editor.link_combo,
-            editor.timbangan_combo, editor.weight_combo, editor.um_combo,
-        ):
+        for combo in (editor.timbangan_combo, editor.weight_combo, editor.um_combo):
             combo._items = [new_name if x == old_name else x for x in combo._items]
+            if getattr(combo, "_id_map", None):
+                # Update id_map keys too
+                combo._id_map = {
+                    (new_name if k == old_name else k): v
+                    for k, v in combo._id_map.items()
+                }
+                combo._id_map_inv = {v: k for k, v in combo._id_map.items()}
             if getattr(combo, "_current", None) == old_name:
                 combo._current = new_name
                 combo._set_label_text(new_name)
@@ -1158,6 +1137,7 @@ class BarcodeEditorPage(QWidget):
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
             item.component_name = _label
+            # component_id is auto-assigned in SelectableTextItem.__init__
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
                          "design_query", "design_field", "design_result", "design_merge",
                          "design_timbangan", "design_weight", "design_um",
@@ -1220,9 +1200,11 @@ class BarcodeEditorPage(QWidget):
             return
         data = self._clipboard_item.copy()
         offset = 20
-        # Offset the visual position by 20px so paste lands near the original
         data['aabb_x'] = data.get('aabb_x', data.get('x', 0)) + offset
         data['aabb_y'] = data.get('aabb_y', data.get('y', 0)) + offset
+        # Pasted item gets a fresh component_id so it's independent
+        if data.get("type") == "text":
+            data["component_id"] = str(uuid.uuid4())
         item = self._create_item_from_data(data)
         if not item:
             return
@@ -1240,11 +1222,6 @@ class BarcodeEditorPage(QWidget):
         self._paste_clipboard()
 
     def _create_item_from_data(self, data: dict):
-        """
-        Reconstruct a scene item from serialized data, copying ALL properties.
-        Position is derived from aabb_x/aabb_y (same as deserialize_canvas) so
-        the item lands at the correct visual coordinate regardless of rotation.
-        """
         flags = (QGraphicsItem.ItemIsMovable
                  | QGraphicsItem.ItemIsSelectable
                  | QGraphicsItem.ItemSendsGeometryChanges)
@@ -1260,7 +1237,10 @@ class BarcodeEditorPage(QWidget):
             item.setFont(font)
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
 
-            # ── Restore every design attribute from the serialized data ────────
+            # Restore or assign component_id
+            saved_id = data.get("component_id", "")
+            item.component_id = saved_id if saved_id else str(uuid.uuid4())
+
             for attr in ("inverse", "design_same_with", "design_link", "design_group",
                          "design_table", "design_query", "design_field", "design_result",
                          "design_type", "design_system_value", "design_system_extra",
@@ -1310,7 +1290,6 @@ class BarcodeEditorPage(QWidget):
         if item is None:
             return None
 
-        # ── Position using aabb so rotation is handled correctly ───────────────
         item.setZValue(data.get('z', 0))
         item.design_visible = data.get('visible', True)
         item.setVisible(True)
@@ -1331,6 +1310,13 @@ class BarcodeEditorPage(QWidget):
         return item
 
     def _sync_same_with_items(self):
+        """Sync SAME WITH items using component_id. Falls back to component_name for legacy data."""
+        id_to_item = {
+            getattr(si, "component_id", ""): si
+            for si in self.scene.items()
+            if not si.group() and isinstance(si, SelectableTextItem)
+            and getattr(si, "component_id", "")
+        }
         name_to_item = {
             getattr(si, "component_name", ""): si
             for si in self.scene.items()
@@ -1342,8 +1328,9 @@ class BarcodeEditorPage(QWidget):
                 continue
             if getattr(si, "design_type", "") != "SAME WITH":
                 continue
-            ref_name = getattr(si, "design_same_with", "")
-            source = name_to_item.get(ref_name)
+            ref = getattr(si, "design_same_with", "")
+            # Try by ID first, fall back to name for legacy data
+            source = id_to_item.get(ref) or name_to_item.get(ref)
             if not source or source is si:
                 continue
             if getattr(source, "design_type", "") == "SAME WITH":
@@ -1356,6 +1343,13 @@ class BarcodeEditorPage(QWidget):
             si.design_visible = getattr(source, "design_visible", True)
 
     def _rebuild_same_with_registry(self):
+        """Rebuild registry using component_id. Falls back to component_name for legacy data."""
+        id_to_item = {
+            getattr(si, "component_id", ""): si
+            for si in self.scene.items()
+            if not si.group() and isinstance(si, SelectableTextItem)
+            and getattr(si, "component_id", "")
+        }
         name_to_item = {
             getattr(si, "component_name", ""): si
             for si in self.scene.items()
@@ -1367,8 +1361,8 @@ class BarcodeEditorPage(QWidget):
                 continue
             if getattr(si, "design_type", "") != "SAME WITH":
                 continue
-            ref_name = getattr(si, "design_same_with", "")
-            source = name_to_item.get(ref_name)
+            ref = getattr(si, "design_same_with", "")
+            source = id_to_item.get(ref) or name_to_item.get(ref)
             if source and source is not si and getattr(source, "design_type", "") != "SAME WITH":
                 SameWithRegistry.register(si, source)
 

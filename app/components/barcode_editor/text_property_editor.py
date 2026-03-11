@@ -162,14 +162,12 @@ class InlineChecklistWidget(QWidget):
             self._apply_disabled_appearance()
 
     def set_items(self, items: list[str]):
-        # Break "name AS alias" onto two lines so nothing gets clipped
         def _fmt(s: str) -> str:
             if " AS " in s:
                 parts = s.split(" AS ", 1)
                 return f"{parts[0]}\nAS {parts[1]}"
             return s
         self._items = [_fmt(i) for i in items]
-        # Keep a plain-name map for set_selected matching (strip the newline form)
         self._raw_items = list(items)
         self._selected.clear()
         self._rebuild_rows()
@@ -181,7 +179,6 @@ class InlineChecklistWidget(QWidget):
 
     def set_selected(self, value):
         names = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
-        # Match against both formatted and raw item names
         raw = getattr(self, "_raw_items", self._items)
         fmt_map = {r: f for r, f in zip(raw, self._items)}
         matched = set()
@@ -240,7 +237,6 @@ class InlineChecklistWidget(QWidget):
             self._rows[name] = (row_w, box, txt)
 
         self._refresh_row_styles()
-        # Use 34px per row to accommodate wrapped text (e.g. "mbflag AS flag")
         ROW_H, SPACING, MARGINS, MAX_H = 28, 2, 6, 140
         n = len(self._items)
         content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
@@ -448,17 +444,23 @@ class TextPropertyEditor(
 
         # ── SAME WITH combo ───────────────────────────────────────────────────
         self.same_with_combo = self._build_scene_name_combo(exclude_same_with=True)
-        stored_same_with = getattr(self.item, "design_same_with", "")
-        if stored_same_with and stored_same_with in self.same_with_combo._items:
-            self.same_with_combo.setCurrentText(stored_same_with)
+        # Restore: stored value is a component_id
+        stored_same_with_id = getattr(self.item, "design_same_with", "")
+        if stored_same_with_id:
+            display_name = self.same_with_combo._id_map_inv.get(stored_same_with_id, "")
+            if display_name and display_name in self.same_with_combo._items:
+                self.same_with_combo.setCurrentText(display_name)
         self.same_with_combo.currentTextChanged.connect(self._on_same_with_changed)
         layout.addRow(_lbl("SAME WITH :"), self.same_with_combo)
 
         # ── LINK combo ────────────────────────────────────────────────────────
         self.link_combo = self._build_scene_name_combo(only_lookup=True)
-        stored_link = getattr(self.item, "design_link", "")
-        if stored_link and stored_link in self.link_combo._items:
-            self.link_combo.setCurrentText(stored_link)
+        # Restore: stored value is a component_id
+        stored_link_id = getattr(self.item, "design_link", "")
+        if stored_link_id:
+            display_name = self.link_combo._id_map_inv.get(stored_link_id, "")
+            if display_name and display_name in self.link_combo._items:
+                self.link_combo.setCurrentText(display_name)
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(_lbl("LINK TO :"), self.link_combo)
 
@@ -527,7 +529,6 @@ class TextPropertyEditor(
             lambda v: setattr(self.item, "design_result", v)
         )
 
-        # ── QUERY box: save value AND re-parse field list live ────────────────
         def _on_query_changed():
             v = self.table_extra.toPlainText()
             setattr(self.item, "design_query", v)
@@ -618,8 +619,10 @@ class TextPropertyEditor(
         self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
         self.column_spin      = make_spin(1, 999, 1)
         self.mandatory_combo  = make_chevron_combo(["FALSE", "TRUE"])
-        self.batch_no_combo   = make_chevron_combo([""])
-        self.wh_combo         = make_chevron_combo([""])
+        self.batch_no_combo   = make_chevron_combo([])
+        self.batch_no_combo.setCurrentIndex(-1)
+        self.wh_combo         = make_chevron_combo([])
+        self.wh_combo.setCurrentIndex(-1)
         layout.addRow(_lbl("SAVE FIELD :"), self.save_field_combo)
         layout.addRow(_lbl("COLUMN :"),     self.column_spin)
         layout.addRow(_lbl("MANDATORY :"),  self.mandatory_combo)
@@ -682,11 +685,11 @@ class TextPropertyEditor(
 
         self._on_type_changed(getattr(self.item, "design_type", "FIX"))
 
-        stored_same_with = getattr(self.item, "design_same_with", "")
-        if (stored_same_with
-                and stored_same_with in self.same_with_combo._items
+        # Re-apply SAME WITH link if type is SAME WITH and we have a stored ID
+        stored_same_with_id = getattr(self.item, "design_same_with", "")
+        if (stored_same_with_id
                 and getattr(self.item, "design_type", "") == "SAME WITH"):
-            self._apply_same_with_link(stored_same_with)
+            self._apply_same_with_link(stored_same_with_id)
 
     # ── Helper: build the multi-select MERGE combo ────────────────────────────
 
@@ -718,6 +721,7 @@ class TextPropertyEditor(
     def _build_scene_name_combo(self, exclude_same_with=False, only_lookup=False):
         from components.barcode_editor.scene_items import SelectableTextItem
         names = []
+        ids = []
         try:
             scene = self.item.scene()
             if scene:
@@ -730,11 +734,15 @@ class TextPropertyEditor(
                         continue
                     if only_lookup and getattr(si, "design_type", "") != "LOOKUP":
                         continue
-                    name = getattr(si, "component_name", "") or "Text"
-                    names.append(name)
+                    ids.append(getattr(si, "component_id", ""))
+                    names.append(getattr(si, "component_name", "") or "Text")
         except Exception:
             pass
+
         combo = make_chevron_combo(names)
+        # ID <-> display name maps for stable linking
+        combo._id_map     = dict(zip(names, ids))      # display name -> component_id
+        combo._id_map_inv = dict(zip(ids, names))      # component_id -> display name
         combo.setPlaceholderText("—")
         combo.setCurrentIndex(-1)
         return combo

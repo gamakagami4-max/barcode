@@ -9,6 +9,9 @@ class LinkMixin:
     Mixin for TextPropertyEditor.
     Requires self.item and the following widgets:
       link_combo, group_combo, table_combo, table_extra, field_edit, result_combo.
+
+    Stores component_id in item.design_link (not component_name),
+    so links survive component renames.
     """
 
     # ── public API called by _on_type_changed ─────────────────────────────────
@@ -16,9 +19,15 @@ class LinkMixin:
     def enable_for_link(self, enabled: bool):
         self.link_combo.setEnabled(enabled)
         if enabled:
-            stored_link = getattr(self.item, "design_link", "")
-            if stored_link and stored_link not in ("", "—"):
-                self._apply_link_fields(stored_link)
+            stored_id = getattr(self.item, "design_link", "")
+            if stored_id:
+                # Restore display name in combo
+                display_name = getattr(self.link_combo, "_id_map_inv", {}).get(stored_id, "")
+                if display_name and display_name in self.link_combo._items:
+                    self.link_combo.blockSignals(True)
+                    self.link_combo.setCurrentText(display_name)
+                    self.link_combo.blockSignals(False)
+                self._apply_link_fields(stored_id)
             else:
                 self._clear_link_fields()
         else:
@@ -28,8 +37,14 @@ class LinkMixin:
 
     def _on_link_changed(self, value: str):
         if value and value not in ("", "—"):
-            self.item.design_link = value
-            self._apply_link_fields(value)
+            # Translate display name -> component_id
+            source_id = getattr(self.link_combo, "_id_map", {}).get(value, "")
+            if source_id:
+                self.item.design_link = source_id  # store ID
+                self._apply_link_fields(source_id)
+            else:
+                self.item.design_link = ""
+                self._clear_link_fields()
         else:
             self.item.design_link = ""
             self._clear_link_fields()
@@ -42,7 +57,6 @@ class LinkMixin:
         if isinstance(combo, InlineChecklistWidget):
             combo.set_selected(val)
         else:
-            # Standard chevron combo
             combo._current = val
             combo._label.setText(val)
 
@@ -52,14 +66,13 @@ class LinkMixin:
         if isinstance(combo, InlineChecklistWidget):
             combo.clear_selection()
         else:
-            # Standard chevron combo
             combo._current = ""
             combo._label.setText("")
 
     # ── core logic ────────────────────────────────────────────────────────────
 
-    def _apply_link_fields(self, source_name: str):
-        """Copy GROUP/TABLE/QUERY/FIELD/RESULT from the linked LOOKUP source."""
+    def _apply_link_fields(self, source_id: str):
+        """Copy GROUP/TABLE/QUERY/FIELD/RESULT from the linked LOOKUP source (by ID)."""
         scene = self.item.scene()
         if not scene:
             return
@@ -68,7 +81,7 @@ class LinkMixin:
             (si for si in scene.items()
              if si is not self.item
              and isinstance(si, SelectableTextItem)
-             and getattr(si, "component_name", "") == source_name),
+             and getattr(si, "component_id", "") == source_id),
             None,
         )
         if not source_item:
