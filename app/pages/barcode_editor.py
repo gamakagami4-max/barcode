@@ -1220,8 +1220,9 @@ class BarcodeEditorPage(QWidget):
             return
         data = self._clipboard_item.copy()
         offset = 20
-        data['x'] = max(0, min(data.get('x', 0) + offset, self._canvas_w - 50))
-        data['y'] = max(0, min(data.get('y', 0) + offset, self._canvas_h - 50))
+        # Offset the visual position by 20px so paste lands near the original
+        data['aabb_x'] = data.get('aabb_x', data.get('x', 0)) + offset
+        data['aabb_y'] = data.get('aabb_y', data.get('y', 0)) + offset
         item = self._create_item_from_data(data)
         if not item:
             return
@@ -1239,53 +1240,94 @@ class BarcodeEditorPage(QWidget):
         self._paste_clipboard()
 
     def _create_item_from_data(self, data: dict):
+        """
+        Reconstruct a scene item from serialized data, copying ALL properties.
+        Position is derived from aabb_x/aabb_y (same as deserialize_canvas) so
+        the item lands at the correct visual coordinate regardless of rotation.
+        """
         flags = (QGraphicsItem.ItemIsMovable
                  | QGraphicsItem.ItemIsSelectable
                  | QGraphicsItem.ItemSendsGeometryChanges)
         kind = data.get('type')
+        item = None
+
         if kind == 'text':
             item = SelectableTextItem(data.get('text', ''))
             _init_text_item(item)
             font = QFont(data.get('font_family', 'Arial'), data.get('font_size', 10))
-            font.setBold(data.get('bold', False)); font.setItalic(data.get('italic', False))
+            font.setBold(data.get('bold', False))
+            font.setItalic(data.get('italic', False))
             item.setFont(font)
-            item.component_name = data.get('name', 'Text')
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
-            for attr in ("design_same_with", "design_link", "design_group", "design_table",
-                         "design_query", "design_field", "design_result", "design_merge",
-                         "design_timbangan", "design_weight", "design_um",
+
+            # ── Restore every design attribute from the serialized data ────────
+            for attr in ("inverse", "design_same_with", "design_link", "design_group",
+                         "design_table", "design_query", "design_field", "design_result",
+                         "design_type", "design_system_value", "design_system_extra",
+                         "design_merge", "design_timbangan", "design_weight", "design_um",
                          "design_alignment", "design_editor", "design_data_type",
-                         "design_save_field", "design_mandatory", "design_format"):
-                setattr(item, attr, "")
-            item.design_type = "FIX"; item.design_system_value = "USER ID"; item.design_system_extra = ""
-            item.design_max_length = 1; item.design_column = 1; item.design_trim = False
-            item.design_caption = ""; item.design_wrap_text = False; item.design_wrap_width = 1
-            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
+                         "design_save_field", "design_mandatory", "design_format",
+                         "design_caption"):
+                key = attr.replace("design_", "") if attr.startswith("design_") else attr
+                setattr(item, attr, data.get(attr, data.get(key, "")))
+
+            item.design_inverse    = data.get("inverse", False)
+            item.design_type       = data.get("design_type", "FIX")
+            item.design_max_length = int(data.get("design_max_length", 1) or 1)
+            item.design_column     = int(data.get("design_column", 1) or 1)
+            item.design_trim       = bool(data.get("design_trim", False))
+            item.design_wrap_text  = bool(data.get("design_wrap_text", False))
+            item.design_wrap_width = int(data.get("design_wrap_width", 1) or 1)
+
+            item.component_name = data.get('name', 'Text')
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+
         elif kind == 'line':
             item = SelectableLineItem(0, 0, data.get('x2', 100), data.get('y2', 0))
-            item.setPen(QPen(QColor(data.get('color', '#000000')), data.get('thickness', 2)))
+            item.setPen(QPen(Qt.black, data.get('thickness', 2)))
             item.component_name = data.get('name', 'Line')
-            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+
         elif kind == 'rect':
             item = SelectableRectItem(0, 0, data.get('width', 100), data.get('height', 50))
-            item.setPen(QPen(QColor(data.get('border_color', '#000000')), data.get('border_width', 2)))
+            item.setPen(QPen(Qt.black, data.get('border_width', 2)))
             item.component_name = data.get('name', 'Rectangle')
-            setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
+            setup_item_logic(item, self.update_pos_label)
+            item.setFlags(flags)
+
         elif kind == 'barcode':
             item = BarcodeItem(self.update_pos_label, design=data.get('design', 'CODE128'))
-            item.container_width = data.get('container_width', 160)
+            item.container_width  = data.get('container_width', 160)
             item.container_height = data.get('container_height', 80)
-            item.component_name = data.get('name', 'Barcode')
             item.bg.setRect(0, 0, item.container_width, item.container_height)
             for attr, default in _BARCODE_DEFAULTS.items():
                 setattr(item, attr, data.get(attr, default))
-        else:
+            item.design_column  = int(item.design_column or 1)
+            item.component_name = data.get('name', 'Barcode')
+
+        if item is None:
             return None
-        item.setPos(data.get('x', 0), data.get('y', 0))
+
+        # ── Position using aabb so rotation is handled correctly ───────────────
         item.setZValue(data.get('z', 0))
         item.design_visible = data.get('visible', True)
         item.setVisible(True)
-        item.setRotation(data.get('rotation', 0))
+        rotation = data.get('rotation', 0)
+        item.setRotation(rotation)
+        if rotation != 0:
+            br = item.boundingRect()
+            item.setTransformOriginPoint(br.center())
+
+        item.setPos(0, 0)
+        aabb0  = item.mapToScene(item.boundingRect()).boundingRect()
+        off_x  = aabb0.left()
+        off_y  = aabb0.top()
+        vis_x  = data.get('aabb_x', data.get('x', 0))
+        vis_y  = data.get('aabb_y', data.get('y', 0))
+        item.setPos(vis_x - off_x, vis_y - off_y)
+
         return item
 
     def _sync_same_with_items(self):
@@ -1348,7 +1390,6 @@ class BarcodeEditorPage(QWidget):
                 self._zoom_out()
             event.accept()
         else:
-            # Default scroll behaviour
             from PySide6.QtWidgets import QGraphicsView
             QGraphicsView.wheelEvent(self.view, event)
 
@@ -1364,7 +1405,6 @@ class BarcodeEditorPage(QWidget):
         if not self.view.isVisible():
             return
         self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-        # Calculate what zoom level that corresponds to
         transform = self.view.transform()
         self._zoom_level = transform.m11()
         self._update_zoom_label()
