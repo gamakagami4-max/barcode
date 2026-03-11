@@ -96,16 +96,29 @@ class LinkMixin:
         for combo, attr in (
             (self.group_combo,  "design_group"),
             (self.table_combo,  "design_table"),
-            (self.field_edit,   "design_field"),
-            (self.result_combo, "design_result"),
         ):
             val = getattr(self.item, attr, "")
             combo.setEnabled(False)
             self._set_combo_value(combo, val)
 
+        # Block signals so set_selected doesn't trigger any re-enabling side effects
+        self.field_edit.blockSignals(True)
+        self._set_combo_value(self.field_edit, getattr(self.item, "design_field", ""))
+        self.field_edit.blockSignals(False)
+        # Force disabled last — overrides anything that re-enabled it during value restore
+        self.field_edit.setEnabled(False)
+        self.field_edit._apply_disabled_appearance()
+
+        # result is editable for LINK type
+        self.result_combo.setEnabled(True)
+        self._set_combo_value(self.result_combo, getattr(self.item, "design_result", ""))
+
         self.table_extra.setEnabled(False)
         self.table_extra.setText(self.item.design_query)
-        self.table_extra.setStyleSheet(_LINE_DISABLED)
+        self.table_extra.setStyleSheet(
+            "QTextEdit { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:4px; "
+            "padding:5px; font-size:11px; color:#94A3B8; }"
+        )
 
     def _clear_link_fields(self):
         for attr in ("design_group", "design_table", "design_query",

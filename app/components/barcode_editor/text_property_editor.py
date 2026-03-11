@@ -141,6 +141,10 @@ class InlineChecklistWidget(QWidget):
         self._container.setStyleSheet(
             "QFrame#checklistContainer { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; }"
         )
+        for name, (row_w, box, txt) in self._rows.items():
+            txt.setStyleSheet("color:#94A3B8;font-size:11px;background:transparent;border:none;")
+            box.setStyleSheet("QLabel{border:1.5px solid #E2E8F0;border-radius:3px;background:#F1F5F9;}")
+            row_w.setStyleSheet("background:transparent;")
 
     def _apply_enabled_appearance(self):
         self._container.setStyleSheet(
@@ -229,9 +233,9 @@ class InlineChecklistWidget(QWidget):
             r_lay.addWidget(box, 0, Qt.AlignTop)
             r_lay.addWidget(txt, 1)
 
-            box.mousePressEvent = lambda _e, n=name: self._toggle_only(n)
-            row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n)
-            txt.mousePressEvent   = lambda _e, n=name: self._focus_row(n)
+            box.mousePressEvent = lambda _e, n=name: self._toggle_only(n) if self.isEnabled() else None
+            row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n) if self.isEnabled() else None
+            txt.mousePressEvent   = lambda _e, n=name: self._focus_row(n) if self.isEnabled() else None
 
             self._rows_layout.addWidget(row_w)
             self._rows[name] = (row_w, box, txt)
