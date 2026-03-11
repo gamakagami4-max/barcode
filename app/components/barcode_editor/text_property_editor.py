@@ -426,7 +426,8 @@ class TextPropertyEditor(
 
         # ── SYSTEM fields ─────────────────────────────────────────────────────
         self.system_value_combo = make_chevron_combo(["USER ID", "DATETIME", "LOT NO", "OTHERS"])
-        self.system_extra_combo = make_chevron_combo([""])
+        self.system_extra_combo = make_chevron_combo([])
+        self.system_extra_combo.setCurrentIndex(-1)
         layout.addRow(_lbl("SYSTEM VALUE :"), self.system_value_combo)
         layout.addRow(_lbl("EXTRA :"),        self.system_extra_combo)
         self.system_value_combo.currentTextChanged.connect(self._on_system_value_changed)
@@ -485,11 +486,11 @@ class TextPropertyEditor(
         layout.addRow(_lbl("U/M :"),       self.um_combo)
 
         # ── LOOKUP cascade ────────────────────────────────────────────────────
-        self.group_combo  = make_chevron_combo([""])
-        self.table_combo  = make_chevron_combo([""])
+        self.group_combo  = make_chevron_combo([])
+        self.table_combo  = make_chevron_combo([])
         self.table_extra  = QTextEdit()
         self.field_edit   = InlineChecklistWidget()
-        self.result_combo = make_chevron_combo([""])
+        self.result_combo = make_chevron_combo([])
 
         self.table_extra.setStyleSheet(
             "QTextEdit { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:4px; "
@@ -733,7 +734,7 @@ class TextPropertyEditor(
                     names.append(name)
         except Exception:
             pass
-        combo = make_chevron_combo([""] + names if names else ["—"])
+        combo = make_chevron_combo(names)
         combo.setPlaceholderText("—")
         combo.setCurrentIndex(-1)
         return combo
