@@ -191,28 +191,52 @@ class LookupMixin:
             self._clear_field_combos()
             return
 
-        # Use fetch_fields (same as source_data_page) to get name + comment,
-        # then format as "name AS comment" — identical to how the query column
-        # is built in source_data_page._format_fields_with_comments.
-        # _conn_map is {conn_name: conn_pk} built in build_connection_combo.
         display_fields: list[str] = []
         try:
             conn_name = self.group_combo.currentText() or getattr(self.item, "design_group", "")
             conn_pk   = self._conn_map.get(conn_name)
-            if conn_pk is not None:
-                from repositories.field_repo import fetch_fields
-                cols = fetch_fields(conn_pk, table_name)
-                for col in cols:
-                    name    = col.get("name", "")
-                    comment = col.get("comment", "")
-                    if name:
-                        display_fields.append(f"{name} AS {comment}" if comment else name)
-        except Exception:
-            pass
 
-        # Fallback: plain names from mmsdgr if fetch_fields failed or returned nothing
-        if not display_fields:
-            display_fields = _fetch_fields_for_table(table_name)
+            # Resolve table PK from the already-populated _table_map
+            table_pk  = self._table_map.get(table_name)
+
+            if conn_pk is not None and table_pk is not None:
+                from repositories.mmsdgr_repo import fetch_all_mmsdgr, fetch_mmsdgr_by_pk
+                from repositories.field_repo import fetch_field_names_by_ids, fetch_fields
+
+                # Match by connection_id + table_id (NOT table_name)
+                all_records = fetch_all_mmsdgr()
+                matched = next(
+                    (r for r in all_records
+                     if r["connection_id"] == conn_pk and r.get("table_id") == table_pk),
+                    None,
+                )
+
+                if matched:
+                    detail    = fetch_mmsdgr_by_pk(matched["pk"])
+                    field_ids = detail.get("fields", []) if detail else []
+
+                    if field_ids:
+                        # Deduplicate field_ids while preserving order
+                        seen = set()
+                        field_ids = [f for f in field_ids if not (f in seen or seen.add(f))]
+
+                        field_names = fetch_field_names_by_ids(field_ids)
+
+                        # Deduplicate field_names while preserving order
+                        seen = set()
+                        field_names = [f for f in field_names if not (f in seen or seen.add(f))]
+
+                        cols        = fetch_fields(conn_pk, table_name)
+                        comment_map = {
+                            col["name"]: col.get("comment", "")
+                            for col in cols if col.get("name")
+                        }
+                        for name in field_names:
+                            comment = comment_map.get(name, "")
+                            display_fields.append(f"{name} AS {comment}" if comment else name)
+
+        except Exception as e:
+            print(f"Error loading source group fields: {e}")
 
         self._field_list = display_fields
 
