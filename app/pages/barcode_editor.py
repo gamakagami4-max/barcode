@@ -1,5 +1,3 @@
-"""BarcodeEditorPage — main canvas editor page."""
-
 import os
 import json as _json
 
@@ -15,7 +13,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QStyle, QSplitter,
 )
 from PySide6.QtCore import Qt, QPointF, QRectF, QRect, QSize, QEvent, Signal
-from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QCursor, QShortcut, QKeySequence
+from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QFont, QCursor, QShortcut, QKeySequence, QFontMetrics
 
 from components.standard_button import StandardButton
 
@@ -32,8 +30,6 @@ from components.barcode_editor.property_editors import LinePropertyEditor, Recta
 from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
 from components.barcode_editor.general_tab import GeneralTab
 
-
-# ── Component list ────────────────────────────────────────────────────────────
 
 COMPONENT_META = {
     'text':    ('fa5s.font',    '#6366F1', '#FFFFFF', '#4338CA'),
@@ -55,8 +51,6 @@ def _get_meta(name: str):
 def _init_text_item(item: SelectableTextItem):
     item.document().setDocumentMargin(0)
 
-
-# ── Default barcode design attributes ─────────────────────────────────────────
 
 _BARCODE_DEFAULTS = {
     "design_height_cm":      1.0,
@@ -86,28 +80,42 @@ def _apply_barcode_defaults(item: BarcodeItem):
 
 
 class ComponentItemDelegate(QStyledItemDelegate):
+    # Layout constants for row geometry
     ROW_H = 38; ACCENT_W = 3; CHIP_SIZE = 24; PAD = 8; TRASH_SIZE = 18
 
     def sizeHint(self, option, index):
+        # Force every row to be exactly ROW_H pixels tall
         return QSize(option.rect.width(), self.ROW_H)
 
     def paint(self, painter, option, index):
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
+
+        # Grab display text and resolve icon/color metadata for this component type
         name = index.data(Qt.DisplayRole) or ""
         icon_name, badge_bg, badge_fg, accent = _get_meta(name)
+
+        # Determine row state for conditional styling
         selected = bool(option.state & QStyle.State_Selected)
         hovered  = bool(option.state & QStyle.State_MouseOver) and not selected
+
+        # Shrink rect slightly to leave a visible gap between rows
         r = option.rect.adjusted(4, 2, -4, -2)
+
+        # Draw the card background — colour shifts on hover/select
         bg = (QColor("#EEF2FF") if selected
               else QColor("#F8FAFC") if hovered
               else QColor("#FFFFFF"))
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(bg))
         painter.drawRoundedRect(r, 6, 6)
+
+        # Draw the thin coloured accent bar on the left edge
         accent_rect = QRect(r.left(), r.top() + 6, self.ACCENT_W, r.height() - 12)
         painter.setBrush(QBrush(QColor(accent)))
         painter.drawRoundedRect(accent_rect, 2, 2)
+
+        # Draw the icon chip (small rounded square) next to the accent bar
         chip_x = r.left() + self.ACCENT_W + self.PAD
         chip_y = r.top() + (r.height() - self.CHIP_SIZE) // 2
         chip_r = QRect(chip_x, chip_y, self.CHIP_SIZE, self.CHIP_SIZE)
@@ -115,33 +123,47 @@ class ComponentItemDelegate(QStyledItemDelegate):
         chip_bg.setAlpha(40 if not selected else 60)
         painter.setBrush(QBrush(chip_bg))
         painter.drawRoundedRect(chip_r, 5, 5)
+
+        # Draw the icon centered inside the chip
         px = qta.icon(icon_name, color=badge_bg).pixmap(13, 13)
         painter.drawPixmap(chip_x + (self.CHIP_SIZE - 13) // 2, chip_y + (self.CHIP_SIZE - 13) // 2, px)
+        
+        # Calculate where the trash button lives (far right of the row)
         trash_x = r.right() - self.TRASH_SIZE - self.PAD
         trash_y = r.top() + (r.height() - self.TRASH_SIZE) // 2
         trash_r = QRect(trash_x, trash_y, self.TRASH_SIZE, self.TRASH_SIZE)
+
+        # Store the trash rect in the model so editorEvent can detect clicks on it
         index.model().setData(index, trash_r, Qt.UserRole + 1)
+
+        # Draw red background behind trash icon only when row is active
         if hovered or selected:
             painter.setBrush(QBrush(QColor("#FEE2E2")))
             painter.drawRoundedRect(trash_r, 4, 4)
+
+        # Draw the trash icon itself — red when active, grey when idle
         trash_px = qta.icon(
             "fa5s.trash-alt",
             color="#EF4444" if (hovered or selected) else "#CBD5E1",
         ).pixmap(11, 11)
         painter.drawPixmap(trash_x + (self.TRASH_SIZE - 11) // 2, trash_y + (self.TRASH_SIZE - 11) // 2, trash_px)
+        
+        # Calculate the text area between the chip and the trash button
         text_x = chip_x + self.CHIP_SIZE + self.PAD
         text_w = trash_x - text_x - self.PAD
+
+        # Split "Type: Value" into two separate display strings if the separator exists
         display_type = name
         display_value = ''
         if ': ' in name:
             parts = name.split(': ', 1)
             display_type  = parts[0].strip()
             display_value = parts[1].strip()
-        from PySide6.QtGui import QFontMetrics
         type_font = QFont(); type_font.setPointSize(9); type_font.setWeight(QFont.DemiBold)
         painter.setFont(type_font)
         painter.setPen(QColor('#1E293B') if selected else QColor('#334155'))
         if display_value:
+            # Two-line layout: bold type on top, muted value below
             type_fm = QFontMetrics(type_font)
             painter.drawText(
                 QRect(text_x, r.top() + 3, text_w, r.height() // 2),
@@ -158,12 +180,15 @@ class ComponentItemDelegate(QStyledItemDelegate):
                 value_fm.elidedText(display_value, Qt.ElideRight, text_w),
             )
         else:
+            # Single-line layout: just the name, vertically centred
             type_fm = QFontMetrics(type_font)
             painter.drawText(
                 QRect(text_x, r.top(), text_w, r.height()),
                 Qt.AlignLeft | Qt.AlignVCenter,
                 type_fm.elidedText(display_type, Qt.ElideRight, text_w),
             )
+
+        # Draw a 1px indigo border around the card when selected
         if selected:
             painter.setPen(QPen(QColor('#6366F1'), 1))
             painter.setBrush(Qt.NoBrush)
@@ -171,13 +196,15 @@ class ComponentItemDelegate(QStyledItemDelegate):
         painter.restore()
 
     def editorEvent(self, event, model, option, index):
+        # Check if the user released the mouse button over the trash icon
         if event.type() == QEvent.MouseButtonRelease:
-            trash_rect = index.data(Qt.UserRole + 1)
+            trash_rect = index.data(Qt.UserRole + 1) # Retrieve the stored trash hit area
             if trash_rect and trash_rect.contains(event.pos()):
+                # Emit the delete signal on the parent list widget with the row index
                 lw = self.parent()
                 if hasattr(lw, 'delete_item_requested'):
                     lw.delete_item_requested.emit(index.row())
-                return True
+                return True # Exit
         return super().editorEvent(event, model, option, index)
 
 
