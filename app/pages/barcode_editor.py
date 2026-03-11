@@ -1352,11 +1352,11 @@ class BarcodeEditorPage(QWidget):
             QGraphicsView.wheelEvent(self.view, event)
 
     def _zoom_in(self):
-        self._zoom_level = min(self._zoom_level * 1.25, 5.0)
+        self._zoom_level = min(round(self._zoom_level + 0.1, 2), 5.0)
         self._apply_zoom()
 
     def _zoom_out(self):
-        self._zoom_level = max(self._zoom_level / 1.25, 0.1)
+        self._zoom_level = max(round(self._zoom_level - 0.1, 2), 0.1)
         self._apply_zoom()
 
     def _zoom_fit(self):
