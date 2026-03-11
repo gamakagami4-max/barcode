@@ -135,3 +135,40 @@ def _fetch_fields_for_table(table_name: str) -> list[str]:
         print(f"[_fetch_fields_for_table] {e}")
         traceback.print_exc()
         return []
+
+
+def _parse_fields_from_query(query: str) -> list[str]:
+    """
+    Parse SELECT column expressions from a raw SQL query string.
+    Returns items like ["mbflag AS flag", "mbnobr", "mbnama AS name", "mbcase"].
+    Falls back to empty list if query is blank or unparseable.
+    """
+    if not query or not query.strip():
+        return []
+    try:
+        import re
+        q = query.strip()
+        # Extract the SELECT ... FROM portion
+        m = re.search(r'(?i)SELECT\s+(.*?)\s+FROM\b', q, re.DOTALL)
+        if not m:
+            # Maybe it's just a column list without SELECT/FROM
+            col_str = q
+        else:
+            col_str = m.group(1)
+        # Split by comma, ignoring commas inside parentheses
+        depth, current, parts = 0, [], []
+        for ch in col_str:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                parts.append(''.join(current).strip())
+                current = []
+            else:
+                current.append(ch)
+        if current:
+            parts.append(''.join(current).strip())
+        return [p for p in parts if p]
+    except Exception:
+        return []

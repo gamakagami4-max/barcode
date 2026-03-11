@@ -98,6 +98,7 @@ class InlineChecklistWidget(QWidget):
 
         self._container = QFrame()
         self._container.setObjectName("checklistContainer")
+
         self._container.setStyleSheet(
             "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
         )
@@ -112,6 +113,7 @@ class InlineChecklistWidget(QWidget):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setMinimumHeight(0)
         self._scroll.setMaximumHeight(160)
+
         self._scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self._scroll.setStyleSheet(
             "QScrollArea{background:transparent;border:none;}"
@@ -149,7 +151,7 @@ class InlineChecklistWidget(QWidget):
         super().setEnabled(enabled)
         if enabled:
             self._apply_enabled_appearance()
-            ROW_H, SPACING, MARGINS, MAX_H = 22, 2, 8, 160
+            ROW_H, SPACING, MARGINS, MAX_H = 28, 2, 6, 140
             n = len(self._items)
             if n == 0:
                 self._scroll.setFixedHeight(28)
@@ -160,7 +162,15 @@ class InlineChecklistWidget(QWidget):
             self._apply_disabled_appearance()
 
     def set_items(self, items: list[str]):
-        self._items = list(items)
+        # Break "name AS alias" onto two lines so nothing gets clipped
+        def _fmt(s: str) -> str:
+            if " AS " in s:
+                parts = s.split(" AS ", 1)
+                return f"{parts[0]}\nAS {parts[1]}"
+            return s
+        self._items = [_fmt(i) for i in items]
+        # Keep a plain-name map for set_selected matching (strip the newline form)
+        self._raw_items = list(items)
         self._selected.clear()
         self._rebuild_rows()
 
@@ -171,11 +181,22 @@ class InlineChecklistWidget(QWidget):
 
     def set_selected(self, value):
         names = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
-        self._selected = set(n for n in names if n in self._items)
+        # Match against both formatted and raw item names
+        raw = getattr(self, "_raw_items", self._items)
+        fmt_map = {r: f for r, f in zip(raw, self._items)}
+        matched = set()
+        for n in names:
+            if n in self._items:
+                matched.add(n)
+            elif n in fmt_map:
+                matched.add(fmt_map[n])
+        self._selected = matched
         self._refresh_row_styles()
 
     def get_selected(self) -> list[str]:
-        return [i for i in self._items if i in self._selected]
+        raw = getattr(self, "_raw_items", self._items)
+        fmt_map = {f: r for r, f in zip(raw, self._items)}
+        return [fmt_map.get(i, i) for i in self._items if i in self._selected]
 
     def _toggle(self, name: str):
         self._selected.discard(name) if name in self._selected else self._selected.add(name)
@@ -191,10 +212,11 @@ class InlineChecklistWidget(QWidget):
         for name in self._items:
             row_w = QWidget()
             row_w.setStyleSheet("background:transparent;")
-            row_w.setFixedHeight(22)
+            row_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             r_lay = QHBoxLayout(row_w)
-            r_lay.setContentsMargins(2, 0, 2, 0)
+            r_lay.setContentsMargins(2, 2, 2, 2)
             r_lay.setSpacing(6)
+            r_lay.setAlignment(Qt.AlignTop)
 
             box = QLabel()
             box.setFixedSize(13, 13)
@@ -202,13 +224,13 @@ class InlineChecklistWidget(QWidget):
             box.setCursor(Qt.PointingHandCursor)
 
             txt = QLabel(name)
+            txt.setWordWrap(True)
             txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
             txt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             txt.setCursor(Qt.PointingHandCursor)
 
-            r_lay.addWidget(box)
-            r_lay.addWidget(txt)
-            r_lay.addStretch()
+            r_lay.addWidget(box, 0, Qt.AlignTop)
+            r_lay.addWidget(txt, 1)
 
             box.mousePressEvent = lambda _e, n=name: self._toggle_only(n)
             row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n)
@@ -218,7 +240,8 @@ class InlineChecklistWidget(QWidget):
             self._rows[name] = (row_w, box, txt)
 
         self._refresh_row_styles()
-        ROW_H, SPACING, MARGINS, MAX_H = 22, 2, 8, 160
+        # Use 34px per row to accommodate wrapped text (e.g. "mbflag AS flag")
+        ROW_H, SPACING, MARGINS, MAX_H = 28, 2, 6, 140
         n = len(self._items)
         content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
         self._scroll.setFixedHeight(min(content_h, MAX_H))
@@ -466,7 +489,7 @@ class TextPropertyEditor(
         self.table_combo  = make_chevron_combo([""])
         self.table_extra  = QLineEdit()
         self.field_edit   = InlineChecklistWidget()
-        self.result_combo = make_chevron_combo([""])   # ← chevron combo, consistent style
+        self.result_combo = make_chevron_combo([""])
 
         self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
         self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -493,13 +516,19 @@ class TextPropertyEditor(
         self.field_edit.selectionChanged.connect(
             lambda names: setattr(self.item, "design_field", ",".join(names))
         )
-        # result_combo is now a chevron combo → use currentTextChanged
         self.result_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_result", v)
         )
-        self.table_extra.textChanged.connect(
-            lambda v: setattr(self.item, "design_query", v)
-        )
+
+        # ── QUERY box: save value AND re-parse field list live ────────────────
+        def _on_query_changed(v: str):
+            setattr(self.item, "design_query", v)
+            table = getattr(self.item, "design_table", "") or ""
+            if table:
+                self._on_table_changed(table)
+
+        self.table_extra.textChanged.connect(_on_query_changed)
+
         self.restore_lookup_values(
             getattr(self.item, "design_group",  ""),
             getattr(self.item, "design_table",  ""),

@@ -3,6 +3,7 @@
 from components.barcode_editor.utils import MODERN_INPUT_STYLE, _LINE_DISABLED
 from components.barcode_editor.db_helpers import (
     _fetch_connections, _fetch_tables_for_connection, _fetch_fields_for_table,
+    _parse_fields_from_query,
 )
 
 
@@ -93,20 +94,40 @@ class LookupMixin:
             self._clear_field_combos()
             return
 
-        fields = _fetch_fields_for_table(table_name)
-        self._field_list = fields
+        # Use fetch_fields (same as source_data_page) to get name + comment,
+        # then format as "name AS comment" — identical to how the query column
+        # is built in source_data_page._format_fields_with_comments.
+        # _conn_map is {conn_name: conn_pk} built in build_connection_combo.
+        display_fields: list[str] = []
+        try:
+            conn_name = self.group_combo.currentText() or getattr(self.item, "design_group", "")
+            conn_pk   = self._conn_map.get(conn_name)
+            if conn_pk is not None:
+                from repositories.field_repo import fetch_fields
+                cols = fetch_fields(conn_pk, table_name)
+                for col in cols:
+                    name    = col.get("name", "")
+                    comment = col.get("comment", "")
+                    if name:
+                        display_fields.append(f"{name} AS {comment}" if comment else name)
+        except Exception:
+            pass
 
-        # field_edit is InlineChecklistWidget — uses set_items / clear_selection API
-        self.field_edit.set_items(fields if fields else [])
+        # Fallback: plain names from mmsdgr if fetch_fields failed or returned nothing
+        if not display_fields:
+            display_fields = _fetch_fields_for_table(table_name)
+
+        self._field_list = display_fields
+
+        self.field_edit.set_items(display_fields)
         self.field_edit.clear_selection()
-        self.field_edit.setEnabled(bool(fields))
+        self.field_edit.setEnabled(bool(display_fields))
 
-        # result_combo is a chevron combo — update its internal item list directly
-        self.result_combo._items   = fields if fields else [""]
+        self.result_combo._items   = display_fields if display_fields else [""]
         self.result_combo._current = ""
         self.result_combo._label.setText("")
         self.result_combo.setCurrentIndex(-1)
-        self.result_combo.setEnabled(bool(fields))
+        self.result_combo.setEnabled(bool(display_fields))
 
     def _clear_field_combos(self):
         self._field_list = []
@@ -148,7 +169,6 @@ class LookupMixin:
                 if stored_field:
                     self.field_edit.set_selected(stored_field)
                 if stored_result:
-                    # result_combo is now a chevron combo — use setCurrentText
                     self.result_combo.setCurrentText(stored_result)
         if stored_query:
             self.table_extra.setText(stored_query)
