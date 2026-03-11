@@ -60,45 +60,69 @@ class InlineChecklistWidget(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        outer = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(4)
+        outer.setSpacing(2)
 
+        # ── Top bar: ALL / NONE buttons + up/down arrows ──────────────────────
+        top_bar = QWidget()
+        top_bar.setStyleSheet("background:transparent;")
+        top_lay = QHBoxLayout(top_bar)
+        top_lay.setContentsMargins(0, 0, 0, 0)
+        top_lay.setSpacing(4)
+
+        _sa_style = (
+            "QPushButton{background:#EEF2FF;border:1px solid #C7D2FE;color:#6366F1;"
+            "font-size:8px;font-weight:600;border-radius:3px;padding:1px 6px;"
+            "min-width:32px;}"
+            "QPushButton:hover{background:#C7D2FE;}"
+            "QPushButton:disabled{background:#F1F5F9;color:#CBD5E1;border-color:#E2E8F0;}"
+        )
         _arrow_style = (
             "QPushButton{background:transparent;border:none;color:#94A3B8;"
             "font-size:9px;padding:0px;min-width:14px;max-width:14px;}"
             "QPushButton:hover{color:#6366F1;}"
             "QPushButton:disabled{color:#E2E8F0;}"
         )
-        arrow_col = QWidget()
-        arrow_col.setFixedWidth(14)
-        arrow_col.setStyleSheet("background:transparent;")
-        a_lay = QVBoxLayout(arrow_col)
-        a_lay.setContentsMargins(0, 0, 0, 0)
-        a_lay.setSpacing(2)
-        a_lay.setAlignment(Qt.AlignVCenter)
+
+        self._btn_all = QPushButton("ALL")
+        self._btn_all.setFixedHeight(16)
+        self._btn_all.setStyleSheet(_sa_style)
+        self._btn_all.setCursor(Qt.PointingHandCursor)
+        self._btn_all.setFocusPolicy(Qt.NoFocus)
+        self._btn_all.clicked.connect(self._select_all)
+
+        self._btn_none = QPushButton("NONE")
+        self._btn_none.setFixedHeight(16)
+        self._btn_none.setStyleSheet(_sa_style)
+        self._btn_none.setCursor(Qt.PointingHandCursor)
+        self._btn_none.setFocusPolicy(Qt.NoFocus)
+        self._btn_none.clicked.connect(self._select_none)
 
         self._btn_up = QPushButton("▲")
-        self._btn_up.setFixedSize(14, 14)
+        self._btn_up.setFixedSize(14, 16)
         self._btn_up.setStyleSheet(_arrow_style)
         self._btn_up.setCursor(Qt.PointingHandCursor)
         self._btn_up.setFocusPolicy(Qt.NoFocus)
         self._btn_up.clicked.connect(lambda: self._move_focused(-1))
 
         self._btn_dn = QPushButton("▼")
-        self._btn_dn.setFixedSize(14, 14)
+        self._btn_dn.setFixedSize(14, 16)
         self._btn_dn.setStyleSheet(_arrow_style)
         self._btn_dn.setCursor(Qt.PointingHandCursor)
         self._btn_dn.setFocusPolicy(Qt.NoFocus)
         self._btn_dn.clicked.connect(lambda: self._move_focused(+1))
 
-        a_lay.addWidget(self._btn_up)
-        a_lay.addWidget(self._btn_dn)
-        outer.addWidget(arrow_col, 0, Qt.AlignVCenter)
+        top_lay.addWidget(self._btn_all)
+        top_lay.addWidget(self._btn_none)
+        top_lay.addStretch()
+        top_lay.addWidget(self._btn_up)
+        top_lay.addWidget(self._btn_dn)
+        outer.addWidget(top_bar)
 
+        # ── Checklist container ───────────────────────────────────────────────
         self._container = QFrame()
         self._container.setObjectName("checklistContainer")
-
         self._container.setStyleSheet(
             "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
         )
@@ -113,7 +137,6 @@ class InlineChecklistWidget(QWidget):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setMinimumHeight(0)
         self._scroll.setMaximumHeight(160)
-
         self._scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self._scroll.setStyleSheet(
             "QScrollArea{background:transparent;border:none;}"
@@ -131,8 +154,8 @@ class InlineChecklistWidget(QWidget):
         self._rows_layout.setSpacing(2)
         self._scroll.setWidget(self._rows_widget)
         cl.addWidget(self._scroll)
-
         outer.addWidget(self._container)
+
         self._focused_name: str | None = None
         self._apply_disabled_appearance()
 
@@ -145,11 +168,27 @@ class InlineChecklistWidget(QWidget):
             txt.setStyleSheet("color:#94A3B8;font-size:11px;background:transparent;border:none;")
             box.setStyleSheet("QLabel{border:1.5px solid #E2E8F0;border-radius:3px;background:#F1F5F9;}")
             row_w.setStyleSheet("background:transparent;")
+        if hasattr(self, "_btn_all"):
+            self._btn_all.setEnabled(False)
+            self._btn_none.setEnabled(False)
 
     def _apply_enabled_appearance(self):
         self._container.setStyleSheet(
             "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
         )
+        if hasattr(self, "_btn_all"):
+            self._btn_all.setEnabled(True)
+            self._btn_none.setEnabled(True)
+
+    def _select_all(self):
+        self._selected = set(self._items)
+        self._refresh_row_styles()
+        self.selectionChanged.emit(self.get_selected())
+
+    def _select_none(self):
+        self._selected.clear()
+        self._refresh_row_styles()
+        self.selectionChanged.emit(self.get_selected())
 
     def setEnabled(self, enabled: bool):
         super().setEnabled(enabled)
