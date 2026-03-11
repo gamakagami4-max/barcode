@@ -37,7 +37,16 @@ class LookupMixin:
                 w.setEnabled(False)
 
         self.table_extra.setEnabled(enabled)
-        self.table_extra.setStyleSheet(MODERN_INPUT_STYLE if enabled else _LINE_DISABLED)
+        _enabled_style = (
+            "QTextEdit { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:4px; "
+            "padding:5px; font-size:11px; color:#1E293B; }"
+            "QTextEdit:focus { border:1px solid #6366F1; }"
+        )
+        _disabled_style = (
+            "QTextEdit { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:4px; "
+            "padding:5px; font-size:11px; color:#94A3B8; }"
+        )
+        self.table_extra.setStyleSheet(_enabled_style if enabled else _disabled_style)
 
     # ── cascade change handlers ───────────────────────────────────────────────
 
@@ -81,7 +90,7 @@ class LookupMixin:
         self.table_combo._label.setText("")
         self.table_combo.setCurrentIndex(-1)
 
-        self.table_extra.setText("")
+        self.table_extra.setPlainText("")
         self._clear_field_combos()
         self._table_map = {}
 
@@ -171,4 +180,4 @@ class LookupMixin:
                 if stored_result:
                     self.result_combo.setCurrentText(stored_result)
         if stored_query:
-            self.table_extra.setText(stored_query)
+            self.table_extra.setPlainText(stored_query)

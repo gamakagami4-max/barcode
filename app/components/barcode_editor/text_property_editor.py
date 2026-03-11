@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, QSizePolicy, QHBoxLayout,
-    QFrame, QScrollArea, QVBoxLayout, QPushButton,
+    QFrame, QScrollArea, QVBoxLayout, QPushButton, QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QTextCursor, QTextBlockFormat
@@ -487,12 +487,18 @@ class TextPropertyEditor(
         # ── LOOKUP cascade ────────────────────────────────────────────────────
         self.group_combo  = make_chevron_combo([""])
         self.table_combo  = make_chevron_combo([""])
-        self.table_extra  = QLineEdit()
+        self.table_extra  = QTextEdit()
         self.field_edit   = InlineChecklistWidget()
         self.result_combo = make_chevron_combo([""])
 
-        self.table_extra.setStyleSheet(MODERN_INPUT_STYLE)
-        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.table_extra.setStyleSheet(
+            "QTextEdit { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:4px; "
+            "padding:5px; font-size:11px; color:#1E293B; }"
+            "QTextEdit:focus { border:1px solid #6366F1; }"
+        )
+        self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.table_extra.setFixedHeight(80)
+        self.table_extra.setAcceptRichText(False)
 
         for combo, ph in (
             (self.group_combo,  "— select connection —"),
@@ -521,7 +527,8 @@ class TextPropertyEditor(
         )
 
         # ── QUERY box: save value AND re-parse field list live ────────────────
-        def _on_query_changed(v: str):
+        def _on_query_changed():
+            v = self.table_extra.toPlainText()
             setattr(self.item, "design_query", v)
             table = getattr(self.item, "design_table", "") or ""
             if table:
