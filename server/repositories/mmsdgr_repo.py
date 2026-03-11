@@ -252,23 +252,18 @@ def update_mmsdgr(
     finally:
         conn.close()
 
-def soft_delete_mmsdgr(pk: int, user: str = "Admin"):
-    now = datetime.now()
-
+# AFTER
+def delete_mmsdgr(pk: int):
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(
-            """
-            UPDATE barcodesap.mmsdgr
-            SET
-                madlfg = '1',
-                machid = %s,
-                machdt = %s,
-                machno = COALESCE(machno, 0) + 1
-            WHERE masgdriy = %s
-            """,
-            (user, now, pk),
+            "DELETE FROM barcodesap.mmsdgf WHERE masgdriy = %s",
+            (pk,),
+        )
+        cur.execute(
+            "DELETE FROM barcodesap.mmsdgr WHERE masgdriy = %s",
+            (pk,),
         )
         conn.commit()
 

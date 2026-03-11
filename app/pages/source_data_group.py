@@ -15,7 +15,7 @@ from repositories.mmsdgr_repo import (
     create_mmsdgr as create_sdgr,
     fetch_all_mmsdgr as fetch_all_sdgr,
     fetch_mmsdgr_by_pk as fetch_sdgr_by_id,
-    soft_delete_mmsdgr as soft_delete_sdgr,
+    delete_mmsdgr as delete_sdgr,
     update_mmsdgr as update_sdgr,
 )
 from repositories.mengin_repo import fetch_all_engines
@@ -1317,7 +1317,7 @@ class SourceDataPage(QWidget):
         msg.setIcon(QMessageBox.Warning)
         if msg.exec() == QMessageBox.Yes:
             try:
-                soft_delete_sdgr(row[10])
+                delete_sdgr(row[10])
             except Exception as exc:
                 QMessageBox.critical(self, "Database Error", f"Delete failed:\n\n{exc}")
                 return
