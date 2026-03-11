@@ -209,24 +209,28 @@ class ComponentItemDelegate(QStyledItemDelegate):
 
 
 class DeleteSignalList(QListWidget):
+    # Custom signal that fires with the row index when a delete is requested
     delete_item_requested = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDragDropMode(QListWidget.InternalMove)
-        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragEnabled(True) # Allow items to be dragged
+        self.setAcceptDrops(True) # Allow items to be dropped back in
+        self.setDragDropMode(QListWidget.InternalMove) # Drag only within this list (no external drag/drop)
+        self.setDefaultDropAction(Qt.MoveAction) # Move the item instead of copying it
 
     def dropEvent(self, event):
+        # Let Qt handle the actual reorder first
         super().dropEvent(event)
+
+        # Walk up the widget tree to find the parent BarcodeEditorPage
         p = self.parent()
         while p:
             if isinstance(p, BarcodeEditorPage):
-                p.sync_z_order_from_list()
-                p.update_component_list()
+                p.sync_z_order_from_list() # Reorder the canvas layers to match the new list order
+                p.update_component_list() # Refresh the list UI to reflect the updated state
                 break
-            p = p.parent()
+            p = p.parent() # Keep climbing up if not found yet
 
 
 # ── Grid scene ────────────────────────────────────────────────────────────────
@@ -234,26 +238,39 @@ class DeleteSignalList(QListWidget):
 class GridGraphicsScene(QGraphicsScene):
     def __init__(self, rect, grid_size=20, color=QColor("#E2E8F0"), parent=None):
         super().__init__(rect, parent)
-        self.grid_size  = grid_size
-        self.grid_color = color
+        self.grid_size  = grid_size   # Spacing in pixels between grid lines
+        self.grid_color = color       # Colour of the grid lines
 
     def drawBackground(self, painter, rect):
+        # Let Qt draw the default background first
         super().drawBackground(painter, rect)
         sr = self.sceneRect()
+
+        # Fill the entire scene with a white background
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.drawRect(sr)
+
+        # Set up the pen for drawing grid lines
         painter.setPen(QPen(self.grid_color, 1))
+
+        # Snap the starting X and Y to the nearest grid multiple so lines stay aligned on scroll
         left = int(sr.left()) - (int(sr.left()) % self.grid_size)
         top  = int(sr.top())  - (int(sr.top())  % self.grid_size)
+
+        # Draw vertical lines from left to right
         x = left
         while x < sr.right():
             painter.drawLine(QPointF(x, sr.top()), QPointF(x, sr.bottom()))
             x += self.grid_size
+
+        # Draw horizontal lines from top to bottom
         y = top
         while y < sr.bottom():
             painter.drawLine(QPointF(sr.left(), y), QPointF(sr.right(), y))
             y += self.grid_size
+
+        # Draw a slightly thicker border around the whole scene to frame it
         painter.setPen(QPen(QColor("#94A3B8"), 1.5))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(sr)
