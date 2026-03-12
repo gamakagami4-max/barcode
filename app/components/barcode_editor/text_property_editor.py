@@ -842,14 +842,59 @@ class TextPropertyEditor(
         self.enable_for_merge(is_merge)
         self.enable_for_konversi(is_konversi)
 
-        self.batch_no_combo.setEnabled(is_batch_no)
-        self.wh_combo.setEnabled(is_batch_no)
-        if not is_batch_no:
+        if is_batch_no:
+            self._populate_batch_no_options()
+        else:
+            self.batch_no_combo.setEnabled(False)
+            self.wh_combo.setEnabled(False)
             self.batch_no_combo.setCurrentIndex(-1)
             self.wh_combo.setCurrentIndex(-1)
 
         self.same_with_combo.setEnabled(is_same_with)
 
+    def _populate_batch_no_options(self):
+        """Fill BATCH NO combo with other label components."""
+        from components.barcode_editor.scene_items import SelectableTextItem
+
+        names = []
+
+        try:
+            scene = self.item.scene()
+            if scene:
+                for si in scene.items():
+                    if si.group() or si is self.item:
+                        continue
+                    if not isinstance(si, SelectableTextItem):
+                        continue
+
+                    name = getattr(si, "component_name", "") or "Text"
+                    names.append(name)
+        except Exception:
+            pass
+
+        names = sorted(set(names))
+
+        self.batch_no_combo.blockSignals(True)
+
+        # ── reset combo items ──
+        # populate BATCH NO
+        self.batch_no_combo._items = names
+
+        self.batch_no_combo._items = names
+        self.batch_no_combo._current = ""
+        self.batch_no_combo._label.setText("")
+
+        # populate WH with same options
+        self.wh_combo._items = names
+
+        self.wh_combo._items = names
+        self.wh_combo._current = ""
+        self.wh_combo._label.setText("")
+
+        self.batch_no_combo.setEnabled(True)
+        self.wh_combo.setEnabled(True)
+
+        self.batch_no_combo.blockSignals(False)
     # ── Standard property-apply methods ──────────────────────────────────────
 
     def _apply_alignment(self, value: str):
