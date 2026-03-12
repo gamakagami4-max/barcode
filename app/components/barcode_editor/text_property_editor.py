@@ -558,10 +558,9 @@ class TextPropertyEditor(
         # RESULT + TRIM checkbox on the same row
         result_trim_row = QWidget()
         result_trim_row.setStyleSheet("background:transparent;border:none;")
-        result_trim_layout = QHBoxLayout(result_trim_row)
+        result_trim_layout = QVBoxLayout(result_trim_row)
         result_trim_layout.setContentsMargins(0, 0, 0, 0)
         result_trim_layout.setSpacing(6)
-        result_trim_layout.addWidget(self.result_combo, 1)
 
         self._trim_checked = False
         self.trim_box = QLabel()
@@ -574,8 +573,18 @@ class TextPropertyEditor(
             f"color: {COLORS['legacy_blue']}; font-size: 9px; text-transform: uppercase; "
             "background: transparent; border: none;"
         )
-        result_trim_layout.addWidget(self.trim_box)
-        result_trim_layout.addWidget(trim_lbl)
+        result_trim_layout.addWidget(self.result_combo)
+
+        trim_row = QWidget()
+        trim_layout = QHBoxLayout(trim_row)
+        trim_layout.setContentsMargins(0, 0, 0, 0)
+        trim_layout.setSpacing(6)
+
+        trim_layout.addWidget(self.trim_box)
+        trim_layout.addWidget(trim_lbl)
+        trim_layout.addStretch()
+
+        result_trim_layout.addWidget(trim_row)
         layout.addRow(_lbl("RESULT :"), result_trim_row)
 
         self.build_connection_combo()
