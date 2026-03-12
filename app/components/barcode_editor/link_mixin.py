@@ -79,9 +79,9 @@ class LinkMixin:
 
         source_item = next(
             (si for si in scene.items()
-             if si is not self.item
-             and isinstance(si, SelectableTextItem)
-             and getattr(si, "component_id", "") == source_id),
+            if si is not self.item
+            and isinstance(si, SelectableTextItem)
+            and getattr(si, "component_id", "") == source_id),
             None,
         )
         if not source_item:
@@ -93,43 +93,42 @@ class LinkMixin:
         self.item.design_field  = getattr(source_item, "design_field",  "")
         self.item.design_result = getattr(source_item, "design_result", "")
 
+        # GROUP and TABLE — read-only, mirrored from source
         for combo, attr in (
-            (self.group_combo,  "design_group"),
-            (self.table_combo,  "design_table"),
+            (self.group_combo, "design_group"),
+            (self.table_combo, "design_table"),
         ):
-            val = getattr(self.item, attr, "")
             combo.setEnabled(False)
-            self._set_combo_value(combo, val)
+            self._set_combo_value(combo, getattr(self.item, attr, ""))
 
-        # Block signals so set_selected doesn't trigger any re-enabling side effects
-        self.field_edit.blockSignals(True)
-        self._set_combo_value(self.field_edit, getattr(self.item, "design_field", ""))
-        self.field_edit.blockSignals(False)
-        # Force disabled last — overrides anything that re-enabled it during value restore
-        self.field_edit.setEnabled(False)
-        self.field_edit._apply_disabled_appearance()
-
-        # result is editable for LINK type
-        # result should be editable for LINK type
-        self.result_combo.blockSignals(True)
-        self.result_combo.setEnabled(True)
-
-        val = getattr(self.item, "design_result", "")
-        self._set_combo_value(self.result_combo, val)
-
-        # ensure internal state is valid
-        if val and val in getattr(self.result_combo, "_items", []):
-            self.result_combo._current = val
-            self.result_combo._label.setText(val)
-
-        self.result_combo.blockSignals(False)
-
+        # QUERY — read-only, mirrored from source
         self.table_extra.setEnabled(False)
+        self.table_extra.blockSignals(True)
         self.table_extra.setText(self.item.design_query)
+        self.table_extra.blockSignals(False)
         self.table_extra.setStyleSheet(
             "QTextEdit { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:4px; "
             "padding:5px; font-size:11px; color:#94A3B8; }"
         )
+
+        # RESULT — editable for LINK type
+        self.result_combo.blockSignals(True)
+        self.result_combo.setEnabled(True)
+        val = getattr(self.item, "design_result", "")
+        self._set_combo_value(self.result_combo, val)
+        if val and val in getattr(self.result_combo, "_items", []):
+            self.result_combo._current = val
+            self.result_combo._label.setText(val)
+        self.result_combo.blockSignals(False)
+
+        # FIELD — always disabled for LINK type (value mirrored, not editable).
+        # This must be the LAST operation so result_combo.setEnabled(True) above
+        # cannot indirectly re-enable it through any Qt layout/paint cascade.
+        self.field_edit.blockSignals(True)
+        self._set_combo_value(self.field_edit, getattr(self.item, "design_field", ""))
+        self.field_edit.blockSignals(False)
+        self.field_edit.setEnabled(False)
+        self.field_edit._apply_disabled_appearance()
 
     def _clear_link_fields(self):
         for attr in ("design_group", "design_table", "design_query",
