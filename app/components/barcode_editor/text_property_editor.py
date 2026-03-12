@@ -739,7 +739,7 @@ class TextPropertyEditor(
 
     # ── Helper: build the multi-select MERGE combo ────────────────────────────
 
-    def _build_merge_combo(self) -> MultiSelectCombo:
+    def _build_merge_combo(self) -> InlineChecklistWidget:
         from components.barcode_editor.scene_items import SelectableTextItem
         names: list[str] = []
         try:
@@ -754,7 +754,7 @@ class TextPropertyEditor(
                     names.append(name)
         except Exception:
             pass
-        combo = MultiSelectCombo(placeholder="— select components —")
+        combo = InlineChecklistWidget()
         combo.set_items(names)
         stored = getattr(self.item, "design_merge", "")
         if stored:

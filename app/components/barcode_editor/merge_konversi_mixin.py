@@ -13,7 +13,7 @@ class MergeKonversiMixin:
     Mixin for TextPropertyEditor.
 
     Requires self.item and the following widgets:
-      merge_combo        – a MultiSelectCombo (see below)
+      merge_combo        – an InlineChecklistWidget
       timbangan_combo    – single-select custom combo
       weight_combo       – single-select custom combo
       um_combo           – single-select custom combo
@@ -27,14 +27,11 @@ class MergeKonversiMixin:
     # ── public API called by _on_type_changed ─────────────────────────────────
 
     def enable_for_merge(self, enabled: bool):
-        """Enable / disable the merge multi-select combo."""
+        """Enable / disable the merge inline checklist widget."""
         self.merge_combo.setEnabled(enabled)
         if not enabled:
             self.merge_combo.clear_selection()
-            self.merge_combo.set_placeholder("" if not enabled else "— select components —")  
             self.item.design_merge = ""
-        else:
-            self.merge_combo.set_placeholder("— select components —")
 
     def enable_for_konversi(self, enabled: bool):
         for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
@@ -50,9 +47,8 @@ class MergeKonversiMixin:
 
     def _on_merge_changed(self, selected_names: list[str]):
         """
-        Called by MultiSelectCombo when the selection changes.
-        selected_names is a list of component-name strings (already filtered,
-        no empty strings / separators).
+        Called by InlineChecklistWidget when the selection changes.
+        selected_names is a list of component-name strings.
         Stores the result as a comma-separated string on self.item.design_merge.
         """
         cleaned = [n for n in selected_names if n and n != "—"]
@@ -117,6 +113,8 @@ class MergeKonversiMixin:
 
 
 # ── MultiSelectCombo widget ────────────────────────────────────────────────────
+# Kept for backward-compatibility (may be used elsewhere), but MERGE WITH
+# now uses InlineChecklistWidget from text_property_editor.py instead.
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -129,23 +127,15 @@ from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen, QIcon
 
 class MultiSelectCombo(QWidget):
     """
-    Tag-strip + popup-list multi-select widget, styled after SortByWidget.
+    Tag-strip + popup-list multi-select widget.
 
-    The "input" area is a bordered frame that shows one pill-tag per
-    selected component name.  Clicking anywhere on the frame opens a
-    Qt.Popup list where items can be toggled with check icons.
-    A "Clear" button sits to the right of the frame.
+    NOTE: For the MERGE WITH field in TextPropertyEditor, InlineChecklistWidget
+    is now used instead. This class is retained for any other usages.
 
     Signals
     -------
     selectionChanged(list[str])
         Emitted whenever the set of selected names changes.
-
-    Storage contract
-    ----------------
-    design_merge is stored as a comma-separated string of component names,
-    e.g. "Text1,Text2,Text3".  Use set_selected("Text1,Text2") to restore
-    a saved value and get_selected() → list[str] to read the current value.
     """
 
     selectionChanged = Signal(list)   # list[str] of selected component names
@@ -161,7 +151,7 @@ class MultiSelectCombo(QWidget):
         self._list_widget: QListWidget | None = None
         self._check_icon = self._build_check_icon()
 
-        # ── outer layout: tag-frame only (no clear button) ───────────────────
+        # ── outer layout: tag-frame only ─────────────────────────────────────
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -251,11 +241,15 @@ class MultiSelectCombo(QWidget):
         if not enabled and self._popup:
             self._close_popup()
 
+    def set_placeholder(self, text: str):
+        """Update the placeholder text shown when nothing is selected."""
+        self._placeholder = text
+        self._refresh_tags()
+
     # ── tag rendering ─────────────────────────────────────────────────────────
 
     def _refresh_tags(self):
         """Rebuild the pill-tags inside the tag frame."""
-        # Remove all existing widgets from tag layout
         while self._tag_layout.count():
             item = self._tag_layout.takeAt(0)
             if item.widget():
@@ -277,7 +271,7 @@ class MultiSelectCombo(QWidget):
 
     def _make_tag(self, name: str) -> QPushButton:
         """Create a single pill tag button for a selected component name."""
-        btn = QPushButton(name + "  ✕")
+        btn = QPushButton(name + "  \u2715")
         btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet("""
             QPushButton {
@@ -298,7 +292,7 @@ class MultiSelectCombo(QWidget):
         return btn
 
     def _remove_tag(self, name: str):
-        """Deselect a component by clicking its × on the tag."""
+        """Deselect a component by clicking its x on the tag."""
         if name in self._selected:
             self._selected.remove(name)
         self._refresh_tags()
@@ -379,19 +373,9 @@ class MultiSelectCombo(QWidget):
             self._popup = None
             self._list_widget = None
 
-    def set_placeholder(self, text: str):
-        """Update the placeholder text shown when nothing is selected."""
-        self._placeholder = text
-        self._refresh_tags()
-        
-
     # ── list sync ─────────────────────────────────────────────────────────────
 
     def _sync_list_icons(self):
-        """
-        Sync check icons and selected state in the popup list to match
-        self._selected, without re-triggering itemSelectionChanged.
-        """
         if not self._list_widget:
             return
         lw = self._list_widget
@@ -404,13 +388,11 @@ class MultiSelectCombo(QWidget):
         lw.blockSignals(False)
 
     def _on_list_selection_changed(self):
-        """Called when the user clicks an item in the popup list."""
         lw = self._list_widget
         if lw is None:
             return
         newly_selected = [lw.item(i).text() for i in range(lw.count())
                           if lw.item(i).isSelected()]
-        # Update icons immediately
         for i in range(lw.count()):
             li = lw.item(i)
             li.setIcon(self._check_icon if li.isSelected() else QIcon())
@@ -433,7 +415,7 @@ class MultiSelectCombo(QWidget):
         painter.end()
         return QIcon(pix)
 
-    # ── event filter: open popup on click of tag frame ────────────────────────
+    # ── event filter ──────────────────────────────────────────────────────────
 
     def eventFilter(self, obj, event):
         if obj is self._tag_frame and event.type() == QEvent.MouseButtonPress:
