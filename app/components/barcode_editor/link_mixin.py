@@ -110,8 +110,19 @@ class LinkMixin:
         self.field_edit._apply_disabled_appearance()
 
         # result is editable for LINK type
+        # result should be editable for LINK type
+        self.result_combo.blockSignals(True)
         self.result_combo.setEnabled(True)
-        self._set_combo_value(self.result_combo, getattr(self.item, "design_result", ""))
+
+        val = getattr(self.item, "design_result", "")
+        self._set_combo_value(self.result_combo, val)
+
+        # ensure internal state is valid
+        if val and val in getattr(self.result_combo, "_items", []):
+            self.result_combo._current = val
+            self.result_combo._label.setText(val)
+
+        self.result_combo.blockSignals(False)
 
         self.table_extra.setEnabled(False)
         self.table_extra.setText(self.item.design_query)
