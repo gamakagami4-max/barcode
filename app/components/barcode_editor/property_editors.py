@@ -173,7 +173,6 @@ class RectanglePropertyEditor(QWidget):
 
 class BarcodePropertyEditor(QWidget):
 
-    # Maps display TYPE value → whether LOOKUP cascade should be active
     _LOOKUP_TYPES = {"LOOKUP"}
 
     def __init__(self, target_item, update_callback):
@@ -182,7 +181,6 @@ class BarcodePropertyEditor(QWidget):
         self.update_callback = update_callback
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        # Internal LOOKUP state
         self._conn_map:  dict = {}
         self._table_map: dict = {}
 
@@ -307,7 +305,7 @@ class BarcodePropertyEditor(QWidget):
         self.interpretation_combo._label.setText(_interp)
         self.interpretation_combo.blockSignals(False)
         self.interpretation_combo.currentTextChanged.connect(
-            lambda v: setattr(self.item, "design_interpretation", v)
+            self._update_interpretation
         )
         layout.addRow(_lbl("INTERPRETATION :"), self.interpretation_combo)
 
@@ -426,7 +424,7 @@ class BarcodePropertyEditor(QWidget):
         )
         layout.addRow(_lbl("COLUMN :"), self.column_spin)
 
-        # ── Populate LOOKUP combos from DB, then restore persisted values ──────
+        # ── Populate LOOKUP combos then restore persisted values ───────────────
         self._build_connection_combo()
         self._restore_lookup_values(
             getattr(self.item, "design_group",  ""),
@@ -435,7 +433,7 @@ class BarcodePropertyEditor(QWidget):
             getattr(self.item, "design_result", ""),
         )
 
-        # ── Apply initial enable/disable state based on current TYPE ──────────
+        # ── Apply initial enable/disable state ────────────────────────────────
         self._on_type_changed(_type)
 
     # ── LOOKUP helpers ────────────────────────────────────────────────────────
@@ -533,68 +531,38 @@ class BarcodePropertyEditor(QWidget):
             for w in (self.table_combo, self.field_combo, self.result_combo):
                 w.setEnabled(False)
 
-    # ── Barcode type / visual update ─────────────────────────────────────────
+    # ── Barcode type change ───────────────────────────────────────────────────
 
     def _update_barcode_type(self, new_design: str):
-        from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
-        old_scene_pos = self.item.scenePos()
-        for child in list(self.item.childItems()):
-            self.item.removeFromGroup(child)
-            if child.scene():
-                child.scene().removeItem(child)
-            child.setParentItem(None)
-            del child
+        """Update the barcode design and trigger a repaint.
 
-        self.item.setPos(0, 0)
+        BarcodeItem is now a plain QGraphicsItem that draws everything in
+        paint() — there are no child items or group API calls needed.
+        """
         self.item.design = new_design
-        self.item.bg = QGraphicsRectItem(0, 0, self.item.container_width, self.item.container_height)
-        from PySide6.QtCore import Qt as _Qt
-        self.item.bg.setPen(QPen(QColor("#CBD5E1"), 1, _Qt.DashLine))
-        self.item.bg.setBrush(QBrush(QColor(255, 255, 255, 100)))
-        self.item.addToGroup(self.item.bg)
-
-        _2D_DESIGNS = {"AZTEC (2D)", "DATA MATRIX (2D)", "QR (2D)"}
-        _EAN_DESIGNS = {"EAN 13", "EAN 8", "UPC A"}
-        _CODE39_DESIGNS = {"CODE 39", "CODE 93", "CODE 11", "INTERLEAVED 2 OF 5"}
-
-        if new_design in _2D_DESIGNS:
-            from PySide6.QtWidgets import QGraphicsRectItem as _Rect
-            sq = _Rect(40, 15, 50, 50)
-            sq.setBrush(QBrush(_Qt.black))
-            sq.setPen(_Qt.NoPen)
-            self.item.addToGroup(sq)
-            bar_pattern = []
-        elif new_design in _EAN_DESIGNS:
-            bar_pattern = [2, 2, 3, 2, 2, 4, 3, 2, 3, 2, 2]
-        elif new_design in _CODE39_DESIGNS:
-            bar_pattern = [3, 1, 3, 1, 2, 1, 3, 1, 2, 1, 3]
-        else:
-            # CODE 128, CODE 128-A, CODE 128-B, CODE 128-C
-            bar_pattern = [3, 2, 3, 2, 2, 3, 2, 3, 3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 3]
-
-        x_offset = 15
-        for i, width in enumerate(bar_pattern):
-            if i % 2 == 0:
-                from PySide6.QtWidgets import QGraphicsRectItem as _Rect
-                bar = _Rect(x_offset, 15, width, 45)
-                bar.setBrush(QBrush(_Qt.black))
-                bar.setPen(_Qt.NoPen)
-                self.item.addToGroup(bar)
-            x_offset += width
-
-        lbl_item = QGraphicsTextItem("*12345678*")
-        lbl_item.setFont(QFont("Courier", 9, QFont.Bold))
-        lbl_item.setPos(35, 58)
-        self.item.addToGroup(lbl_item)
-
-        self.item.setPos(old_scene_pos)
+        self.item.prepareGeometryChange()
+        self.item.update()
         self.update_callback()
+
+    # ── Interpretation change ─────────────────────────────────────────────────
+
+    def _update_interpretation(self, val: str):
+        """Sync interpretation to item and toggle the text line in the preview."""
+        setattr(self.item, "design_interpretation", val)
+        # Show interpretation text in preview when not "NO INTERPRETATION"
+        self.item._show_text = (val != "NO INTERPRETATION")
+        self.item.update()
+        self.update_callback()
+
     # ── Size / position ───────────────────────────────────────────────────────
 
     def update_size(self):
-        self.item.container_width  = self.width_spin.value() if hasattr(self, "width_spin") else self.item.container_width
-        self.item.container_height = self.height_spin.value() if hasattr(self, "height_spin") else self.item.container_height
-        self.item.bg.setRect(0, 0, self.item.container_width, self.item.container_height)
+        """Resize the barcode container and repaint."""
+        if hasattr(self, "width_spin"):
+            self.item.container_width = self.width_spin.value()
+        if hasattr(self, "height_spin"):
+            self.item.container_height = self.height_spin.value()
+        self.item.setRect(self.item.container_width, self.item.container_height)
         self.update_callback()
 
     def update_position_fields(self, pos):

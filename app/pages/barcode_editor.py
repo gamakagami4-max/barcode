@@ -739,11 +739,10 @@ class BarcodeEditorPage(QWidget):
                 "font_size": font.pointSize(), "font_family": font.family(),
                 "bold": font.bold(), "italic": font.italic(),
                 "color": item._original_color.name() if hasattr(item, "_original_color") else item.defaultTextColor().name(),
-                # ── stable ID saved so links survive renames ──────────────────
                 "component_id":        getattr(item, "component_id",         ""),
                 "inverse":             getattr(item, "design_inverse",       False),
-                "design_same_with":    getattr(item, "design_same_with",     ""),  # stores component_id
-                "design_link":         getattr(item, "design_link",          ""),  # stores component_id
+                "design_same_with":    getattr(item, "design_same_with",     ""),
+                "design_link":         getattr(item, "design_link",          ""),
                 "design_group":        getattr(item, "design_group",         ""),
                 "design_table":        getattr(item, "design_table",         ""),
                 "design_query":        getattr(item, "design_query",         ""),
@@ -797,7 +796,6 @@ class BarcodeEditorPage(QWidget):
                 item.setFont(font)
                 item.setDefaultTextColor(QColor(d.get("color", "#000000")))
 
-                # Restore stable component_id (or generate a new one for legacy data)
                 saved_id = d.get("component_id", "")
                 item.component_id = saved_id if saved_id else str(uuid.uuid4())
 
@@ -831,10 +829,11 @@ class BarcodeEditorPage(QWidget):
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "barcode":
                 item = BarcodeItem(self.update_pos_label, design=d.get("design", "CODE128"))
-                item.container_width  = d.get("container_width",  160)
+                item.container_width  = d.get("container_width",  80)
                 item.container_height = d.get("container_height", 80)
                 item.component_name   = d.get("name", "Barcode")
-                item.bg.setRect(0, 0, item.container_width, item.container_height)
+                # ── FIXED: no more item.bg — resize via item.setRect ──────────
+                item.setRect(item.container_width, item.container_height)
                 for attr, default in _BARCODE_DEFAULTS.items():
                     setattr(item, attr, d.get(attr, default))
                 item.design_column = int(item.design_column or 1)
@@ -1009,9 +1008,6 @@ class BarcodeEditorPage(QWidget):
             return
         item = sel[0]
         item.component_name = name or "Unnamed"
-        # No need to propagate renames for SAME WITH / LINK — they use component_id now.
-        # Only update display name in combos that still use component_name
-        # (merge, timbangan, weight, um).
         old_name = getattr(item, "_last_component_name", item.component_name)
         new_name = item.component_name
         item._last_component_name = new_name
@@ -1020,11 +1016,6 @@ class BarcodeEditorPage(QWidget):
         self.update_component_list()
 
     def _propagate_name_rename(self, old_name: str, new_name: str):
-        """
-        Propagate renames only for attributes that still store component_name
-        (merge, timbangan, weight, um). SAME WITH and LINK now use component_id
-        so they don't need renaming.
-        """
         NAME_ATTRS = ("design_timbangan", "design_weight", "design_um")
         for si in self.scene.items():
             for attr in NAME_ATTRS:
@@ -1045,7 +1036,6 @@ class BarcodeEditorPage(QWidget):
         for combo in (editor.timbangan_combo, editor.weight_combo, editor.um_combo):
             combo._items = [new_name if x == old_name else x for x in combo._items]
             if getattr(combo, "_id_map", None):
-                # Update id_map keys too
                 combo._id_map = {
                     (new_name if k == old_name else k): v
                     for k, v in combo._id_map.items()
@@ -1137,7 +1127,6 @@ class BarcodeEditorPage(QWidget):
             _init_text_item(item)
             item.setFont(QFont("Arial", 10))
             item.component_name = _label
-            # component_id is auto-assigned in SelectableTextItem.__init__
             for attr in ("design_same_with", "design_link", "design_group", "design_table",
                          "design_query", "design_field", "design_result", "design_merge",
                          "design_timbangan", "design_weight", "design_um",
@@ -1202,7 +1191,6 @@ class BarcodeEditorPage(QWidget):
         offset = 20
         data['aabb_x'] = data.get('aabb_x', data.get('x', 0)) + offset
         data['aabb_y'] = data.get('aabb_y', data.get('y', 0)) + offset
-        # Pasted item gets a fresh component_id so it's independent
         if data.get("type") == "text":
             data["component_id"] = str(uuid.uuid4())
         item = self._create_item_from_data(data)
@@ -1237,7 +1225,6 @@ class BarcodeEditorPage(QWidget):
             item.setFont(font)
             item.setDefaultTextColor(QColor(data.get('color', '#000000')))
 
-            # Restore or assign component_id
             saved_id = data.get("component_id", "")
             item.component_id = saved_id if saved_id else str(uuid.uuid4())
 
@@ -1279,9 +1266,10 @@ class BarcodeEditorPage(QWidget):
 
         elif kind == 'barcode':
             item = BarcodeItem(self.update_pos_label, design=data.get('design', 'CODE128'))
-            item.container_width  = data.get('container_width', 160)
+            item.container_width  = data.get('container_width', 80)
             item.container_height = data.get('container_height', 80)
-            item.bg.setRect(0, 0, item.container_width, item.container_height)
+            # ── FIXED: no more item.bg — resize via item.setRect ──────────────
+            item.setRect(item.container_width, item.container_height)
             for attr, default in _BARCODE_DEFAULTS.items():
                 setattr(item, attr, data.get(attr, default))
             item.design_column  = int(item.design_column or 1)
@@ -1310,7 +1298,6 @@ class BarcodeEditorPage(QWidget):
         return item
 
     def _sync_same_with_items(self):
-        """Sync SAME WITH items using component_id. Falls back to component_name for legacy data."""
         id_to_item = {
             getattr(si, "component_id", ""): si
             for si in self.scene.items()
@@ -1329,7 +1316,6 @@ class BarcodeEditorPage(QWidget):
             if getattr(si, "design_type", "") != "SAME WITH":
                 continue
             ref = getattr(si, "design_same_with", "")
-            # Try by ID first, fall back to name for legacy data
             source = id_to_item.get(ref) or name_to_item.get(ref)
             if not source or source is si:
                 continue
@@ -1343,7 +1329,6 @@ class BarcodeEditorPage(QWidget):
             si.design_visible = getattr(source, "design_visible", True)
 
     def _rebuild_same_with_registry(self):
-        """Rebuild registry using component_id. Falls back to component_name for legacy data."""
         id_to_item = {
             getattr(si, "component_id", ""): si
             for si in self.scene.items()
