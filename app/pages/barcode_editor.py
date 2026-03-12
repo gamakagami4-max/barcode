@@ -439,8 +439,19 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addStretch()
         self.comp_count_badge = QLabel("0")
         self.comp_count_badge.setAlignment(Qt.AlignCenter)
-        self.comp_count_badge.setFixedSize(20, 20)
-        self.comp_count_badge.setStyleSheet("background:#6366F1;color:white;border-radius:10px;font-weight:700;")
+        self.comp_count_badge.setFixedSize(22, 22)
+        self.comp_count_badge.setStyleSheet("""
+            QLabel {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #818CF8, stop:1 #4F46E5);
+                color: white;
+                border-radius: 11px;
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: 0.3px;
+                border: 1.5px solid rgba(255,255,255,0.25);
+            }
+        """)
         ch_layout.addWidget(self.comp_count_badge)
         sidebar_layout.addWidget(comp_header)
 
