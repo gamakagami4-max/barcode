@@ -264,7 +264,7 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("BARCODE TYPE :"), self.barcode_type_combo)
 
         # ── MAGNIFICATION FACTOR ──────────────────────────────────────────────
-        self.magnification_combo = make_chevron_combo(["1", "2", "3", "4", "5"])
+        self.magnification_combo = make_chevron_combo(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
         _mag = str(getattr(self.item, "design_magnification", "1"))
         self.magnification_combo.blockSignals(True)
         self.magnification_combo._current = _mag
