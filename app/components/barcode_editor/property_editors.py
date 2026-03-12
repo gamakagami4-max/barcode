@@ -558,8 +558,43 @@ class BarcodePropertyEditor(QWidget):
     # ── Barcode type change ───────────────────────────────────────────────────
 
     def _update_barcode_type(self, new_design: str):
+        _2D = {"AZTEC (2D)", "DATA MATRIX (2D)", "QR (2D)"}
+
+        old_design = self.item.design
         self.item.design = new_design
-        self.item.prepareGeometryChange()
+
+        was_2d = old_design in _2D
+        is_2d  = new_design in _2D
+
+        if was_2d != is_2d:
+            # Save current visual top-left before resize
+            saved_left = self.left_spin.value()
+            saved_top  = self.top_spin.value()
+
+            if is_2d:
+                # About to shrink to square — save current linear dimensions
+                # so we can restore them when switching back to linear.
+                self.item._linear_width  = self.item.container_width
+                self.item._linear_height = self.item.container_height
+
+            # Retrieve saved linear dims (defaulting to 95×40 if never set)
+            linear_w = getattr(self.item, "_linear_width",  95)
+            linear_h = getattr(self.item, "_linear_height", 40)
+
+            new_w, new_h = BarcodeItem.natural_size_for(
+                new_design,
+                linear_w=linear_w,
+                linear_h=linear_h,
+            )
+
+            self.item.prepareGeometryChange()
+            self.item.container_width  = new_w
+            self.item.container_height = new_h
+            self.item.setTransformOriginPoint(new_w / 2, new_h / 2)
+
+            # Restore visual top-left after resize
+            self._move_to_visual(target_x=saved_left, target_y=saved_top, block=True)
+
         self.item.update()
         self.update_callback()
 

@@ -123,6 +123,11 @@ class BarcodeItem(QGraphicsItem):
         self.container_height  = 40
         self._show_text        = True   # show "*12345*" interpretation line
 
+        # Store original linear dimensions so we can restore them when
+        # switching back from a 2D barcode type.
+        self._linear_width     = 95
+        self._linear_height    = 40
+
         self.setTransformOriginPoint(
             self.container_width / 2,
             self.container_height / 2
@@ -164,6 +169,21 @@ class BarcodeItem(QGraphicsItem):
         current_tl = self.mapToScene(QPointF(0, 0))
         delta = scene_pos - current_tl
         self.setPos(self.pos() + delta)
+
+    @staticmethod
+    def natural_size_for(design: str, linear_w: float = 95, linear_h: float = 40):
+        """
+        Return (width, height) that reflects the natural aspect ratio for
+        the given barcode design.
+
+        - 2D designs (AZTEC, QR, DataMatrix) → square, side = min(linear_w, linear_h)
+        - Linear designs → restore the saved linear_w × linear_h dimensions
+        """
+        if design in _2D_DESIGNS:
+            side = min(linear_w, linear_h)
+            return side, side
+        else:
+            return linear_w, linear_h
 
     # ── painting ──────────────────────────────────────────────────────────────
 
