@@ -913,11 +913,11 @@ class TextPropertyEditor(
         # ── Wire save signals (guard against double-connecting) ───────────────
         try:
             self.batch_no_combo.currentTextChanged.disconnect(self._save_batch_no)
-        except RuntimeError:
+        except Exception:
             pass
         try:
             self.wh_combo.currentTextChanged.disconnect(self._save_wh)
-        except RuntimeError:
+        except Exception:
             pass
         self.batch_no_combo.currentTextChanged.connect(self._save_batch_no)
         self.wh_combo.currentTextChanged.connect(self._save_wh)
@@ -946,11 +946,11 @@ class TextPropertyEditor(
         self.wh_combo.blockSignals(False)
         try:
             self.batch_no_combo.currentTextChanged.disconnect(self._save_batch_no)
-        except RuntimeError:
+        except Exception:
             pass
         try:
             self.wh_combo.currentTextChanged.disconnect(self._save_wh)
-        except RuntimeError:
+        except Exception:
             pass
 
     # ── Standard property-apply methods ──────────────────────────────────────
