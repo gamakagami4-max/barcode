@@ -157,26 +157,38 @@ class InlineChecklistWidget(QWidget):
         outer.addWidget(self._container)
 
         self._focused_name: str | None = None
+
+        # Disabled-state placeholder — shown instead of checklist when not MERGE type
+        self._disabled_placeholder = QFrame()
+        self._disabled_placeholder.setFixedHeight(28)
+        self._disabled_placeholder.setStyleSheet(
+            "QFrame { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:4px; }"
+        )
+        outer.addWidget(self._disabled_placeholder)
+
         self._apply_disabled_appearance()
 
     def _apply_disabled_appearance(self):
-        self._scroll.setFixedHeight(28)
-        self._container.setStyleSheet(
-            "QFrame#checklistContainer { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; }"
-        )
-        for name, (row_w, box, txt) in self._rows.items():
-            txt.setStyleSheet("color:#94A3B8;font-size:11px;background:transparent;border:none;")
-            box.setStyleSheet("QLabel{border:1.5px solid #E2E8F0;border-radius:3px;background:#F1F5F9;}")
-            row_w.setStyleSheet("background:transparent;")
+        self._container.setVisible(False)
+        self._disabled_placeholder.setVisible(True)
         if hasattr(self, "_btn_all"):
-            self._btn_all.setEnabled(False)
-            self._btn_none.setEnabled(False)
+            self._btn_all.setVisible(False)
+            self._btn_none.setVisible(False)
+            self._btn_up.setVisible(False)
+            self._btn_dn.setVisible(False)
 
     def _apply_enabled_appearance(self):
+        if hasattr(self, "_disabled_placeholder"):
+            self._disabled_placeholder.setVisible(False)
+        self._container.setVisible(True)
         self._container.setStyleSheet(
             "QFrame#checklistContainer { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; }"
         )
         if hasattr(self, "_btn_all"):
+            self._btn_all.setVisible(True)
+            self._btn_none.setVisible(True)
+            self._btn_up.setVisible(True)
+            self._btn_dn.setVisible(True)
             self._btn_all.setEnabled(True)
             self._btn_none.setEnabled(True)
 
@@ -194,15 +206,10 @@ class InlineChecklistWidget(QWidget):
         super().setEnabled(enabled)
         if enabled:
             self._apply_enabled_appearance()
-            ROW_H, SPACING, MARGINS, MAX_H = 28, 2, 6, 140
-            n = len(self._items)
-            if n == 0:
-                self._scroll.setFixedHeight(28)
-            else:
-                content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
-                self._scroll.setFixedHeight(min(content_h, MAX_H))
         else:
             self._apply_disabled_appearance()
+        # Always sync checkbox visuals to _selected after enable/disable
+        self._refresh_row_styles()
 
     def set_items(self, items: list[str]):
         def _fmt(s: str) -> str:
@@ -501,7 +508,7 @@ class TextPropertyEditor(
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(_lbl("LINK TO :"), self.link_combo)
 
-        # ── MERGE combo (multi-select) ────────────────────────────────────────
+        # ── MERGE combo (multi-select inline checklist) ───────────────────────
         self.merge_combo = self._build_merge_combo()
         layout.addRow(_lbl("MERGE WITH :"), self.merge_combo)
 

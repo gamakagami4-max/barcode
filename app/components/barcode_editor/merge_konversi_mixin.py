@@ -28,10 +28,11 @@ class MergeKonversiMixin:
 
     def enable_for_merge(self, enabled: bool):
         """Enable / disable the merge inline checklist widget."""
-        self.merge_combo.setEnabled(enabled)
         if not enabled:
+            # Clear first so _apply_disabled_appearance sees empty _selected
             self.merge_combo.clear_selection()
             self.item.design_merge = ""
+        self.merge_combo.setEnabled(enabled)
 
     def enable_for_konversi(self, enabled: bool):
         for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
