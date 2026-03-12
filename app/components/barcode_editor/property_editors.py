@@ -289,9 +289,9 @@ class BarcodePropertyEditor(QWidget):
 
         # ── CHECK DIGIT ───────────────────────────────────────────────────────
         self.check_digit_combo = make_chevron_combo([
-            "-- NONE --", "MOD 10", "MOD 11", "MOD 43",
+            "AUTO GENERATE", "MANUAL INPUT",
         ])
-        _cd = getattr(self.item, "design_check_digit", "-- NONE --") or "-- NONE --"
+        _cd = getattr(self.item, "design_check_digit", " ") or " "
         self.check_digit_combo.blockSignals(True)
         self.check_digit_combo._current = _cd
         self.check_digit_combo._label.setText(_cd)
