@@ -204,11 +204,14 @@ class BarcodePropertyEditor(QWidget):
         )
         layout.addRow(_lbl("HEIGHT(CM) :"), self.height_cm_spin)
 
-        # ── TOP / LEFT ────────────────────────────────────────────────────────
-        self.top_spin  = make_spin(-5000, 5000, int(self.item.pos().y()))
-        self.left_spin = make_spin(-5000, 5000, int(self.item.pos().x()))
-        self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
-        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
+        # ── TOP / LEFT — use visual AABB top-left, not raw pos() ──────────────
+        _aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        self.top_spin  = make_spin(-5000, 5000, int(round(_aabb.top())))
+        self.left_spin = make_spin(-5000, 5000, int(round(_aabb.left())))
+
+        self.top_spin.valueChanged.connect(lambda v: self._move_to_visual(target_y=v))
+        self.left_spin.valueChanged.connect(lambda v: self._move_to_visual(target_x=v))
+
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
@@ -224,12 +227,15 @@ class BarcodePropertyEditor(QWidget):
 
         def _apply_angle(v):
             angle = _angle_map.get(v, 0)
-            saved_x = self.left_spin.value()
-            saved_y = self.top_spin.value()
+            # Save current visual top-left
+            saved_left = self.left_spin.value()
+            saved_top  = self.top_spin.value()
+            # Apply rotation around center
             br = self.item.boundingRect()
             self.item.setTransformOriginPoint(br.center())
             self.item.setRotation(angle)
-            self.item.setPos(saved_x, saved_y)
+            # Restore visual top-left
+            self._move_to_visual(target_x=saved_left, target_y=saved_top, block=True)
 
         self.angle_combo.currentTextChanged.connect(_apply_angle)
         layout.addRow(_lbl("ANGLE :"), self.angle_combo)
@@ -436,6 +442,24 @@ class BarcodePropertyEditor(QWidget):
         # ── Apply initial enable/disable state ────────────────────────────────
         self._on_type_changed(_type)
 
+    # ── Visual position helpers ───────────────────────────────────────────────
+
+    def _get_aabb_offset(self):
+        """Return (off_x, off_y): difference between AABB top-left and pos()."""
+        aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        pos  = self.item.pos()
+        return aabb.left() - pos.x(), aabb.top() - pos.y()
+
+    def _move_to_visual(self, target_x=None, target_y=None, block=False):
+        """Move item so its visual (AABB) top-left matches the given coordinates."""
+        off_x, off_y = self._get_aabb_offset()
+        if target_x is not None:
+            self.item.setX(target_x - off_x)
+        if target_y is not None:
+            self.item.setY(target_y - off_y)
+        if block:
+            self.update_position_fields()
+
     # ── LOOKUP helpers ────────────────────────────────────────────────────────
 
     def _build_connection_combo(self):
@@ -534,11 +558,6 @@ class BarcodePropertyEditor(QWidget):
     # ── Barcode type change ───────────────────────────────────────────────────
 
     def _update_barcode_type(self, new_design: str):
-        """Update the barcode design and trigger a repaint.
-
-        BarcodeItem is now a plain QGraphicsItem that draws everything in
-        paint() — there are no child items or group API calls needed.
-        """
         self.item.design = new_design
         self.item.prepareGeometryChange()
         self.item.update()
@@ -547,9 +566,7 @@ class BarcodePropertyEditor(QWidget):
     # ── Interpretation change ─────────────────────────────────────────────────
 
     def _update_interpretation(self, val: str):
-        """Sync interpretation to item and toggle the text line in the preview."""
         setattr(self.item, "design_interpretation", val)
-        # Show interpretation text in preview when not "NO INTERPRETATION"
         self.item._show_text = (val != "NO INTERPRETATION")
         self.item.update()
         self.update_callback()
@@ -557,7 +574,6 @@ class BarcodePropertyEditor(QWidget):
     # ── Size / position ───────────────────────────────────────────────────────
 
     def update_size(self):
-        """Resize the barcode container and repaint."""
         if hasattr(self, "width_spin"):
             self.item.container_width = self.width_spin.value()
         if hasattr(self, "height_spin"):
@@ -565,11 +581,15 @@ class BarcodePropertyEditor(QWidget):
         self.item.setRect(self.item.container_width, self.item.container_height)
         self.update_callback()
 
-    def update_position_fields(self, pos):
+    def update_position_fields(self, pos=None):
+        """Refresh TOP/LEFT spins to show the visual (AABB) top-left."""
+        aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        new_top  = int(round(aabb.top()))
+        new_left = int(round(aabb.left()))
         self.top_spin.blockSignals(True)
         self.left_spin.blockSignals(True)
-        self.top_spin.setValue(int(pos.y()))
-        self.left_spin.setValue(int(pos.x()))
+        self.top_spin.setValue(new_top)
+        self.left_spin.setValue(new_left)
         self.top_spin.blockSignals(False)
         self.left_spin.blockSignals(False)
 

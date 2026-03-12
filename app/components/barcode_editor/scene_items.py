@@ -119,9 +119,14 @@ class BarcodeItem(QGraphicsItem):
         self.move_callback     = move_callback
         self.component_name    = "Barcode"
         self.design            = design
-        self.container_width   = 80
-        self.container_height  = 80
+        self.container_width   = 100
+        self.container_height  = 40
         self._show_text        = True   # show "*12345*" interpretation line
+
+        self.setTransformOriginPoint(
+            self.container_width / 2,
+            self.container_height / 2
+        )
 
         self.setFlags(
             QGraphicsItem.ItemIsMovable
@@ -139,7 +144,26 @@ class BarcodeItem(QGraphicsItem):
         self.prepareGeometryChange()
         self.container_width  = w
         self.container_height = h
+        self.setTransformOriginPoint(w / 2, h / 2)
         self.update()
+
+    def visual_top_left(self) -> QPointF:
+        """
+        Returns the visual top-left corner in scene coordinates, accounting
+        for rotation. Use this to read LEFT/TOP in the properties panel
+        instead of pos().
+        """
+        return self.mapToScene(QPointF(0, 0))
+
+    def set_visual_top_left(self, scene_pos: QPointF):
+        """
+        Moves the item so its visual top-left corner lands at scene_pos.
+        Use this to write LEFT/TOP from the properties panel
+        instead of setPos().
+        """
+        current_tl = self.mapToScene(QPointF(0, 0))
+        delta = scene_pos - current_tl
+        self.setPos(self.pos() + delta)
 
     # ── painting ──────────────────────────────────────────────────────────────
 
