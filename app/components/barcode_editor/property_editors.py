@@ -227,14 +227,11 @@ class BarcodePropertyEditor(QWidget):
 
         def _apply_angle(v):
             angle = _angle_map.get(v, 0)
-            # Save current visual top-left
             saved_left = self.left_spin.value()
             saved_top  = self.top_spin.value()
-            # Apply rotation around center
             br = self.item.boundingRect()
             self.item.setTransformOriginPoint(br.center())
             self.item.setRotation(angle)
-            # Restore visual top-left
             self._move_to_visual(target_x=saved_left, target_y=saved_top, block=True)
 
         self.angle_combo.currentTextChanged.connect(_apply_angle)
@@ -288,22 +285,22 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("RATIO :"), self.ratio_combo)
 
         # ── CHECK DIGIT ───────────────────────────────────────────────────────
-        self.check_digit_combo = make_chevron_combo([
-            "AUTO GENERATE", "MANUAL INPUT",
-        ])
-        _cd = getattr(self.item, "design_check_digit", " ") or " "
+        _VALID_CD = ("AUTO GENERATE", "MANUAL INPUT")
+        self.check_digit_combo = make_chevron_combo(list(_VALID_CD))
+        _cd = getattr(self.item, "design_check_digit", "AUTO GENERATE") or "AUTO GENERATE"
+        if _cd not in _VALID_CD:
+            _cd = "AUTO GENERATE"
         self.check_digit_combo.blockSignals(True)
         self.check_digit_combo._current = _cd
         self.check_digit_combo._label.setText(_cd)
         self.check_digit_combo.blockSignals(False)
-        self.check_digit_combo.currentTextChanged.connect(
-            lambda v: setattr(self.item, "design_check_digit", v)
-        )
+        self.check_digit_combo.currentTextChanged.connect(self._on_check_digit_changed)
         layout.addRow(_lbl("CHECK DIGIT :"), self.check_digit_combo)
+
 
         # ── INTERPRETATION ────────────────────────────────────────────────────
         self.interpretation_combo = make_chevron_combo([
-            "NO INTERPRETATION", "BELOW BARCODE",
+            "NO INTERPRETATION", "ABOVE BARCODE", "BELOW BARCODE",
         ])
         _interp = getattr(self.item, "design_interpretation", "NO INTERPRETATION") or "NO INTERPRETATION"
         self.interpretation_combo.blockSignals(True)
@@ -317,7 +314,9 @@ class BarcodePropertyEditor(QWidget):
 
         # ── TYPE ──────────────────────────────────────────────────────────────
         self.type_combo = make_chevron_combo([
-            "FIX", "INPUT", "LOOKUP", "SYSTEM", "BATCH NO", "RUNNING NO",
+            "FIX", "INPUT", "LOOKUP", "SAME WITH", "LINK", "SYSTEM",
+            "BATCH NO", "MERGE", "TIMBANGAN", "DUPLIKASI", "RUNNING NO",
+            "KONVERSI TIMBANGAN",
         ])
         _type = getattr(self.item, "design_type", "FIX") or "FIX"
         self.type_combo.blockSignals(True)
@@ -326,6 +325,51 @@ class BarcodePropertyEditor(QWidget):
         self.type_combo.blockSignals(False)
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
         layout.addRow(_lbl("TYPE :"), self.type_combo)
+
+        # ── SAME WITH combo ───────────────────────────────────────────────────
+        self.same_with_combo = self._build_scene_name_combo()
+        _sw = getattr(self.item, "design_same_with", "")
+        if _sw and _sw in self.same_with_combo._items:
+            self.same_with_combo.setCurrentText(_sw)
+        self.same_with_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_same_with", v)
+        )
+        layout.addRow(_lbl("SAME WITH :"), self.same_with_combo)
+
+        # ── LINK combo ────────────────────────────────────────────────────────
+        self.link_combo = self._build_scene_name_combo()
+        _lnk = getattr(self.item, "design_link", "")
+        if _lnk and _lnk in self.link_combo._items:
+            self.link_combo.setCurrentText(_lnk)
+        self.link_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_link", v)
+        )
+        layout.addRow(_lbl("LINK TO :"), self.link_combo)
+
+        # ── TIMBANGAN / WEIGHT / U/M combos ───────────────────────────────────
+        self.timbangan_combo = self._build_scene_name_combo()
+        self.weight_combo    = self._build_scene_name_combo()
+        self.um_combo        = self._build_scene_name_combo()
+        for _attr, _combo in (
+            ("design_timbangan", self.timbangan_combo),
+            ("design_weight",    self.weight_combo),
+            ("design_um",        self.um_combo),
+        ):
+            _sv = getattr(self.item, _attr, "")
+            if _sv and _sv in _combo._items:
+                _combo.setCurrentText(_sv)
+        self.timbangan_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_timbangan", v)
+        )
+        self.weight_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_weight", v)
+        )
+        self.um_combo.currentTextChanged.connect(
+            lambda v: setattr(self.item, "design_um", v)
+        )
+        layout.addRow(_lbl("TIMBANGAN :"), self.timbangan_combo)
+        layout.addRow(_lbl("WEIGHT :"),    self.weight_combo)
+        layout.addRow(_lbl("U/M :"),       self.um_combo)
 
         # ── EDITOR ────────────────────────────────────────────────────────────
         self.editor_combo = make_chevron_combo(["ENABLED", "DISABLED", "INVISIBLE"])
@@ -538,12 +582,62 @@ class BarcodePropertyEditor(QWidget):
                 if stored_result:
                     self.result_combo.setCurrentText(stored_result)
 
+    # ── Check digit change ────────────────────────────────────────────────────
+
+    def _on_check_digit_changed(self, val: str):
+        setattr(self.item, "design_check_digit", val)
+
+    # ── Scene name combo helper ───────────────────────────────────────────────
+
+    def _build_scene_name_combo(self):
+        """Return a chevron combo populated with component_name of all scene items."""
+        from components.barcode_editor.scene_items import SelectableTextItem, BarcodeItem as _BC
+        names = []
+        try:
+            scene = self.item.scene()
+            if scene:
+                for si in scene.items():
+                    if si.group() or si is self.item:
+                        continue
+                    if not isinstance(si, (SelectableTextItem, _BC)):
+                        continue
+                    name = getattr(si, "component_name", "") or ""
+                    if name:
+                        names.append(name)
+        except Exception:
+            pass
+        combo = make_chevron_combo(names)
+        combo.setPlaceholderText("—")
+        combo.setCurrentIndex(-1)
+        return combo
+
+    def _set_row_visible(self, widget, visible: bool):
+        """Show/hide both the field widget and its label in the QFormLayout."""
+        layout = self.layout()
+        if not isinstance(layout, QFormLayout):
+            widget.setVisible(visible)
+            return
+        row, role = layout.getWidgetPosition(widget)
+        if row < 0:
+            widget.setVisible(visible)
+            return
+        lbl_item = layout.itemAt(row, QFormLayout.LabelRole)
+        if lbl_item and lbl_item.widget():
+            lbl_item.widget().setVisible(visible)
+        widget.setVisible(visible)
+
     # ── TYPE change ───────────────────────────────────────────────────────────
 
     def _on_type_changed(self, val: str):
         setattr(self.item, "design_type", val)
-        is_lookup = val == "LOOKUP"
 
+        is_lookup    = val == "LOOKUP"
+        is_same_with = val == "SAME WITH"
+        is_link      = val == "LINK"
+        is_konversi  = val == "KONVERSI TIMBANGAN"
+        is_timbangan = val == "TIMBANGAN"
+
+        # ── LOOKUP cascade ────────────────────────────────────────────────────
         self.group_combo.setEnabled(is_lookup)
         if is_lookup:
             has_group = bool(self.group_combo.currentText())
@@ -554,6 +648,22 @@ class BarcodePropertyEditor(QWidget):
         else:
             for w in (self.table_combo, self.field_combo, self.result_combo):
                 w.setEnabled(False)
+        for w in (self.group_combo, self.table_combo, self.field_combo, self.result_combo):
+            self._set_row_visible(w, is_lookup)
+
+        # ── SAME WITH ─────────────────────────────────────────────────────────
+        self.same_with_combo.setEnabled(is_same_with)
+        self._set_row_visible(self.same_with_combo, is_same_with)
+
+        # ── LINK ──────────────────────────────────────────────────────────────
+        self.link_combo.setEnabled(is_link)
+        self._set_row_visible(self.link_combo, is_link)
+
+        # ── TIMBANGAN / KONVERSI rows ─────────────────────────────────────────
+        show_timbangan = is_timbangan or is_konversi
+        for w in (self.timbangan_combo, self.weight_combo, self.um_combo):
+            w.setEnabled(show_timbangan)
+            self._set_row_visible(w, show_timbangan)
 
     # ── Barcode type change ───────────────────────────────────────────────────
 
@@ -567,17 +677,13 @@ class BarcodePropertyEditor(QWidget):
         is_2d  = new_design in _2D
 
         if was_2d != is_2d:
-            # Save current visual top-left before resize
             saved_left = self.left_spin.value()
             saved_top  = self.top_spin.value()
 
             if is_2d:
-                # About to shrink to square — save current linear dimensions
-                # so we can restore them when switching back to linear.
                 self.item._linear_width  = self.item.container_width
                 self.item._linear_height = self.item.container_height
 
-            # Retrieve saved linear dims (defaulting to 95×40 if never set)
             linear_w = getattr(self.item, "_linear_width",  95)
             linear_h = getattr(self.item, "_linear_height", 40)
 
@@ -592,7 +698,6 @@ class BarcodePropertyEditor(QWidget):
             self.item.container_height = new_h
             self.item.setTransformOriginPoint(new_w / 2, new_h / 2)
 
-            # Restore visual top-left after resize
             self._move_to_visual(target_x=saved_left, target_y=saved_top, block=True)
 
         self.item.update()
