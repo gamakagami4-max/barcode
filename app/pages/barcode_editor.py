@@ -767,6 +767,9 @@ class BarcodeEditorPage(QWidget):
                 "design_caption":      getattr(item, "design_caption",       ""),
                 "design_wrap_text":    getattr(item, "design_wrap_text",     False),
                 "design_wrap_width":   getattr(item, "design_wrap_width",    1),
+                # ── BATCH NO fields ───────────────────────────────────────────
+                "design_batch_no":     getattr(item, "design_batch_no",      ""),
+                "design_wh":           getattr(item, "design_wh",            ""),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -815,6 +818,9 @@ class BarcodeEditorPage(QWidget):
                 item.design_trim        = bool(d.get("design_trim", False))
                 item.design_wrap_text   = bool(d.get("design_wrap_text", False))
                 item.design_wrap_width  = int(d.get("design_wrap_width", 1) or 1)
+                # ── BATCH NO fields ───────────────────────────────────────────
+                item.design_batch_no    = d.get("design_batch_no", "")
+                item.design_wh          = d.get("design_wh", "")
                 item.component_name = d.get("name", "Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -832,7 +838,6 @@ class BarcodeEditorPage(QWidget):
                 item.container_width  = d.get("container_width",  80)
                 item.container_height = d.get("container_height", 80)
                 item.component_name   = d.get("name", "Barcode")
-                # ── FIXED: no more item.bg — resize via item.setRect ──────────
                 item.setRect(item.container_width, item.container_height)
                 for attr, default in _BARCODE_DEFAULTS.items():
                     setattr(item, attr, d.get(attr, default))
@@ -1142,6 +1147,9 @@ class BarcodeEditorPage(QWidget):
             item.design_caption      = ""
             item.design_wrap_text    = False
             item.design_wrap_width   = 1
+            # ── BATCH NO defaults ─────────────────────────────────────────────
+            item.design_batch_no     = ""
+            item.design_wh           = ""
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             rect_count = sum(
@@ -1245,6 +1253,9 @@ class BarcodeEditorPage(QWidget):
             item.design_trim       = bool(data.get("design_trim", False))
             item.design_wrap_text  = bool(data.get("design_wrap_text", False))
             item.design_wrap_width = int(data.get("design_wrap_width", 1) or 1)
+            # ── BATCH NO fields ───────────────────────────────────────────────
+            item.design_batch_no   = data.get("design_batch_no", "")
+            item.design_wh         = data.get("design_wh", "")
 
             item.component_name = data.get('name', 'Text')
             setup_item_logic(item, self.update_pos_label)
@@ -1268,7 +1279,6 @@ class BarcodeEditorPage(QWidget):
             item = BarcodeItem(self.update_pos_label, design=data.get('design', 'CODE128'))
             item.container_width  = data.get('container_width', 80)
             item.container_height = data.get('container_height', 80)
-            # ── FIXED: no more item.bg — resize via item.setRect ──────────────
             item.setRect(item.container_width, item.container_height)
             for attr, default in _BARCODE_DEFAULTS.items():
                 setattr(item, attr, data.get(attr, default))

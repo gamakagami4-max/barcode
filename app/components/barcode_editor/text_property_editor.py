@@ -820,6 +820,7 @@ class TextPropertyEditor(
             if _prev == "SAME WITH" and not is_same_with: self.clear_same_with_fields()
             if _prev == "LINK"      and not is_link:      self.clear_link_fields()
             if _prev == "SYSTEM"    and not is_system:    self.clear_system_fields()
+            if _prev == "BATCH NO"  and not is_batch_no:  self._clear_batch_no_fields()
 
         self._last_type = val
 
@@ -860,11 +861,10 @@ class TextPropertyEditor(
         self.same_with_combo.setEnabled(is_same_with)
 
     def _populate_batch_no_options(self):
-        """Fill BATCH NO combo with other label components."""
+        """Fill BATCH NO and WH combos with other label components, wire save signals."""
         from components.barcode_editor.scene_items import SelectableTextItem
 
         names = []
-
         try:
             scene = self.item.scene()
             if scene:
@@ -873,7 +873,6 @@ class TextPropertyEditor(
                         continue
                     if not isinstance(si, SelectableTextItem):
                         continue
-
                     name = getattr(si, "component_name", "") or "Text"
                     names.append(name)
         except Exception:
@@ -882,26 +881,78 @@ class TextPropertyEditor(
         names = sorted(set(names))
 
         self.batch_no_combo.blockSignals(True)
+        self.wh_combo.blockSignals(True)
 
-        # ── reset combo items ──
-        # populate BATCH NO
-        self.batch_no_combo._items = names
-
+        # ── Reset and populate BATCH NO ───────────────────────────────────────
         self.batch_no_combo._items = names
         self.batch_no_combo._current = ""
         self.batch_no_combo._label.setText("")
 
-        # populate WH with same options
-        self.wh_combo._items = names
-
+        # ── Reset and populate WH ─────────────────────────────────────────────
         self.wh_combo._items = names
         self.wh_combo._current = ""
         self.wh_combo._label.setText("")
+
+        # ── Restore persisted values ──────────────────────────────────────────
+        saved_batch = getattr(self.item, "design_batch_no", "")
+        if saved_batch and saved_batch in names:
+            self.batch_no_combo._current = saved_batch
+            self.batch_no_combo._label.setText(saved_batch)
+
+        saved_wh = getattr(self.item, "design_wh", "")
+        if saved_wh and saved_wh in names:
+            self.wh_combo._current = saved_wh
+            self.wh_combo._label.setText(saved_wh)
 
         self.batch_no_combo.setEnabled(True)
         self.wh_combo.setEnabled(True)
 
         self.batch_no_combo.blockSignals(False)
+        self.wh_combo.blockSignals(False)
+
+        # ── Wire save signals (guard against double-connecting) ───────────────
+        try:
+            self.batch_no_combo.currentTextChanged.disconnect(self._save_batch_no)
+        except RuntimeError:
+            pass
+        try:
+            self.wh_combo.currentTextChanged.disconnect(self._save_wh)
+        except RuntimeError:
+            pass
+        self.batch_no_combo.currentTextChanged.connect(self._save_batch_no)
+        self.wh_combo.currentTextChanged.connect(self._save_wh)
+
+    def _save_batch_no(self, val: str):
+        if self.item:
+            self.item.design_batch_no = val
+
+    def _save_wh(self, val: str):
+        if self.item:
+            self.item.design_wh = val
+
+    def _clear_batch_no_fields(self):
+        """Disable and disconnect BATCH NO / WH combos."""
+        self.batch_no_combo.blockSignals(True)
+        self.wh_combo.blockSignals(True)
+        self.batch_no_combo._items = []
+        self.batch_no_combo._current = ""
+        self.batch_no_combo._label.setText("")
+        self.wh_combo._items = []
+        self.wh_combo._current = ""
+        self.wh_combo._label.setText("")
+        self.batch_no_combo.setEnabled(False)
+        self.wh_combo.setEnabled(False)
+        self.batch_no_combo.blockSignals(False)
+        self.wh_combo.blockSignals(False)
+        try:
+            self.batch_no_combo.currentTextChanged.disconnect(self._save_batch_no)
+        except RuntimeError:
+            pass
+        try:
+            self.wh_combo.currentTextChanged.disconnect(self._save_wh)
+        except RuntimeError:
+            pass
+
     # ── Standard property-apply methods ──────────────────────────────────────
 
     def _apply_alignment(self, value: str):
