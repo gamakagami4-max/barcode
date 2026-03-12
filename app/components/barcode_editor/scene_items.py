@@ -119,7 +119,7 @@ class BarcodeItem(QGraphicsItem):
         self.move_callback     = move_callback
         self.component_name    = "Barcode"
         self.design            = design
-        self.container_width   = 100
+        self.container_width   = 95
         self.container_height  = 40
         self._show_text        = True   # show "*12345*" interpretation line
 
