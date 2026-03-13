@@ -777,7 +777,7 @@ class BarcodeEditorPage(QWidget):
                 "design_trim":         getattr(item, "design_trim",          False),
                 "design_caption":      getattr(item, "design_caption",       ""),
                 "design_wrap_text":    getattr(item, "design_wrap_text",     False),
-                "design_wrap_width":   getattr(item, "design_wrap_width",    1),
+                "design_wrap_width":   getattr(item, "design_wrap_width",    0),
                 # ── BATCH NO fields ───────────────────────────────────────────
                 "design_batch_no":     getattr(item, "design_batch_no",      ""),
                 "design_wh":           getattr(item, "design_wh",            ""),
@@ -828,7 +828,7 @@ class BarcodeEditorPage(QWidget):
                 item.design_column      = int(d.get("design_column", 1) or 1)
                 item.design_trim        = bool(d.get("design_trim", False))
                 item.design_wrap_text   = bool(d.get("design_wrap_text", False))
-                item.design_wrap_width  = int(d.get("design_wrap_width", 1) or 1)
+                item.design_wrap_width  = int(d.get("design_wrap_width", 0) or 0)
                 # ── BATCH NO fields ───────────────────────────────────────────
                 item.design_batch_no    = d.get("design_batch_no", "")
                 item.design_wh          = d.get("design_wh", "")
@@ -1157,7 +1157,7 @@ class BarcodeEditorPage(QWidget):
             item.design_trim         = False
             item.design_caption      = ""
             item.design_wrap_text    = False
-            item.design_wrap_width   = 1
+            item.design_wrap_width   = 0
             # ── BATCH NO defaults ─────────────────────────────────────────────
             item.design_batch_no     = ""
             item.design_wh           = ""
@@ -1263,7 +1263,7 @@ class BarcodeEditorPage(QWidget):
             item.design_column     = int(data.get("design_column", 1) or 1)
             item.design_trim       = bool(data.get("design_trim", False))
             item.design_wrap_text  = bool(data.get("design_wrap_text", False))
-            item.design_wrap_width = int(data.get("design_wrap_width", 1) or 1)
+            item.design_wrap_width = int(data.get("design_wrap_width", 0) or 0)
             # ── BATCH NO fields ───────────────────────────────────────────────
             item.design_batch_no   = data.get("design_batch_no", "")
             item.design_wh         = data.get("design_wh", "")

@@ -638,7 +638,7 @@ class TextPropertyEditor(
         layout.addRow(_lbl("CAPTION :"), self.caption_input)
 
         self.wrap_combo      = make_chevron_combo(["NO", "YES"])
-        self.wrap_width_spin = make_spin(0, 5000, 1)
+        self.wrap_width_spin = make_spin(0, 5000, 0)
         self.wrap_combo.setCurrentText(
             "YES" if getattr(self.item, "design_wrap_text", False) else "NO"
         )
@@ -647,7 +647,7 @@ class TextPropertyEditor(
         )
         _ww = getattr(self.item, "design_wrap_width", 1)
         try:
-            self.wrap_width_spin.setValue(int(_ww) if _ww else 1)
+            self.wrap_width_spin.setValue(int(_ww) if _ww else 0)
         except (TypeError, ValueError):
             pass
         self.wrap_width_spin.valueChanged.connect(
