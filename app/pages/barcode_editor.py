@@ -202,6 +202,14 @@ class DeleteSignalList(QListWidget):
         self.setDragDropMode(QListWidget.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.RightButton:
+            item = self.itemAt(event.pos())
+            if item:
+                self.setCurrentItem(item)
+                self.itemClicked.emit(item)   # triggers sync_selection_from_list
+        super().mousePressEvent(event)
+
     def dropEvent(self, event):
         super().dropEvent(event)
         p = self.parent()
@@ -211,7 +219,6 @@ class DeleteSignalList(QListWidget):
                 p.update_component_list()
                 break
             p = p.parent()
-
 
 # ── Grid scene ────────────────────────────────────────────────────────────────
 
