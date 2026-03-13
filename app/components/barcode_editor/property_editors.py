@@ -300,7 +300,7 @@ class BarcodePropertyEditor(QWidget):
 
         # ── INTERPRETATION ────────────────────────────────────────────────────
         self.interpretation_combo = make_chevron_combo([
-            "NO INTERPRETATION", "ABOVE BARCODE", "BELOW BARCODE",
+            "NO INTERPRETATION", "BELOW BARCODE",
         ])
         _interp = getattr(self.item, "design_interpretation", "NO INTERPRETATION") or "NO INTERPRETATION"
         self.interpretation_combo.blockSignals(True)
