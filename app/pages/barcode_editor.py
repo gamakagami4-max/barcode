@@ -1261,9 +1261,6 @@ class BarcodeEditorPage(QWidget):
         if not self._clipboard_item or not self._sticker_name:
             return
         data = self._clipboard_item.copy()
-        offset = 20
-        data['aabb_x'] = data.get('aabb_x', data.get('x', 0)) + offset
-        data['aabb_y'] = data.get('aabb_y', data.get('y', 0)) + offset
         if data.get("type") == "text":
             data["component_id"] = str(uuid.uuid4())
         item = self._create_item_from_data(data)
