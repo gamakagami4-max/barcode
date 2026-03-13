@@ -28,7 +28,7 @@ from components.barcode_editor.scene_items import (
 from components.barcode_editor.same_with_mixin import SameWithRegistry
 from components.barcode_editor.text_property_editor import TextPropertyEditor
 from components.barcode_editor.property_editors import LinePropertyEditor, RectanglePropertyEditor, BarcodePropertyEditor
-from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
+from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo, MergeInputWidget
 from components.barcode_editor.general_tab import GeneralTab
 
 
@@ -207,7 +207,7 @@ class DeleteSignalList(QListWidget):
             item = self.itemAt(event.pos())
             if item:
                 self.setCurrentItem(item)
-                self.itemClicked.emit(item)   # triggers sync_selection_from_list
+                self.itemClicked.emit(item)
         super().mousePressEvent(event)
 
     def dropEvent(self, event):
@@ -498,7 +498,6 @@ class BarcodeEditorPage(QWidget):
             QPushButton:disabled { opacity: 0.4; }
         """
 
-        # Copy button
         self.copy_btn = QPushButton()
         self.copy_btn.setIcon(qta.icon("fa5s.copy", color="#6366F1"))
         self.copy_btn.setFixedSize(24, 24)
@@ -508,7 +507,6 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addWidget(self.copy_btn)
         ch_layout.addSpacing(2)
 
-        # Paste button
         self.paste_btn = QPushButton()
         self.paste_btn.setIcon(qta.icon("fa5s.paste", color="#6366F1"))
         self.paste_btn.setFixedSize(24, 24)
@@ -518,7 +516,6 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addWidget(self.paste_btn)
         ch_layout.addSpacing(4)
 
-        # Count badge — rightmost
         self.comp_count_badge = QLabel("0")
         self.comp_count_badge.setAlignment(Qt.AlignCenter)
         self.comp_count_badge.setFixedSize(22, 22)
@@ -865,7 +862,6 @@ class BarcodeEditorPage(QWidget):
                 "design_caption":      getattr(item, "design_caption",       ""),
                 "design_wrap_text":    getattr(item, "design_wrap_text",     False),
                 "design_wrap_width":   getattr(item, "design_wrap_width",    0),
-                # ── BATCH NO fields ───────────────────────────────────────────
                 "design_batch_no":     getattr(item, "design_batch_no",      ""),
                 "design_wh":           getattr(item, "design_wh",            ""),
             })
@@ -916,7 +912,6 @@ class BarcodeEditorPage(QWidget):
                 item.design_trim        = bool(d.get("design_trim", False))
                 item.design_wrap_text   = bool(d.get("design_wrap_text", False))
                 item.design_wrap_width  = int(d.get("design_wrap_width", 0) or 0)
-                # ── BATCH NO fields ───────────────────────────────────────────
                 item.design_batch_no    = d.get("design_batch_no", "")
                 item.design_wh          = d.get("design_wh", "")
                 item.component_name = d.get("name", "Text")
@@ -1126,16 +1121,19 @@ class BarcodeEditorPage(QWidget):
                     setattr(si, attr, new_name)
             raw = getattr(si, "design_merge", "")
             if raw:
-                parts = [
-                    new_name if seg.strip() == old_name else seg.strip()
-                    for seg in raw.split(",")
-                ]
-                setattr(si, "design_merge", ",".join(parts))
+                import re as _re
+                updated = _re.sub(
+                    r"\{" + _re.escape(old_name) + r"\}",
+                    "{" + new_name + "}",
+                    raw,
+                )
+                setattr(si, "design_merge", updated)
 
         editor = getattr(self, "current_editor", None)
         if editor is None or not isinstance(editor, TextPropertyEditor):
             return
 
+        # ── Update timbangan / weight / um combos ─────────────────────────────
         for combo in (editor.timbangan_combo, editor.weight_combo, editor.um_combo):
             combo._items = [new_name if x == old_name else x for x in combo._items]
             if getattr(combo, "_id_map", None):
@@ -1148,8 +1146,23 @@ class BarcodeEditorPage(QWidget):
                 combo._current = new_name
                 combo._set_label_text(new_name)
 
-        if isinstance(editor.merge_combo, MultiSelectCombo):
-            mc = editor.merge_combo
+        # ── Update MERGE WITH widget ───────────────────────────────────────────
+        mc = editor.merge_combo
+        if isinstance(mc, MergeInputWidget):
+            mc._items = [new_name if x == old_name else x for x in mc._items]
+            import re as _re
+            current_tpl = mc.get_template()
+            new_tpl = _re.sub(
+                r"\{" + _re.escape(old_name) + r"\}",
+                "{" + new_name + "}",
+                current_tpl,
+            )
+            if new_tpl != current_tpl:
+                mc.set_template(new_tpl)
+            if mc._picker and mc._picker.isVisible():
+                mc._picker._items = list(mc._items)
+                mc._picker._filter(mc._picker._search.text())
+        elif isinstance(mc, MultiSelectCombo):
             mc._items    = [new_name if x == old_name else x for x in mc._items]
             mc._selected = [new_name if x == old_name else x for x in mc._selected]
             for _refresh in ("_refresh_button_label", "_update_label",
@@ -1245,7 +1258,6 @@ class BarcodeEditorPage(QWidget):
             item.design_caption      = ""
             item.design_wrap_text    = False
             item.design_wrap_width   = 0
-            # ── BATCH NO defaults ─────────────────────────────────────────────
             item.design_batch_no     = ""
             item.design_wh           = ""
             setup_item_logic(item, self.update_pos_label)
@@ -1350,7 +1362,6 @@ class BarcodeEditorPage(QWidget):
             item.design_trim       = bool(data.get("design_trim", False))
             item.design_wrap_text  = bool(data.get("design_wrap_text", False))
             item.design_wrap_width = int(data.get("design_wrap_width", 0) or 0)
-            # ── BATCH NO fields ───────────────────────────────────────────────
             item.design_batch_no   = data.get("design_batch_no", "")
             item.design_wh         = data.get("design_wh", "")
 

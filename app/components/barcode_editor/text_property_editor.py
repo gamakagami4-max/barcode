@@ -15,7 +15,9 @@ from components.barcode_editor.same_with_mixin import SameWithMixin, SameWithReg
 from components.barcode_editor.lookup_mixin import LookupMixin
 from components.barcode_editor.link_mixin import LinkMixin
 from components.barcode_editor.system_mixin import SystemMixin
-from components.barcode_editor.merge_konversi_mixin import MergeKonversiMixin, MultiSelectCombo
+from components.barcode_editor.merge_konversi_mixin import (
+    MergeKonversiMixin, MultiSelectCombo, MergeInputWidget,
+)
 
 LABEL_W = 70
 
@@ -46,7 +48,7 @@ def _lbl(text: str) -> QLabel:
 _QT_ANGLE_TO_DISPLAY = {0: "0", 270: "90", 180: "180", 90: "270"}
 
 
-# ── Inline checklist widget (replaces MultiSelectCombo for field_edit) ────────
+# ── Inline checklist widget (used for LOOKUP FIELD only) ──────────────────────
 
 class InlineChecklistWidget(QWidget):
     selectionChanged = Signal(list)
@@ -158,7 +160,7 @@ class InlineChecklistWidget(QWidget):
 
         self._focused_name: str | None = None
 
-        # Disabled-state placeholder — shown instead of checklist when not MERGE type
+        # Disabled-state placeholder
         self._disabled_placeholder = QFrame()
         self._disabled_placeholder.setFixedHeight(28)
         self._disabled_placeholder.setStyleSheet(
@@ -208,7 +210,6 @@ class InlineChecklistWidget(QWidget):
             self._apply_enabled_appearance()
         else:
             self._apply_disabled_appearance()
-        # Always sync checkbox visuals to _selected after enable/disable
         self._refresh_row_styles()
 
     def set_items(self, items: list[str]):
@@ -488,7 +489,6 @@ class TextPropertyEditor(
 
         # ── SAME WITH combo ───────────────────────────────────────────────────
         self.same_with_combo = self._build_scene_name_combo(exclude_same_with=True)
-        # Restore: stored value is a component_id
         stored_same_with_id = getattr(self.item, "design_same_with", "")
         if stored_same_with_id:
             display_name = self.same_with_combo._id_map_inv.get(stored_same_with_id, "")
@@ -499,7 +499,6 @@ class TextPropertyEditor(
 
         # ── LINK combo ────────────────────────────────────────────────────────
         self.link_combo = self._build_scene_name_combo(only_lookup=True)
-        # Restore: stored value is a component_id
         stored_link_id = getattr(self.item, "design_link", "")
         if stored_link_id:
             display_name = self.link_combo._id_map_inv.get(stored_link_id, "")
@@ -508,7 +507,7 @@ class TextPropertyEditor(
         self.link_combo.currentTextChanged.connect(self._on_link_changed)
         layout.addRow(_lbl("LINK TO :"), self.link_combo)
 
-        # ── MERGE combo (multi-select inline checklist) ───────────────────────
+        # ── MERGE WITH  (MergeInputWidget — token field + ⋯ picker) ──────────
         self.merge_combo = self._build_merge_combo()
         layout.addRow(_lbl("MERGE WITH :"), self.merge_combo)
 
@@ -738,15 +737,18 @@ class TextPropertyEditor(
 
         self._on_type_changed(getattr(self.item, "design_type", "FIX"))
 
-        # Re-apply SAME WITH link if type is SAME WITH and we have a stored ID
         stored_same_with_id = getattr(self.item, "design_same_with", "")
         if (stored_same_with_id
                 and getattr(self.item, "design_type", "") == "SAME WITH"):
             self._apply_same_with_link(stored_same_with_id)
 
-    # ── Helper: build the multi-select MERGE combo ────────────────────────────
+    # ── Helper: build the MERGE WITH token-input widget ───────────────────────
 
-    def _build_merge_combo(self) -> InlineChecklistWidget:
+    def _build_merge_combo(self) -> MergeInputWidget:
+        """
+        Build and return a MergeInputWidget pre-populated with all other
+        SelectableTextItem component names on the canvas.
+        """
         from components.barcode_editor.scene_items import SelectableTextItem
         names: list[str] = []
         try:
@@ -761,12 +763,13 @@ class TextPropertyEditor(
                     names.append(name)
         except Exception:
             pass
-        combo = InlineChecklistWidget()
+
+        combo = MergeInputWidget()
         combo.set_items(names)
         stored = getattr(self.item, "design_merge", "")
         if stored:
             combo.set_selected(stored)
-        combo.selectionChanged.connect(self._on_merge_changed)
+        combo.templateChanged.connect(self._on_merge_changed)
         return combo
 
     # ── Helper: build a single-select name combo from scene items ─────────────
@@ -793,9 +796,8 @@ class TextPropertyEditor(
             pass
 
         combo = make_chevron_combo(names)
-        # ID <-> display name maps for stable linking
-        combo._id_map     = dict(zip(names, ids))      # display name -> component_id
-        combo._id_map_inv = dict(zip(ids, names))      # component_id -> display name
+        combo._id_map     = dict(zip(names, ids))
+        combo._id_map_inv = dict(zip(ids, names))
         combo.setPlaceholderText("—")
         combo.setCurrentIndex(-1)
         return combo
@@ -861,7 +863,6 @@ class TextPropertyEditor(
         self.same_with_combo.setEnabled(is_same_with)
 
     def _populate_batch_no_options(self):
-        """Fill BATCH NO and WH combos with other label components, wire save signals."""
         from components.barcode_editor.scene_items import SelectableTextItem
 
         names = []
@@ -883,17 +884,14 @@ class TextPropertyEditor(
         self.batch_no_combo.blockSignals(True)
         self.wh_combo.blockSignals(True)
 
-        # ── Reset and populate BATCH NO ───────────────────────────────────────
         self.batch_no_combo._items = names
         self.batch_no_combo._current = ""
         self.batch_no_combo._label.setText("")
 
-        # ── Reset and populate WH ─────────────────────────────────────────────
         self.wh_combo._items = names
         self.wh_combo._current = ""
         self.wh_combo._label.setText("")
 
-        # ── Restore persisted values ──────────────────────────────────────────
         saved_batch = getattr(self.item, "design_batch_no", "")
         if saved_batch and saved_batch in names:
             self.batch_no_combo._current = saved_batch
@@ -910,7 +908,6 @@ class TextPropertyEditor(
         self.batch_no_combo.blockSignals(False)
         self.wh_combo.blockSignals(False)
 
-        # ── Wire save signals (guard against double-connecting) ───────────────
         try:
             self.batch_no_combo.currentTextChanged.disconnect(self._save_batch_no)
         except Exception:
@@ -931,7 +928,6 @@ class TextPropertyEditor(
             self.item.design_wh = val
 
     def _clear_batch_no_fields(self):
-        """Disable and disconnect BATCH NO / WH combos."""
         self.batch_no_combo.blockSignals(True)
         self.wh_combo.blockSignals(True)
         self.batch_no_combo._items = []
