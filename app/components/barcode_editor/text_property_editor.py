@@ -745,10 +745,6 @@ class TextPropertyEditor(
     # ── Helper: build the MERGE WITH token-input widget ───────────────────────
 
     def _build_merge_combo(self) -> MergeInputWidget:
-        """
-        Build and return a MergeInputWidget pre-populated with all other
-        SelectableTextItem component names on the canvas.
-        """
         from components.barcode_editor.scene_items import SelectableTextItem
         names: list[str] = []
         try:
@@ -802,7 +798,7 @@ class TextPropertyEditor(
         combo.setCurrentIndex(-1)
         return combo
 
-    # ── _on_type_changed: thin orchestrator ──────────────────────────────────
+    # ── _on_type_changed ──────────────────────────────────────────────────────
 
     def _on_type_changed(self, val: str):
         is_input     = val == "INPUT"
@@ -813,6 +809,7 @@ class TextPropertyEditor(
         is_batch_no  = val == "BATCH NO"
         is_merge     = val == "MERGE"
         is_konversi  = val == "KONVERSI TIMBANGAN"
+        is_timbangan = val == "TIMBANGAN"
 
         setattr(self.item, "design_type", val)
 
@@ -828,7 +825,39 @@ class TextPropertyEditor(
 
         self.enable_for_same_with(is_same_with)
         if is_same_with:
+            # SAME WITH → editor forced to INVISIBLE, locked
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("INVISIBLE")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "INVISIBLE")
             return
+
+        # ── EDITOR field rules per type ───────────────────────────────────────
+        if is_input:
+            # INPUT → editor forced to ENABLED, locked
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("ENABLED")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "ENABLED")
+        elif is_timbangan:
+            # TIMBANGAN → editor forced to DISABLED, locked
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("DISABLED")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "DISABLED")
+        elif is_merge or is_batch_no:
+            # MERGE / BATCH NO → editor forced to INVISIBLE, locked
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("INVISIBLE")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "INVISIBLE")
+        else:
+            # All other types (FIX, LOOKUP, LINK, SYSTEM, etc.) → freely editable
+            self.editor_combo.setEnabled(True)
 
         self.data_type_combo.setEnabled(is_input)
         self.max_length_spin.setEnabled(is_input)
