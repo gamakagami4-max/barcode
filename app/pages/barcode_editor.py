@@ -386,6 +386,26 @@ class BarcodeEditorPage(QWidget):
         toolbar.addStretch()
 
         self._zoom_level = 1.0
+
+        _zoom_btn_style = """
+            QPushButton {
+                background: transparent;
+                border: 1px solid #E2E8F0;
+                border-radius: 5px;
+                padding: 0px;
+            }
+            QPushButton:hover { background: #EEF2FF; border-color: #A5B4FC; }
+            QPushButton:pressed { background: #E0E7FF; }
+        """
+
+        self.zoom_out_btn = QPushButton()
+        self.zoom_out_btn.setIcon(qta.icon("fa5s.search-minus", color="#6366F1"))
+        self.zoom_out_btn.setFixedSize(24, 24)
+        self.zoom_out_btn.setCursor(Qt.PointingHandCursor)
+        self.zoom_out_btn.setStyleSheet(_zoom_btn_style)
+        self.zoom_out_btn.clicked.connect(self._zoom_out)
+        toolbar.addWidget(self.zoom_out_btn)
+
         self.zoom_label = QLabel("100%")
         self.zoom_label.setFixedWidth(44)
         self.zoom_label.setAlignment(Qt.AlignCenter)
@@ -394,6 +414,14 @@ class BarcodeEditorPage(QWidget):
         )
         self.zoom_label.setToolTip("Ctrl + Scroll to zoom")
         toolbar.addWidget(self.zoom_label)
+
+        self.zoom_in_btn = QPushButton()
+        self.zoom_in_btn.setIcon(qta.icon("fa5s.search-plus", color="#6366F1"))
+        self.zoom_in_btn.setFixedSize(24, 24)
+        self.zoom_in_btn.setCursor(Qt.PointingHandCursor)
+        self.zoom_in_btn.setStyleSheet(_zoom_btn_style)
+        self.zoom_in_btn.clicked.connect(self._zoom_in)
+        toolbar.addWidget(self.zoom_in_btn)
 
         editor_layout.addLayout(toolbar)
         editor_layout.addSpacing(18)
