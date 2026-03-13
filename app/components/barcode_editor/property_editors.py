@@ -670,6 +670,7 @@ class BarcodePropertyEditor(QWidget):
             "QTextEdit { background:#FFFFFF; border:1px solid #E2E8F0; border-radius:4px; "
             "padding:5px; font-size:11px; color:#1E293B; }"
             "QTextEdit:focus { border:1px solid #6366F1; }"
+            "QTextEdit:disabled { background:#F8FAFC; color:#94A3B8; border-color:#E2E8F0; }"
         )
         self.table_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.table_extra.setFixedHeight(80)
