@@ -223,7 +223,7 @@ class DeleteSignalList(QListWidget):
 # ── Grid scene ────────────────────────────────────────────────────────────────
 
 class GridGraphicsScene(QGraphicsScene):
-    def __init__(self, rect, grid_size=20, color=QColor("#E2E8F0"), parent=None):
+    def __init__(self, rect, grid_size=20, color=QColor("#F1F4F8"), parent=None):
         super().__init__(rect, parent)
         self.grid_size  = grid_size
         self.grid_color = color
@@ -437,7 +437,7 @@ class BarcodeEditorPage(QWidget):
 
         self.scene = GridGraphicsScene(
             QRectF(0, 0, self._canvas_w, self._canvas_h),
-            grid_size=20, color=QColor("#E2E8F0"),
+            grid_size=20, color=QColor("#F1F4F8"),
         )
         self.scene.setBackgroundBrush(QBrush(QColor(COLORS["canvas_bg"])))
 
