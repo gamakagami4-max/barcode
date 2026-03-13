@@ -565,9 +565,7 @@ class BarcodePropertyEditor(QWidget):
         self.interpretation_combo._label.setText(_interp)
         self.interpretation_combo.blockSignals(False)
         self.interpretation_combo.currentTextChanged.connect(self._update_interpretation)
-        _interp_lbl = _lbl("INTERPRETATION :")
-        _interp_lbl.setFixedWidth(90)
-        layout.addRow(_interp_lbl, self.interpretation_combo)
+        _interp_lbl = _lbl("INTERPRET. :")
         layout.addRow(_interp_lbl, self.interpretation_combo)
 
         # ── TYPE ──────────────────────────────────────────────────────────────
@@ -1198,9 +1196,19 @@ class BarcodePropertyEditor(QWidget):
 
         # ── SAME WITH ─────────────────────────────────────────────────────────
         self.same_with_combo.setEnabled(is_same_with)
+        if not is_same_with:
+            self.same_with_combo.blockSignals(True)
+            self.same_with_combo._current = ""
+            self.same_with_combo._label.setText("")
+            self.same_with_combo.blockSignals(False)
 
         # ── LINK ──────────────────────────────────────────────────────────────
         self.link_combo.setEnabled(is_link)
+        if not is_link:
+            self.link_combo.blockSignals(True)
+            self.link_combo._current = ""
+            self.link_combo._label.setText("")
+            self.link_combo.blockSignals(False)
 
         # ── SYSTEM ────────────────────────────────────────────────────────────
         self.system_value_combo.setEnabled(is_system)
@@ -1208,14 +1216,32 @@ class BarcodePropertyEditor(QWidget):
             is_system and bool(self.system_extra_combo._items
                                if hasattr(self.system_extra_combo, "_items") else [])
         )
+        if not is_system:
+            self.system_value_combo.blockSignals(True)
+            self.system_extra_combo.blockSignals(True)
+            self.system_value_combo._current = ""
+            self.system_value_combo._label.setText("")
+            self.system_extra_combo._current = ""
+            self.system_extra_combo._label.setText("")
+            self.system_extra_combo._items = []
+            self.system_value_combo.blockSignals(False)
+            self.system_extra_combo.blockSignals(False)
 
         # ── MERGE ─────────────────────────────────────────────────────────────
         self.merge_combo.setEnabled(is_merge)
+        if not is_merge:
+            self.merge_combo.clear_selection()
 
         # ── TIMBANGAN / KONVERSI ──────────────────────────────────────────────
         show_timbangan = is_timbangan or is_konversi
         for w in (self.timbangan_combo, self.weight_combo, self.um_combo):
             w.setEnabled(show_timbangan)
+        if not show_timbangan:
+            for combo in (self.timbangan_combo, self.weight_combo, self.um_combo):
+                combo.blockSignals(True)
+                combo._current = ""
+                combo._label.setText("")
+                combo.blockSignals(False)
 
         # ── LOOKUP cascade ────────────────────────────────────────────────────
         self.group_combo.setEnabled(is_lookup)
