@@ -565,7 +565,9 @@ class BarcodePropertyEditor(QWidget):
         self.interpretation_combo._label.setText(_interp)
         self.interpretation_combo.blockSignals(False)
         self.interpretation_combo.currentTextChanged.connect(self._update_interpretation)
-        _interp_lbl = _lbl("INTERPRET. :")
+        _interp_lbl = _lbl("INTERPRETATION :")
+        _interp_lbl.setFixedWidth(90)
+        layout.addRow(_interp_lbl, self.interpretation_combo)
         layout.addRow(_interp_lbl, self.interpretation_combo)
 
         # ── TYPE ──────────────────────────────────────────────────────────────
