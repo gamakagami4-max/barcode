@@ -57,10 +57,10 @@ def _init_text_item(item: SelectableTextItem):
 
 _BARCODE_DEFAULTS = {
     "design_height_cm":      1.0,
-    "design_magnification":  "1",
-    "design_ratio":          "2",
+    "design_magnification":  "",
+    "design_ratio":          "",
     "design_check_digit":    "",
-    "design_interpretation": "NO INTERPRETATION",
+    "design_interpretation": "",
     "design_type":           "FIX",
     "design_editor":         "INVISIBLE",
     "design_text":           "",

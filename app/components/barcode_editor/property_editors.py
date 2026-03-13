@@ -511,13 +511,20 @@ class BarcodePropertyEditor(QWidget):
             "CODE 128-C", "CODE 39", "CODE 93", "DATA MATRIX (2D)", "EAN 13",
             "EAN 8", "INTERLEAVED 2 OF 5", "QR (2D)", "UPC A",
         ])
-        self.barcode_type_combo.setCurrentText(getattr(self.item, "design", "CODE128"))
+        _saved_design = getattr(self.item, "design", "")
+        if _saved_design:
+            self.barcode_type_combo.blockSignals(True)
+            self.barcode_type_combo._current = _saved_design
+            self.barcode_type_combo._label.setText(_saved_design)
+            self.barcode_type_combo.blockSignals(False)
+        else:
+            self.barcode_type_combo.setCurrentIndex(-1)
         self.barcode_type_combo.currentTextChanged.connect(self._update_barcode_type)
         layout.addRow(_lbl("BARCODE TYPE :"), self.barcode_type_combo)
 
         # ── MAGNIFICATION FACTOR ──────────────────────────────────────────────
         self.magnification_combo = make_chevron_combo(["1","2","3","4","5","6","7","8","9","10"])
-        _mag = str(getattr(self.item, "design_magnification", "1"))
+        _mag = str(getattr(self.item, "design_magnification", "") or "")
         self.magnification_combo.blockSignals(True)
         self.magnification_combo._current = _mag
         self.magnification_combo._label.setText(_mag)
@@ -529,7 +536,7 @@ class BarcodePropertyEditor(QWidget):
 
         # ── RATIO ─────────────────────────────────────────────────────────────
         self.ratio_combo = make_chevron_combo(["1","2","3","4","5"])
-        _ratio = str(getattr(self.item, "design_ratio", "2"))
+        _ratio = str(getattr(self.item, "design_ratio", "") or "")
         self.ratio_combo.blockSignals(True)
         self.ratio_combo._current = _ratio
         self.ratio_combo._label.setText(_ratio)
@@ -542,9 +549,7 @@ class BarcodePropertyEditor(QWidget):
         # ── CHECK DIGIT ───────────────────────────────────────────────────────
         _VALID_CD = ("AUTO GENERATE", "MANUAL INPUT")
         self.check_digit_combo = make_chevron_combo(list(_VALID_CD))
-        _cd = getattr(self.item, "design_check_digit", "AUTO GENERATE") or "AUTO GENERATE"
-        if _cd not in _VALID_CD:
-            _cd = "AUTO GENERATE"
+        _cd = getattr(self.item, "design_check_digit", "") or ""
         self.check_digit_combo.blockSignals(True)
         self.check_digit_combo._current = _cd
         self.check_digit_combo._label.setText(_cd)
@@ -554,14 +559,13 @@ class BarcodePropertyEditor(QWidget):
 
         # ── INTERPRETATION ────────────────────────────────────────────────────
         self.interpretation_combo = make_chevron_combo(["NO INTERPRETATION", "BELOW BARCODE"])
-        _interp = getattr(self.item, "design_interpretation", "NO INTERPRETATION") or "NO INTERPRETATION"
+        _interp = getattr(self.item, "design_interpretation", "") or ""
         self.interpretation_combo.blockSignals(True)
         self.interpretation_combo._current = _interp
         self.interpretation_combo._label.setText(_interp)
         self.interpretation_combo.blockSignals(False)
         self.interpretation_combo.currentTextChanged.connect(self._update_interpretation)
-        _interp_lbl = _lbl("INTERPRETATION :")
-        _interp_lbl.setFixedWidth(90)
+        _interp_lbl = _lbl("INTERPRET. :")
         layout.addRow(_interp_lbl, self.interpretation_combo)
 
         # ── TYPE ──────────────────────────────────────────────────────────────
@@ -1086,8 +1090,81 @@ class BarcodePropertyEditor(QWidget):
         setattr(self.item, "design_type", val)
 
         _prev = getattr(self, "_last_type", None)
-        if _prev is not None and _prev == "BATCH NO" and val != "BATCH NO":
-            self._clear_batch_no_fields()
+        if _prev is not None and _prev != val:
+            if _prev == "BATCH NO":
+                self._clear_batch_no_fields()
+
+            if _prev == "SYSTEM":
+                self.system_value_combo.blockSignals(True)
+                self.system_extra_combo.blockSignals(True)
+                self.system_value_combo._current = ""
+                self.system_value_combo._label.setText("")
+                self.system_extra_combo._current = ""
+                self.system_extra_combo._label.setText("")
+                self.system_extra_combo._items = []
+                self.system_value_combo.blockSignals(False)
+                self.system_extra_combo.blockSignals(False)
+                self.item.design_system_value = ""
+                self.item.design_system_extra = ""
+
+            if _prev == "LOOKUP":
+                self.group_combo.blockSignals(True)
+                self.table_combo.blockSignals(True)
+                self.table_extra.blockSignals(True)
+                self.group_combo._current = ""
+                self.group_combo._label.setText("")
+                self.table_combo._current = ""
+                self.table_combo._label.setText("")
+                self.table_extra.setPlainText("")
+                self._clear_field_combos()
+                self.group_combo.blockSignals(False)
+                self.table_combo.blockSignals(False)
+                self.table_extra.blockSignals(False)
+                self.item.design_group  = ""
+                self.item.design_table  = ""
+                self.item.design_field  = ""
+                self.item.design_result = ""
+                self.item.design_query  = ""
+
+            if _prev == "SAME WITH":
+                self.same_with_combo.blockSignals(True)
+                self.same_with_combo._current = ""
+                self.same_with_combo._label.setText("")
+                self.same_with_combo.blockSignals(False)
+                self.item.design_same_with = ""
+
+            if _prev == "LINK":
+                self.link_combo.blockSignals(True)
+                self.link_combo._current = ""
+                self.link_combo._label.setText("")
+                self.link_combo.blockSignals(False)
+                self.item.design_link = ""
+
+            if _prev == "MERGE":
+                self.merge_combo.clear_selection()
+                self.item.design_merge = ""
+
+            if _prev in ("TIMBANGAN", "KONVERSI TIMBANGAN"):
+                for combo, attr in (
+                    (self.timbangan_combo, "design_timbangan"),
+                    (self.weight_combo,    "design_weight"),
+                    (self.um_combo,        "design_um"),
+                ):
+                    combo.blockSignals(True)
+                    combo._current = ""
+                    combo._label.setText("")
+                    combo.blockSignals(False)
+                    setattr(self.item, attr, "")
+
+            if _prev == "INPUT":
+                self.data_type_combo.blockSignals(True)
+                self.data_type_combo.setCurrentIndex(-1)
+                self.data_type_combo.blockSignals(False)
+                self.max_length_spin.setValue(0)
+                self.max_length_spin.setStyleSheet(_DISABLED_COMBO_STYLE)
+                self.item.design_data_type  = ""
+                self.item.design_max_length = 0
+
         self._last_type = val
 
         is_input     = val == "INPUT"
