@@ -1,7 +1,21 @@
+import os
+import json as _json
+import uuid
+
 import qtawesome as qta
+import shiboken6
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QTableWidgetItem, QHeaderView,
-    QHBoxLayout, QMessageBox, QStackedWidget,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QGraphicsScene, QGraphicsView, QGraphicsItem,
+    QGraphicsRectItem, QGraphicsTextItem, QGraphicsLineItem,
+    QListWidget, QListWidgetItem, QApplication, QScrollArea,
+    QSizePolicy, QStackedWidget, QPushButton, QLineEdit,
+    QStyledItemDelegate, QStyle, QSplitter,
+)
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QTableWidgetItem, QLabel, QHBoxLayout, QHeaderView,
+    QMessageBox, QStackedWidget,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics
@@ -115,6 +129,8 @@ class BarcodeListPage(QWidget):
     _VIEW_LIST   = 0
     _VIEW_EDITOR = 1
 
+    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
+
     def __init__(self):
         super().__init__()
         self.all_data = []
@@ -130,6 +146,7 @@ class BarcodeListPage(QWidget):
         self.selected_row_data = None
         self.selected_row_dict = None
         self.current_user = "YOSAFAT.YACOB"
+        self._active_modal: GenericFormModal | None = None
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -187,19 +204,39 @@ class BarcodeListPage(QWidget):
             conn.close()
 
     # ------------------------------------------------------------------
+    # Modal lock helpers
+    # ------------------------------------------------------------------
+
+    def _lock_header(self):
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(False)
+
+    def _unlock_header(self):
+        has_sel = self.selected_row_data is not None
+        for label in self._ALL_HEADER_ACTIONS:
+            btn = self.header.get_action_button(label)
+            if btn:
+                btn.setEnabled(
+                    has_sel if label in ("Edit", "Delete", "View Detail") else True
+                )
+        self._active_modal = None
+
+    def _open_modal(self, modal: GenericFormModal):
+        self._active_modal = modal
+        modal.opened.connect(self._lock_header)
+        modal.closed.connect(self._unlock_header)
+        modal.exec()
+
+    # ------------------------------------------------------------------
     # Editor save handler
     # ------------------------------------------------------------------
 
     def _on_editor_save(self, payload: dict):
-        """
-        Called when the editor emits design_saved.
-        payload contains: pk, name, dp_fg, usrm, itrm,
-                          sticker_name, w_px, h_px, h_in, w_in
-        """
         pending = getattr(self, "_pending_new_design", None)
 
         if pending:
-            # ── New design: validate pk then insert ────────────────────
             pk_from_editor = (payload.get("pk") or "").strip()
             if not pk_from_editor:
                 QMessageBox.warning(
@@ -221,7 +258,6 @@ class BarcodeListPage(QWidget):
                 )
                 return
 
-            # Merge editor values into pending
             pending["pk"]           = pk_from_editor
             pending["sticker_name"] = payload.get("sticker_name") or pending.get("sticker_name")
             pending["w_px"]         = payload.get("w_px") or pending.get("w_px", 600)
@@ -243,15 +279,12 @@ class BarcodeListPage(QWidget):
                 pass
             self._save_design_layout(payload, is_new=True)
         else:
-            # ── Existing design: update sticker/dims + canvas layout ────
             self._save_design_layout(payload, is_new=False)
 
         self.load_data()
         self._show_list()
 
     def _save_design_layout(self, payload: dict, is_new: bool = False):
-        # Use original_pk (the key that exists in DB) for WHERE clause.
-        # payload["pk"] may have been edited by the user in the General tab.
         new_pk       = payload.get("pk", "").strip()
         original_pk  = payload.get("original_pk", new_pk).strip() or new_pk
         usrm         = payload.get("usrm", "[]")
@@ -262,7 +295,7 @@ class BarcodeListPage(QWidget):
         h_px         = int(payload.get("h_px") or 0)
         w_px         = int(payload.get("w_px") or 0)
         name         = payload.get("name", "")
-        dp_fg        = payload.get("dp_fg")  # may be None — treated as "don't change"
+        dp_fg        = payload.get("dp_fg")
 
         if not original_pk:
             return
@@ -579,24 +612,6 @@ class BarcodeListPage(QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Shared modal opener
-    # ------------------------------------------------------------------
-
-    def _open_view_detail_modal(self, row_data: tuple):
-        fields = [
-            (label, str(row_data[i]) if i < len(row_data) and row_data[i] is not None else "")
-            for label, i in VIEW_DETAIL_FIELDS
-        ]
-        modal = GenericFormModal(
-            title="Barcode Detail",
-            subtitle="Full details for the selected barcode record.",
-            fields=fields,
-            parent=self,
-            mode="view"
-        )
-        modal.exec()
-
-    # ------------------------------------------------------------------
     # Filter / sort
     # ------------------------------------------------------------------
 
@@ -694,7 +709,6 @@ class BarcodeListPage(QWidget):
     # ------------------------------------------------------------------
 
     def handle_add_action(self):
-        # Open the editor directly with a blank form — no modal needed
         blank = {
             "pk":           "",
             "name":         "",
@@ -822,7 +836,18 @@ class BarcodeListPage(QWidget):
     def handle_view_detail_action(self):
         if not self.selected_row_data:
             return
-        self._open_view_detail_modal(self.selected_row_data)
+        modal = GenericFormModal(
+            title="Barcode Detail",
+            subtitle="Full details for the selected barcode record.",
+            fields=[
+                (label, str(self.selected_row_data[i])
+                 if i < len(self.selected_row_data) and self.selected_row_data[i] is not None else "")
+                for label, i in VIEW_DETAIL_FIELDS
+            ],
+            parent=self,
+            mode="view"
+        )
+        self._open_modal(modal)
 
     def on_barcode_edited(self, form_data: dict):
         if not self.selected_row_dict:
