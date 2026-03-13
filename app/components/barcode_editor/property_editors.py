@@ -565,7 +565,9 @@ class BarcodePropertyEditor(QWidget):
         self.interpretation_combo._label.setText(_interp)
         self.interpretation_combo.blockSignals(False)
         self.interpretation_combo.currentTextChanged.connect(self._update_interpretation)
-        _interp_lbl = _lbl("INTERPRET. :")
+        _interp_lbl = _lbl("INTERPRETATION :")
+        _interp_lbl.setFixedWidth(90)
+        layout.addRow(_interp_lbl, self.interpretation_combo)
         layout.addRow(_interp_lbl, self.interpretation_combo)
 
         # ── TYPE ──────────────────────────────────────────────────────────────
@@ -748,7 +750,7 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("VISIBLE :"), self.visible_combo)
 
         # ── SAVE FIELD / COLUMN / MANDATORY ──────────────────────────────────
-        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
+        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "PRPMNO"] + [f"PRPM{i:02d}" for i in range(1, 31)])
         _sf = getattr(self.item, "design_save_field", "-- NOT SAVE --") or "-- NOT SAVE --"
         self.save_field_combo.blockSignals(True)
         self.save_field_combo._current = _sf
