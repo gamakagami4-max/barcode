@@ -32,6 +32,8 @@ from components.barcode_editor.merge_konversi_mixin import MultiSelectCombo
 from components.barcode_editor.general_tab import GeneralTab
 
 
+
+
 COMPONENT_META = {
     'text':    ('fa5s.font',    '#6366F1', '#FFFFFF', '#4338CA'),
     'barcode': ('fa5s.barcode', '#0EA5E9', '#FFFFFF', '#0369A1'),
@@ -308,7 +310,18 @@ class BarcodeEditorPage(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.setStyleSheet(f"background-color: {COLORS['bg_main']};")
+        self.setStyleSheet(f"""
+            background-color: {COLORS['bg_main']};
+            QToolTip {{
+                background-color: #1E293B;
+                color: #F8FAFC;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 11px;
+                font-weight: 500;
+            }}
+        """)
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
@@ -437,6 +450,40 @@ class BarcodeEditorPage(QWidget):
         ch_layout.addWidget(comp_icon)
         ch_layout.addWidget(QLabel("COMPONENTS", styleSheet="font-weight:800;font-size:9pt;color:#1E293B;letter-spacing:1px;"))
         ch_layout.addStretch()
+
+        _icon_btn_style = """
+            QPushButton {
+                background: transparent;
+                border: 1px solid #E2E8F0;
+                border-radius: 5px;
+                padding: 0px;
+            }
+            QPushButton:hover { background: #EEF2FF; border-color: #A5B4FC; }
+            QPushButton:pressed { background: #E0E7FF; }
+            QPushButton:disabled { opacity: 0.4; }
+        """
+
+        # Copy button
+        self.copy_btn = QPushButton()
+        self.copy_btn.setIcon(qta.icon("fa5s.copy", color="#6366F1"))
+        self.copy_btn.setFixedSize(24, 24)
+        self.copy_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_btn.setStyleSheet(_icon_btn_style)
+        self.copy_btn.clicked.connect(self._copy_selected)
+        ch_layout.addWidget(self.copy_btn)
+        ch_layout.addSpacing(2)
+
+        # Paste button
+        self.paste_btn = QPushButton()
+        self.paste_btn.setIcon(qta.icon("fa5s.paste", color="#6366F1"))
+        self.paste_btn.setFixedSize(24, 24)
+        self.paste_btn.setCursor(Qt.PointingHandCursor)
+        self.paste_btn.setStyleSheet(_icon_btn_style)
+        self.paste_btn.clicked.connect(self._paste_clipboard)
+        ch_layout.addWidget(self.paste_btn)
+        ch_layout.addSpacing(4)
+
+        # Count badge — rightmost
         self.comp_count_badge = QLabel("0")
         self.comp_count_badge.setAlignment(Qt.AlignCenter)
         self.comp_count_badge.setFixedSize(22, 22)
@@ -453,6 +500,7 @@ class BarcodeEditorPage(QWidget):
             }
         """)
         ch_layout.addWidget(self.comp_count_badge)
+
         sidebar_layout.addWidget(comp_header)
 
         self.component_list = DeleteSignalList()
@@ -547,6 +595,7 @@ class BarcodeEditorPage(QWidget):
         self._setup_shortcuts()
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.setFocusPolicy(Qt.StrongFocus)
+        self.paste_btn.setEnabled(False)
         self._switch_tab(0)
 
     def _setup_shortcuts(self):
@@ -598,6 +647,9 @@ class BarcodeEditorPage(QWidget):
         self.comp_count_badge.setText("0")
         self.prop_name_input.setText("")
         self.prop_name_input.setEnabled(False)
+        self._clipboard_item = None
+        if hasattr(self, 'paste_btn'):
+            self.paste_btn.setEnabled(False)
         while self.inspector_layout.count():
             child = self.inspector_layout.takeAt(0)
             if child.widget():
@@ -1202,6 +1254,8 @@ class BarcodeEditorPage(QWidget):
         selected = self.scene.selectedItems()
         if selected:
             self._clipboard_item = self._serialize_item(selected[0])
+            if hasattr(self, 'paste_btn'):
+                self.paste_btn.setEnabled(True)
 
     def _paste_clipboard(self):
         if not self._clipboard_item or not self._sticker_name:

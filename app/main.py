@@ -408,6 +408,24 @@ if __name__ == "__main__":
     font.setHintingPreference(QFont.PreferFullHinting)
     app.setFont(font)
 
+    # QPalette is the only reliable way to control tooltip colors under Fusion style.
+    # app.setStyleSheet(QToolTip) gets overridden by Fusion internal palette on some platforms.
+    palette = app.palette()
+    palette.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
+    palette.setColor(QPalette.ToolTipText, QColor("#1E293B"))
+    app.setPalette(palette)
+
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #FFFFFF;
+            color: #1E293B;
+            border: 1px solid #E2E8F0;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+    """)
+
     window = Dashboard()
     window.show()
     sys.exit(app.exec())
