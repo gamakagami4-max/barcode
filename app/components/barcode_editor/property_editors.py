@@ -12,6 +12,7 @@ from components.barcode_editor.utils import (
     make_spin, make_chevron_combo,
 )
 from components.barcode_editor.scene_items import BarcodeItem
+from components.barcode_editor.merge_konversi_mixin import MergeInputWidget
 
 LABEL_W = 70
 
@@ -38,7 +39,7 @@ def _lbl(text: str) -> QLabel:
     return l
 
 
-# ── Inline checklist (reused from text_property_editor) ──────────────────────
+# ── Inline checklist (kept for backward compat if used elsewhere) ─────────────
 
 class InlineChecklistWidget(QWidget):
     selectionChanged = Signal(list)
@@ -547,8 +548,7 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("RATIO :"), self.ratio_combo)
 
         # ── CHECK DIGIT ───────────────────────────────────────────────────────
-        _VALID_CD = ("AUTO GENERATE", "MANUAL INPUT")
-        self.check_digit_combo = make_chevron_combo(list(_VALID_CD))
+        self.check_digit_combo = make_chevron_combo(["AUTO GENERATE", "MANUAL INPUT"])
         _cd = getattr(self.item, "design_check_digit", "") or ""
         self.check_digit_combo.blockSignals(True)
         self.check_digit_combo._current = _cd
@@ -567,7 +567,6 @@ class BarcodePropertyEditor(QWidget):
         self.interpretation_combo.currentTextChanged.connect(self._update_interpretation)
         _interp_lbl = _lbl("INTERPRETATION :")
         _interp_lbl.setFixedWidth(90)
-        layout.addRow(_interp_lbl, self.interpretation_combo)
         layout.addRow(_interp_lbl, self.interpretation_combo)
 
         # ── TYPE ──────────────────────────────────────────────────────────────
@@ -638,7 +637,7 @@ class BarcodePropertyEditor(QWidget):
         )
         layout.addRow(_lbl("LINK TO :"), self.link_combo)
 
-        # ── MERGE WITH (inline checklist) ─────────────────────────────────────
+        # ── MERGE WITH (MergeInputWidget — same as TextPropertyEditor) ────────
         self.merge_combo = self._build_merge_combo()
         layout.addRow(_lbl("MERGE WITH :"), self.merge_combo)
 
@@ -718,7 +717,7 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("FIELD :"),  self.field_combo)
         layout.addRow(_lbl("RESULT :"), self.result_combo)
 
-        # ── TEXT ──────────────────────────────────────────────────────────────
+        # ── TEXT / CAPTION / FORMAT ───────────────────────────────────────────
         self.text_input = QLineEdit()
         self.text_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.text_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -726,7 +725,6 @@ class BarcodePropertyEditor(QWidget):
         self.text_input.textChanged.connect(lambda v: setattr(self.item, "design_text", v))
         layout.addRow(_lbl("TEXT :"), self.text_input)
 
-        # ── CAPTION ───────────────────────────────────────────────────────────
         self.caption_input = QLineEdit()
         self.caption_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.caption_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -734,7 +732,6 @@ class BarcodePropertyEditor(QWidget):
         self.caption_input.textChanged.connect(lambda v: setattr(self.item, "design_caption", v))
         layout.addRow(_lbl("CAPTION :"), self.caption_input)
 
-        # ── FORMAT ────────────────────────────────────────────────────────────
         self.format_input = QLineEdit()
         self.format_input.setStyleSheet(MODERN_INPUT_STYLE)
         self.format_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -807,7 +804,7 @@ class BarcodePropertyEditor(QWidget):
         except (TypeError, ValueError):
             pass
 
-        # ── Apply initial enable/disable state ────────────────────────────────
+        # ── Apply initial enable/disable + editor lock state ──────────────────
         self._on_type_changed(_type)
 
     # ── Visual position helpers ───────────────────────────────────────────────
@@ -850,7 +847,7 @@ class BarcodePropertyEditor(QWidget):
         combo.setCurrentIndex(-1)
         return combo
 
-    def _build_merge_combo(self) -> InlineChecklistWidget:
+    def _build_merge_combo(self) -> MergeInputWidget:
         from components.barcode_editor.scene_items import SelectableTextItem, BarcodeItem as _BC
         names: list[str] = []
         try:
@@ -866,13 +863,13 @@ class BarcodePropertyEditor(QWidget):
                         names.append(name)
         except Exception:
             pass
-        combo = InlineChecklistWidget()
+        combo = MergeInputWidget()
         combo.set_items(names)
         stored = getattr(self.item, "design_merge", "")
         if stored:
             combo.set_selected(stored)
-        combo.selectionChanged.connect(
-            lambda names: setattr(self.item, "design_merge", ",".join(names))
+        combo.templateChanged.connect(
+            lambda tmpl: setattr(self.item, "design_merge", tmpl)
         )
         return combo
 
@@ -1095,7 +1092,6 @@ class BarcodePropertyEditor(QWidget):
         if _prev is not None and _prev != val:
             if _prev == "BATCH NO":
                 self._clear_batch_no_fields()
-
             if _prev == "SYSTEM":
                 self.system_value_combo.blockSignals(True)
                 self.system_extra_combo.blockSignals(True)
@@ -1108,7 +1104,6 @@ class BarcodePropertyEditor(QWidget):
                 self.system_extra_combo.blockSignals(False)
                 self.item.design_system_value = ""
                 self.item.design_system_extra = ""
-
             if _prev == "LOOKUP":
                 self.group_combo.blockSignals(True)
                 self.table_combo.blockSignals(True)
@@ -1127,25 +1122,21 @@ class BarcodePropertyEditor(QWidget):
                 self.item.design_field  = ""
                 self.item.design_result = ""
                 self.item.design_query  = ""
-
             if _prev == "SAME WITH":
                 self.same_with_combo.blockSignals(True)
                 self.same_with_combo._current = ""
                 self.same_with_combo._label.setText("")
                 self.same_with_combo.blockSignals(False)
                 self.item.design_same_with = ""
-
             if _prev == "LINK":
                 self.link_combo.blockSignals(True)
                 self.link_combo._current = ""
                 self.link_combo._label.setText("")
                 self.link_combo.blockSignals(False)
                 self.item.design_link = ""
-
             if _prev == "MERGE":
-                self.merge_combo.clear_selection()
+                self.merge_combo.clear_all()
                 self.item.design_merge = ""
-
             if _prev in ("TIMBANGAN", "KONVERSI TIMBANGAN"):
                 for combo, attr in (
                     (self.timbangan_combo, "design_timbangan"),
@@ -1157,7 +1148,6 @@ class BarcodePropertyEditor(QWidget):
                     combo._label.setText("")
                     combo.blockSignals(False)
                     setattr(self.item, attr, "")
-
             if _prev == "INPUT":
                 self.data_type_combo.blockSignals(True)
                 self.data_type_combo.setCurrentIndex(-1)
@@ -1178,6 +1168,28 @@ class BarcodePropertyEditor(QWidget):
         is_merge     = val == "MERGE"
         is_konversi  = val == "KONVERSI TIMBANGAN"
         is_timbangan = val == "TIMBANGAN"
+
+        # ── EDITOR lock rules (same as TextPropertyEditor) ────────────────────
+        if is_input:
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("ENABLED")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "ENABLED")
+        elif is_timbangan:
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("DISABLED")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "DISABLED")
+        elif is_merge or is_batch_no or is_same_with:
+            self.editor_combo.blockSignals(True)
+            self.editor_combo.setCurrentText("INVISIBLE")
+            self.editor_combo.blockSignals(False)
+            self.editor_combo.setEnabled(False)
+            setattr(self.item, "design_editor", "INVISIBLE")
+        else:
+            self.editor_combo.setEnabled(True)
 
         # ── INPUT ─────────────────────────────────────────────────────────────
         self.data_type_combo.setEnabled(is_input)
@@ -1215,8 +1227,7 @@ class BarcodePropertyEditor(QWidget):
         # ── SYSTEM ────────────────────────────────────────────────────────────
         self.system_value_combo.setEnabled(is_system)
         self.system_extra_combo.setEnabled(
-            is_system and bool(self.system_extra_combo._items
-                               if hasattr(self.system_extra_combo, "_items") else [])
+            is_system and bool(getattr(self.system_extra_combo, "_items", []))
         )
         if not is_system:
             self.system_value_combo.blockSignals(True)
@@ -1232,7 +1243,7 @@ class BarcodePropertyEditor(QWidget):
         # ── MERGE ─────────────────────────────────────────────────────────────
         self.merge_combo.setEnabled(is_merge)
         if not is_merge:
-            self.merge_combo.clear_selection()
+            self.merge_combo.clear_all()
 
         # ── TIMBANGAN / KONVERSI ──────────────────────────────────────────────
         show_timbangan = is_timbangan or is_konversi
