@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QLineEdit, QSpinBox, QCheckBox,
     QFrame, QSizePolicy, QSplitter, QScrollArea,
-    QDateEdit, QTextEdit, QListWidget, QListWidgetItem,
+    QTextEdit, QListWidget, QListWidgetItem,
     QAbstractItemView, QApplication, QDialog,
 )
 
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 try:
     from components.barcode_editor.utils import (
         COLORS, MODERN_INPUT_STYLE, make_chevron_combo,
+        make_spin, ChevronSpinBox,
     )
     _LEGACY_BLUE    = COLORS.get("legacy_blue", "#4A5568")
     _BG_MAIN        = COLORS.get("bg_main",     "#F8FAFC")
@@ -94,25 +95,17 @@ except ImportError:
 
 # Appended to spinboxes to restore standard Qt arrow appearance
 
-import os as _os, tempfile as _tf
+_SPIN_BTN = ''  # arrows handled by ChevronSpinBox
 
-def _write_arrow_svgs():
-    _dir = _tf.gettempdir()
-    _up = _os.path.join(_dir, "spin_up.svg")
-    _dn = _os.path.join(_dir, "spin_dn.svg")
-    if not _os.path.exists(_up):
-        open(_up, "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><path d="M0 5L4 0L8 5Z" fill="#64748B"/></svg>')
-    if not _os.path.exists(_dn):
-        open(_dn, "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><path d="M0 0L4 5L8 0Z" fill="#64748B"/></svg>')
-    return _up.replace("\\", "/"), _dn.replace("\\", "/")
 
-_ARROW_UP, _ARROW_DN = _write_arrow_svgs()
-
-_SPIN_BTN = (
-    f"QSpinBox::up-arrow {{ image: url({_ARROW_UP}); width: 8px; height: 5px; }}"
-    f"QSpinBox::down-arrow {{ image: url({_ARROW_DN}); width: 8px; height: 5px; }}"
+# Disabled state — matches property editor look (light bg, muted text)
+_DISABLED_STYLE = (
+    "QLineEdit:disabled, QSpinBox:disabled, QDateEdit:disabled {"
+    "  background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }"
+    "QComboBox:disabled {"
+    "  background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }"
+    "QLabel:disabled { color: #94A3B8; }"
 )
-
 
 # ── Local palette constants ────────────────────────────────────────────────────
 _ACCENT      = "#6366F1"
@@ -156,6 +149,10 @@ QPushButton {{
 QPushButton:hover {{
     background: {_ACCENT_LIGHT}; color: {_ACCENT}; border-color: {_ACCENT};
 }}
+QPushButton:disabled {{
+    background: #F8FAFC; color: #D1D5DB;
+    border-color: {_BORDER};
+}}
 """
 
 _BTN_GHOST = f"""
@@ -186,7 +183,7 @@ def _lbl(text: str) -> QLabel:
         "background: transparent; border: none;"
     )
     l.setFixedWidth(100)
-    l.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+    l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     return l
 
 
@@ -293,19 +290,6 @@ class _DesignPickerPopup(QDialog):
         title.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {_TEXT}; background: transparent;")
         hl.addWidget(title)
         hl.addStretch()
-
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none;
-                font-size: 14px; color: {_HINT}; border-radius: 4px;
-            }}
-            QPushButton:hover {{ background: #F1F5F9; color: {_TEXT}; }}
-        """)
-        close_btn.clicked.connect(self.reject)
-        hl.addWidget(close_btn)
         vbox.addWidget(header)
 
         # Search
@@ -580,7 +564,10 @@ def _form_row(label: str, widget: QWidget, layout: QVBoxLayout):
     rl = QHBoxLayout(row)
     rl.setContentsMargins(0, 0, 0, 0)
     rl.setSpacing(10)
-    rl.addWidget(_lbl(label))
+    rl.setAlignment(Qt.AlignVCenter)
+    lbl_w = _lbl(label)
+    lbl_w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    rl.addWidget(lbl_w)
     rl.addWidget(widget, 1)
     layout.addWidget(row)
 
@@ -712,7 +699,7 @@ class BarcodePrintPage(QWidget):
         # Code + browse
         self._inp_code = QLineEdit()
         self._inp_code.setPlaceholderText("Enter or browse design code…")
-        self._inp_code.setStyleSheet(MODERN_INPUT_STYLE)
+        self._inp_code.setStyleSheet(MODERN_INPUT_STYLE + _DISABLED_STYLE)
         self._inp_code.returnPressed.connect(
             lambda: self.load_design_by_code(self._inp_code.text().strip())
         )
@@ -730,8 +717,9 @@ class BarcodePrintPage(QWidget):
         # Name (read-only)
         self._inp_name = QLineEdit()
         self._inp_name.setReadOnly(True)
+        self._inp_name.setFocusPolicy(Qt.NoFocus)
         self._inp_name.setPlaceholderText("Auto-filled from design code")
-        self._inp_name.setStyleSheet(MODERN_INPUT_STYLE)
+        self._inp_name.setStyleSheet(MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("NAME :", self._inp_name, layout)
 
         return w
@@ -763,21 +751,16 @@ class BarcodePrintPage(QWidget):
         sl.addStretch()
         _form_row("SPEED :", speed_w, layout)
 
-        layout.addWidget(_divider())
 
         # Margin Left
-        self._spin_ml = QSpinBox()
-        self._spin_ml.setRange(-999, 999); self._spin_ml.setValue(0)
-        self._spin_ml.setStyleSheet(MODERN_INPUT_STYLE + _SPIN_BTN)
+        self._spin_ml = make_spin(-999, 999, 0)
         self._spin_ml.setFixedWidth(80)
         ml_w = QWidget(); ml_w.setStyleSheet("background: transparent; border: none;")
         mll = QHBoxLayout(ml_w); mll.setContentsMargins(0,0,0,0); mll.addWidget(self._spin_ml); mll.addStretch()
         _form_row("MARGIN LEFT :", ml_w, layout)
 
         # Margin Top + 300 dpi
-        self._spin_mt = QSpinBox()
-        self._spin_mt.setRange(-999, 999); self._spin_mt.setValue(0)
-        self._spin_mt.setStyleSheet(MODERN_INPUT_STYLE + _SPIN_BTN)
+        self._spin_mt = make_spin(-999, 999, 0)
         self._spin_mt.setFixedWidth(80)
         self._chk_dpi = _CheckBox("300 dpi")
 
@@ -788,9 +771,7 @@ class BarcodePrintPage(QWidget):
 
         # Printer Type
         self._chk_non_zebra = _CheckBox("Non Zebra Printer")
-        self._spin_offset = QSpinBox()
-        self._spin_offset.setRange(-999, 999); self._spin_offset.setValue(-11)
-        self._spin_offset.setStyleSheet(MODERN_INPUT_STYLE + _SPIN_BTN)
+        self._spin_offset = make_spin(-999, 999, -11)
         self._spin_offset.setFixedWidth(70)
         self._spin_offset.setToolTip("Printer offset")
 
@@ -813,7 +794,7 @@ class BarcodePrintPage(QWidget):
         # Part No + browse
         self._inp_part = QLineEdit()
         self._inp_part.setPlaceholderText("Enter or browse part number…")
-        self._inp_part.setStyleSheet(MODERN_INPUT_STYLE)
+        self._inp_part.setStyleSheet(MODERN_INPUT_STYLE + _DISABLED_STYLE)
         self._btn_browse_part = QPushButton("···")
         self._btn_browse_part.setStyleSheet(_BTN_BROWSE)
         self._btn_browse_part.clicked.connect(self._on_browse_part)
@@ -826,33 +807,32 @@ class BarcodePrintPage(QWidget):
         # QTY
         self._inp_qty = QLineEdit()
         self._inp_qty.setReadOnly(True)
+        self._inp_qty.setFocusPolicy(Qt.NoFocus)
         self._inp_qty.setPlaceholderText("Auto-filled")
-        self._inp_qty.setStyleSheet(MODERN_INPUT_STYLE)
+        self._inp_qty.setStyleSheet(MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("QTY :", self._inp_qty, layout)
 
         # WHS
         self._inp_whs = QLineEdit()
         self._inp_whs.setReadOnly(True)
+        self._inp_whs.setFocusPolicy(Qt.NoFocus)
         self._inp_whs.setPlaceholderText("Auto-filled")
-        self._inp_whs.setStyleSheet(MODERN_INPUT_STYLE)
+        self._inp_whs.setStyleSheet(MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("WHS :", self._inp_whs, layout)
 
         # Date Code
-        self._inp_date = QDateEdit()
-        self._inp_date.setCalendarPopup(True)
-        self._inp_date.setDate(QDate.currentDate())
-        self._inp_date.setDisplayFormat("dd-MMM-yyyy")
-        self._inp_date.setStyleSheet(MODERN_INPUT_STYLE)
-        self._inp_date.setFixedWidth(160)
-        date_w = QWidget(); date_w.setStyleSheet("background: transparent; border: none;")
-        dl = QHBoxLayout(date_w); dl.setContentsMargins(0,0,0,0)
-        dl.addWidget(self._inp_date); dl.addStretch()
+        _today = QDate.currentDate()
+        _date_items = [_today.addDays(i).toString("dd-MMM-yyyy") for i in range(-30, 31)]
+        self._date_combo = make_chevron_combo(_date_items)
+        self._date_combo.setCurrentText(_today.toString("dd-MMM-yyyy"))
+        self._date_combo.setFixedWidth(200)
+        date_w = QWidget(); date_w.setStyleSheet('background: transparent; border: none;')
+        dw_l = QHBoxLayout(date_w); dw_l.setContentsMargins(0,0,0,0); dw_l.setSpacing(0)
+        dw_l.addWidget(self._date_combo); dw_l.addStretch()
         _form_row("DATE CODE :", date_w, layout)
 
         # Print QTY
-        self._spin_print_qty = QSpinBox()
-        self._spin_print_qty.setRange(1, 9999); self._spin_print_qty.setValue(1)
-        self._spin_print_qty.setStyleSheet(MODERN_INPUT_STYLE + _SPIN_BTN)
+        self._spin_print_qty = make_spin(1, 9999, 1)
         self._spin_print_qty.setFixedWidth(100)
         pq_w = QWidget(); pq_w.setStyleSheet("background: transparent; border: none;")
         pql = QHBoxLayout(pq_w); pql.setContentsMargins(0,0,0,0)
@@ -937,7 +917,10 @@ class BarcodePrintPage(QWidget):
             speed = "3"
         qty    = self._spin_print_qty.value()
         part   = self._inp_part.text().strip() or "(no part)"
-        date_s = self._inp_date.date().toString("dd-MMM-yyyy")
+        try:
+            date_s = self._date_combo._current or self._date_combo.currentText()
+        except AttributeError:
+            date_s = self._date_combo.currentText()
         self._log.log(f"▶  [{code}]  ×{qty}  part={part}  date={date_s}  speed={speed}", "ok")
         self._btn_stop.setEnabled(True)
         self._btn_print.setEnabled(False)
