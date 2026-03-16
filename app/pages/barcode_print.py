@@ -1,978 +1,864 @@
 """
 barcode_print.py  —  Barcode Print Page
-Place this file in your  pages/  folder.
-
-Wire it up in main.py:
-  1. Add to imports:
-       from pages.barcode_print import BarcodePrintPage
-  2. Add to PAGE_REGISTRY:
-       10: {"title": "Barcode Print", "class": BarcodePrintPage, "icon": "🖨️"},
-  3. Add to sidebar menu_defs in sidebar.py  (optional shortcut button):
-       inside the "Barcode" CollapsibleMenu sub_items_dict add:
-         "Barcode Print": lambda: self.nav_callback(10),
+Styled to match the General tab: white card, small uppercase blue labels,
+flat layout, no group box frames.
 """
 
 from __future__ import annotations
-
-import math
-from dataclasses import dataclass, field
-from typing import Optional
+import hashlib
 
 import qtawesome as qta
-from PySide6.QtCore import (
-    Qt, QSize, QRect, QPoint, QMarginsF, Signal,
-)
+from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui import (
-    QColor, QPainter, QPen, QBrush, QFont, QFontMetrics,
-    QPageLayout, QPageSize, QPainterPath, QIcon,
+    QColor, QPainter, QPen, QBrush, QFont, QFontMetrics, QPainterPath,
 )
-from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog, QPrintDialog
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QSpinBox, QDoubleSpinBox,
-    QComboBox, QLineEdit, QGroupBox, QScrollArea,
-    QSizePolicy, QFrame, QCheckBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QSplitter, QFormLayout, QToolButton, QButtonGroup,
-    QAbstractButton, QMessageBox, QApplication,
+    QLabel, QPushButton, QLineEdit, QSpinBox, QCheckBox,
+    QFrame, QSizePolicy, QSplitter, QScrollArea,
+    QDateEdit, QTextEdit, QListWidget, QListWidgetItem,
+    QAbstractItemView, QApplication,
 )
 
-# ── Palette (mirrors your existing sidebar palette) ───────────────────────────
-C_BG        = "#F8FAFC"
-C_SURFACE   = "#FFFFFF"
-C_BORDER    = "#E2E8F0"
-C_BORDER2   = "#CBD5E1"
-C_TEXT      = "#1E293B"
-C_MUTED     = "#64748B"
-C_ACCENT    = "#3B82F6"
-C_ACCENT_BG = "#EFF6FF"
-C_DANGER    = "#EF4444"
-C_SUCCESS   = "#22C55E"
+# ─────────────────────────────────────────────────────────────────────────────
+# Palette — matches General tab
+# ─────────────────────────────────────────────────────────────────────────────
+BG        = "#F0F2F5"   # page background (light grey like the app)
+CARD      = "#FFFFFF"   # card surface
+BORDER    = "#E2E8F0"   # card border
+INPUT_BG  = "#F8FAFC"   # input background
+INPUT_BD  = "#CBD5E1"   # input border
+INPUT_TXT = "#1E293B"   # input text
+LABEL_CLR = "#6366F1"   # uppercase label color (blue-purple, matches General tab)
+MUTED     = "#64748B"
+HINT      = "#94A3B8"
+ACCENT    = "#3B82F6"
+SUCCESS   = "#16A34A"
+DANGER    = "#DC2626"
 
 
-# ── Button styles ─────────────────────────────────────────────────────────────
-BTN_PRIMARY = f"""
-QPushButton {{
-    background: {C_ACCENT}; color: #FFFFFF;
-    border: none; border-radius: 7px;
-    font-size: 13px; font-weight: 600;
-    padding: 8px 18px;
-}}
-QPushButton:hover  {{ background: #2563EB; }}
-QPushButton:pressed{{ background: #1D4ED8; }}
-QPushButton:disabled{{ background: #94A3B8; }}
-"""
+# ─────────────────────────────────────────────────────────────────────────────
+# Styles
+# ─────────────────────────────────────────────────────────────────────────────
+INPUT_STYLE = (
+    "QLineEdit, QSpinBox, QDateEdit {"
+    f"  background: {INPUT_BG}; border: 1px solid {INPUT_BD};"
+    "   border-radius: 4px; padding: 5px 9px;"
+    f"  font-size: 12px; color: {INPUT_TXT}; min-height: 28px; }}"
+    "QLineEdit:focus, QSpinBox:focus, QDateEdit:focus {"
+    f"  border-color: {ACCENT}; background: #EFF6FF; }}"
+    "QLineEdit:read-only {"
+    f"  background: {INPUT_BG}; color: {HINT}; border-color: {BORDER}; }}"
+    "QSpinBox::up-button, QSpinBox::down-button,"
+    "QDateEdit::up-button, QDateEdit::down-button {"
+    "   width: 18px; border: none; background: transparent; }"
+)
 
-BTN_SECONDARY = f"""
-QPushButton {{
-    background: {C_SURFACE}; color: {C_TEXT};
-    border: 1px solid {C_BORDER2}; border-radius: 7px;
-    font-size: 13px; padding: 8px 18px;
-}}
-QPushButton:hover  {{ background: #F1F5F9; }}
-QPushButton:pressed{{ background: #E2E8F0; }}
-"""
+BTN_PRIMARY = (
+    "QPushButton {"
+    f"  background: {ACCENT}; color: #fff; border: none; border-radius: 5px;"
+    "   font-size: 12px; font-weight: 600; padding: 6px 16px; min-height: 28px; }"
+    "QPushButton:hover   { background: #2563EB; }"
+    "QPushButton:pressed { background: #1D4ED8; }"
+    f"QPushButton:disabled {{ background: {HINT}; color: #fff; }}"
+)
 
-BTN_DANGER = f"""
-QPushButton {{
-    background: {C_SURFACE}; color: {C_DANGER};
-    border: 1px solid #FECACA; border-radius: 7px;
-    font-size: 13px; padding: 8px 18px;
-}}
-QPushButton:hover  {{ background: #FFF1F2; border-color: {C_DANGER}; }}
-"""
+BTN_OUTLINE = (
+    "QPushButton {"
+    f"  background: {CARD}; color: {MUTED}; border: 1px solid {INPUT_BD};"
+    "   border-radius: 5px; font-size: 12px; padding: 6px 14px; min-height: 28px; }"
+    "QPushButton:hover { background: #F1F5F9; }"
+    f"QPushButton:disabled {{ color: {HINT}; border-color: {BORDER}; }}"
+)
 
-SPIN_STYLE = f"""
-QSpinBox, QDoubleSpinBox, QLineEdit, QComboBox {{
-    background: {C_SURFACE};
-    border: 1px solid {C_BORDER2};
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 13px;
-    color: {C_TEXT};
-    min-height: 28px;
-}}
-QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus, QComboBox:focus {{
-    border-color: {C_ACCENT};
-}}
-QComboBox::drop-down {{ border: none; padding-right: 6px; }}
-QSpinBox::up-button, QSpinBox::down-button,
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-    width: 18px; border: none;
-    background: transparent;
-}}
-"""
+BTN_GHOST = (
+    "QPushButton {"
+    f"  background: transparent; color: {MUTED}; border: 1px solid {INPUT_BD};"
+    "   border-radius: 4px; font-size: 10px; padding: 2px 8px; min-height: 20px; }"
+    "QPushButton:hover { background: #F1F5F9; }"
+)
 
-GROUP_STYLE = f"""
-QGroupBox {{
-    background: {C_SURFACE};
-    border: 1px solid {C_BORDER};
-    border-radius: 10px;
-    margin-top: 18px;
-    font-size: 12px;
-    font-weight: 700;
-    color: {C_MUTED};
-    letter-spacing: 0.6px;
-    padding: 8px 4px 4px 4px;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    padding: 0 8px;
-    left: 14px;
-}}
-"""
+BTN_BROWSE = (
+    "QPushButton {"
+    f"  background: {INPUT_BG}; color: {MUTED}; border: 1px solid {INPUT_BD};"
+    "   border-radius: 4px; font-size: 12px; padding: 0 10px; min-height: 28px; min-width: 32px; }"
+    f"QPushButton:hover {{ background: #EFF6FF; color: {ACCENT}; border-color: {ACCENT}; }}"
+)
 
-TABLE_STYLE = f"""
-QTableWidget {{
-    background: {C_SURFACE};
-    border: 1px solid {C_BORDER};
-    border-radius: 8px;
-    gridline-color: {C_BORDER};
-    font-size: 13px;
-    color: {C_TEXT};
-    outline: none;
-}}
-QTableWidget::item {{
-    padding: 6px 10px;
-    border: none;
-}}
-QTableWidget::item:selected {{
-    background: {C_ACCENT_BG};
-    color: {C_ACCENT};
-}}
-QHeaderView::section {{
-    background: #F1F5F9;
-    color: {C_MUTED};
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    border: none;
-    border-bottom: 1px solid {C_BORDER};
-    padding: 7px 10px;
-}}
-"""
+CARD_STYLE = (
+    f"background: {CARD}; border: none; border-radius: 0px;"
+)
+
+DIVIDER_STYLE = f"background: {BORDER}; border: none;"
 
 
-# ── Data ──────────────────────────────────────────────────────────────────────
-@dataclass
-class BarcodeItem:
-    code:     str   = ""
-    label:    str   = ""
-    qty:      int   = 1
-    selected: bool  = True
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _field_label(text: str) -> QLabel:
+    """Small uppercase colored label — exactly like General tab."""
+    l = QLabel(text + " :")
+    l.setStyleSheet(
+        f"color: {LABEL_CLR}; font-size: 10px; font-weight: 700;"
+        "letter-spacing: 0.5px; background: transparent;"
+    )
+    l.setFixedWidth(120)
+    l.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    return l
 
 
-# ── Barcode renderer (Code 128 simplified visual) ─────────────────────────────
-class BarcodeRenderer:
-    """
-    Renders a simple barcode stripe pattern for display & print.
-    Uses a deterministic pattern derived from the code string so every
-    unique code gets a visually distinct (though not GS1-compliant) pattern.
-    For production use, swap _encode() with a real Code-128 library.
-    """
-
-    BAR_W = 1.8     # narrow bar width (pt)
-    SPACE = 0.9     # narrow space width (pt)
-    QUIET  = 8.0    # quiet zone each side (pt)
-
-    @staticmethod
-    def _encode(code: str) -> list[int]:
-        """Return a list of widths (alternating bar / space) in narrow-bar units."""
-        # Start sentinel: 3-wide bar
-        pattern = [3, 1]
-        for ch in code:
-            v = ord(ch)
-            # 5 elements per character (bar, space, bar, space, bar)
-            pattern += [
-                1 + (v >> 5 & 3),
-                1 + (v >> 3 & 1),
-                1 + (v >> 1 & 3),
-                1 + (v      & 1),
-                1 + (v >> 4 & 2),
-            ]
-        # Stop sentinel
-        pattern += [3, 1, 2]
-        return pattern
-
-    @classmethod
-    def draw(
-        cls,
-        painter: QPainter,
-        rect: QRect,
-        code: str,
-        label: str = "",
-        show_label: bool = True,
-        font_size: int = 7,
-    ):
-        pattern = cls._encode(code or "000000")
-        n       = cls.BAR_W
-        total_u = sum(pattern)
-        avail_w = rect.width() - 2 * cls.QUIET
-        scale   = avail_w / (total_u * n)
-
-        bar_h = rect.height() - (20 if show_label else 4)
-        x     = rect.x() + cls.QUIET
-        y     = rect.y() + 2
-
-        painter.setBrush(QBrush(Qt.black))
-        painter.setPen(Qt.NoPen)
-
-        for i, width in enumerate(pattern):
-            w_px = width * n * scale
-            if i % 2 == 0:                    # even = bar
-                painter.drawRect(
-                    QRect(int(x), int(y), max(1, int(w_px)), int(bar_h))
-                )
-            x += w_px
-
-        if show_label and label:
-            f = QFont("Courier New", font_size)
-            painter.setFont(f)
-            painter.setPen(QPen(QColor(C_TEXT)))
-            fm  = QFontMetrics(f)
-            tw  = fm.horizontalAdvance(label)
-            tx  = rect.x() + (rect.width() - tw) // 2
-            ty  = rect.y() + bar_h + 14
-            painter.drawText(tx, ty, label)
-
-
-# ── Label preview widget ──────────────────────────────────────────────────────
-class LabelPreviewWidget(QWidget):
-    """
-    Renders a single label cell as it will appear on paper.
-    Draws the barcode + text label inside a rounded-rect frame.
-    """
-
-    def __init__(
-        self,
-        item: Optional[BarcodeItem] = None,
-        label_w_mm: float = 50.0,
-        label_h_mm: float = 25.0,
-        parent=None,
-    ):
-        super().__init__(parent)
-        self._item     = item
-        self._w_mm     = label_w_mm
-        self._h_mm     = label_h_mm
-        self._scale    = 3.0           # screen pixels per mm
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._update_fixed_size()
-
-    def _update_fixed_size(self):
-        self.setFixedSize(
-            int(self._w_mm * self._scale) + 4,
-            int(self._h_mm * self._scale) + 4,
+def _section_sep(title: str = "") -> QWidget:
+    """Thin horizontal rule with optional label, like a sub-section divider."""
+    w = QWidget()
+    w.setStyleSheet("background: transparent;")
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 4, 0, 4)
+    h.setSpacing(8)
+    if title:
+        lbl = QLabel(title)
+        lbl.setStyleSheet(
+            f"color: {HINT}; font-size: 9px; font-weight: 700;"
+            "letter-spacing: 0.6px; background: transparent;"
         )
+        h.addWidget(lbl)
+    line = QFrame()
+    line.setFrameShape(QFrame.HLine)
+    line.setStyleSheet(DIVIDER_STYLE)
+    line.setFixedHeight(1)
+    h.addWidget(line, 1)
+    return w
 
-    def set_item(self, item: Optional[BarcodeItem]):
-        self._item = item
-        self.update()
 
-    def set_size(self, w_mm: float, h_mm: float):
-        self._w_mm = w_mm
-        self._h_mm = h_mm
-        self._update_fixed_size()
-        self.update()
+def _status_lbl(text: str, ok: bool) -> QLabel:
+    l = QLabel(text)
+    l.setStyleSheet(
+        f"color: {SUCCESS if ok else DANGER}; font-size: 12px;"
+        "font-weight: 600; background: transparent;"
+    )
+    return l
 
-    def paintEvent(self, _event):
+
+class _CheckBox(QCheckBox):
+    """Checkbox: plain border when unchecked, checkmark only when checked."""
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setStyleSheet(
+            "QCheckBox { font-size: 12px; color: #1E293B; spacing: 7px; background: transparent; }"
+            "QCheckBox::indicator { width: 0px; height: 0px; }"
+        )
+        self._box_size = 15
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QPen, QColor, QPainterPath
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.TextAntialiasing)
 
-        W = int(self._w_mm * self._scale)
-        H = int(self._h_mm * self._scale)
-        ox, oy = 2, 2
+        b = self._box_size
+        y = (self.height() - b) // 2
+        x = 0
 
-        # Shadow
-        shadow = QPainterPath()
-        shadow.addRoundedRect(ox + 2, oy + 2, W, H, 5, 5)
-        p.fillPath(shadow, QColor(0, 0, 0, 18))
-
-        # Label background
+        # Box outline only — never filled
+        p.setBrush(QColor("#FFFFFF"))
+        p.setPen(QPen(QColor("#94A3B8"), 1.5))
         path = QPainterPath()
-        path.addRoundedRect(ox, oy, W, H, 5, 5)
-        p.fillPath(path, QColor(C_SURFACE))
-        p.setPen(QPen(QColor(C_BORDER2), 0.8))
+        path.addRoundedRect(x, y, b, b, 3, 3)
         p.drawPath(path)
 
-        if self._item:
-            margin = int(3 * self._scale / 3)
-            draw_rect = QRect(ox + margin, oy + margin, W - 2 * margin, H - 2 * margin)
-            BarcodeRenderer.draw(
-                p,
-                draw_rect,
-                self._item.code,
-                label=self._item.label or self._item.code,
-                show_label=True,
-                font_size=max(5, int(self._scale * 2.2)),
-            )
-        else:
-            p.setPen(QPen(QColor(C_BORDER), 1, Qt.DashLine))
-            p.drawRect(ox + 6, oy + 6, W - 12, H - 12)
-            p.setPen(QPen(QColor(C_MUTED)))
-            f = QFont("Segoe UI", 8)
-            p.setFont(f)
-            p.drawText(QRect(ox, oy, W, H), Qt.AlignCenter, "Empty")
+        # Checkmark — drawn over the box when checked
+        if self.isChecked():
+            pen = QPen(QColor("#1E293B"), 2.0)
+            pen.setCapStyle(Qt.RoundCap)
+            pen.setJoinStyle(Qt.RoundJoin)
+            p.setPen(pen)
+            cx = x + b // 2
+            cy = y + b // 2
+            p.drawLine(int(cx - 3.5), int(cy),     int(cx - 1), int(cy + 3))
+            p.drawLine(int(cx - 1),   int(cy + 3), int(cx + 4), int(cy - 3))
 
+        # Label
+        from PySide6.QtGui import QFont
+        p.setPen(QPen(QColor("#1E293B")))
+        p.setFont(QFont("Segoe UI", 11))
+        tx = x + b + 7
+        p.drawText(tx, 0, self.width() - tx, self.height(),
+                   Qt.AlignVCenter | Qt.AlignLeft, self.text())
         p.end()
 
+    def mousePressEvent(self, event):
+        self.setChecked(not self.isChecked())
+        self.update()
 
-# ── Sheet preview (all labels on one page) ────────────────────────────────────
-class SheetPreviewWidget(QWidget):
-    """Renders a miniature preview of the whole print sheet."""
 
-    PAPER_W = 210   # A4 mm
-    PAPER_H = 297   # A4 mm
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Design picker popup
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _DesignPickerPopup(QFrame):
+    """
+    Floating popup showing all barcode design records.
+    Emits design_picked(code, name) when a row is selected.
+    """
+    design_picked = Signal(str, str)
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent.window(), Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"QFrame {{ background: {CARD}; border: 1px solid {INPUT_BD};"
+            "border-radius: 8px; }}"
+        )
+        self.setFixedWidth(480)
+        self._records: list[dict] = []
+        self._build_ui()
+
+    def _build_ui(self):
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        # Search bar
+        search_row = QWidget()
+        search_row.setStyleSheet(
+            f"background: {CARD}; border-bottom: 1px solid {BORDER};"
+        )
+        sr = QHBoxLayout(search_row)
+        sr.setContentsMargins(10, 8, 10, 8)
+        sr.setSpacing(8)
+
+        search_icon = QLabel("⌕")
+        search_icon.setStyleSheet(
+            f"font-size: 14px; color: {HINT}; border: none; background: transparent;"
+        )
+        sr.addWidget(search_icon)
+
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search code or name…")
+        self._search.setFrame(False)
+        self._search.setStyleSheet(
+            f"border: none; background: transparent; font-size: 12px; color: {INPUT_TXT};"
+        )
+        self._search.textChanged.connect(self._filter)
+        self._search.installEventFilter(self)
+        sr.addWidget(self._search)
+        vbox.addWidget(search_row)
+
+        # Column headers
+        hdr = QWidget()
+        hdr.setStyleSheet(
+            f"background: #F8FAFC; border-bottom: 1px solid {BORDER};"
+        )
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(12, 6, 12, 6)
+        hl.setSpacing(0)
+
+        def _hdr_lbl(text, w=None):
+            l = QLabel(text)
+            l.setStyleSheet(
+                f"font-size: 10px; font-weight: 700; color: {HINT};"
+                "letter-spacing: 0.5px; background: transparent;"
+            )
+            if w:
+                l.setFixedWidth(w)
+            return l
+
+        hl.addWidget(_hdr_lbl("CODE", 140))
+        hl.addWidget(_hdr_lbl("NAME"))
+        vbox.addWidget(hdr)
+
+        # List
+        self._list = QListWidget()
+        self._list.setFrameShape(QFrame.NoFrame)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list.setStyleSheet(f"""
+            QListWidget {{
+                background: {CARD}; border: none;
+                font-size: 12px; color: {INPUT_TXT};
+                outline: none;
+            }}
+            QListWidget::item {{
+                padding: 8px 12px; border-bottom: 1px solid {BORDER};
+            }}
+            QListWidget::item:selected {{
+                background: #EFF6FF; color: {ACCENT};
+            }}
+            QListWidget::item:hover:!selected {{
+                background: #F8FAFC;
+            }}
+            QScrollBar:vertical {{
+                background: transparent; width: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {INPUT_BD}; border-radius: 2px; min-height: 16px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        self._list.setFixedHeight(280)
+        self._list.itemActivated.connect(self._on_activated)
+        self._list.itemClicked.connect(self._on_activated)
+        vbox.addWidget(self._list)
+
+        # Footer count
+        self._footer = QLabel()
+        self._footer.setStyleSheet(
+            f"font-size: 10px; color: {HINT}; background: #F8FAFC;"
+            f"border-top: 1px solid {BORDER}; padding: 5px 12px;"
+        )
+        vbox.addWidget(self._footer)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if obj is self._search and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self.hide()
+                return True
+            if event.key() in (Qt.Key_Down, Qt.Key_Up):
+                self._list.setFocus()
+                return True
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                items = self._list.selectedItems()
+                if items:
+                    self._on_activated(items[0])
+                elif self._list.count() > 0:
+                    self._on_activated(self._list.item(0))
+                return True
+        return super().eventFilter(obj, event)
+
+    def _load_records(self):
+        try:
+            from server.repositories.mbarcd_repo import fetch_all_mbarcd
+            self._records = fetch_all_mbarcd()
+        except Exception:
+            self._records = []
+
+    def _rebuild_list(self, records):
+        self._list.clear()
+        for r in records:
+            code = str(r.get("pk") or r.get("code") or "")
+            name = str(r.get("name") or "")
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, (code, name))
+            # Use a widget for two-column layout
+            row_w = QWidget()
+            row_w.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row_w)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(0)
+
+            code_lbl = QLabel(code)
+            code_lbl.setStyleSheet(
+                f"font-size: 12px; font-weight: 600; color: {LABEL_CLR};"
+                "background: transparent; min-width: 140px; max-width: 140px;"
+            )
+            name_lbl = QLabel(name)
+            name_lbl.setStyleSheet(
+                f"font-size: 12px; color: {INPUT_TXT}; background: transparent;"
+            )
+            name_lbl.setWordWrap(False)
+            rl.addWidget(code_lbl)
+            rl.addWidget(name_lbl, 1)
+
+            item.setSizeHint(row_w.sizeHint().expandedTo(
+                __import__("PySide6.QtCore", fromlist=["QSize"]).QSize(0, 36)
+            ))
+            self._list.addItem(item)
+            self._list.setItemWidget(item, row_w)
+
+        self._footer.setText(f"{len(records)} record{'s' if len(records) != 1 else ''}")
+
+    def _filter(self, q: str):
+        q = q.lower()
+        filtered = [
+            r for r in self._records
+            if q in str(r.get("pk", "")).lower() or q in str(r.get("name", "")).lower()
+        ] if q else self._records
+        self._rebuild_list(filtered)
+
+    def _on_activated(self, item: QListWidgetItem):
+        data = item.data(Qt.UserRole)
+        if data:
+            self.design_picked.emit(data[0], data[1])
+            self.hide()
+
+    def show_below(self, anchor: QWidget):
+        self._load_records()
+        self._search.clear()
+        self._rebuild_list(self._records)
+        self.adjustSize()
+        gp = anchor.mapToGlobal(anchor.rect().bottomLeft())
+        screen = QApplication.primaryScreen().availableGeometry()
+        if gp.y() + self.height() > screen.bottom():
+            gp = anchor.mapToGlobal(anchor.rect().topLeft())
+            gp.setY(gp.y() - self.height() - 2)
+        else:
+            gp.setY(gp.y() + 4)
+        self.move(gp)
+        self.show()
+        self._search.setFocus()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Label preview
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _LabelPreview(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(300)
+        self._code = ""
+        self._name = ""
+        self.setMinimumHeight(160)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setStyleSheet(f"background: {C_BG};")
+        self.setStyleSheet(f"background: {CARD};")
 
-        # Layout params (mm)
-        self._cols       = 3
-        self._rows       = 8
-        self._label_w    = 60.0
-        self._label_h    = 30.0
-        self._margin_lr  = 10.0
-        self._margin_tb  = 10.0
-        self._gap_h      = 3.0
-        self._gap_v      = 3.0
-
-        self._items: list[BarcodeItem] = []
-
-    # ── Public setters ────────────────────────────────────────────────────────
-    def set_items(self, items: list[BarcodeItem]):
-        self._items = items
+    def set_design(self, code: str, name: str):
+        self._code = code
+        self._name = name
         self.update()
 
-    def set_layout(
-        self,
-        cols: int, rows: int,
-        label_w: float, label_h: float,
-        margin_lr: float, margin_tb: float,
-        gap_h: float, gap_v: float,
-    ):
-        self._cols      = max(1, cols)
-        self._rows      = max(1, rows)
-        self._label_w   = label_w
-        self._label_h   = label_h
-        self._margin_lr = margin_lr
-        self._margin_tb = margin_tb
-        self._gap_h     = gap_h
-        self._gap_v     = gap_v
-        self.update()
-
-    # ── Paint ─────────────────────────────────────────────────────────────────
-    def paintEvent(self, _event):
+    def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.TextAntialiasing)
+        W, H = self.width(), self.height()
+        pad  = 18
 
-        # Fit A4 into widget
-        avail_w = self.width()  - 32
-        avail_h = self.height() - 32
-        scale   = min(avail_w / self.PAPER_W, avail_h / self.PAPER_H)
-        pw      = int(self.PAPER_W * scale)
-        ph      = int(self.PAPER_H * scale)
-        ox      = (self.width()  - pw) // 2
-        oy      = (self.height() - ph) // 2
-
-        # Paper shadow
-        shadow = QPainterPath()
-        shadow.addRoundedRect(ox + 3, oy + 3, pw, ph, 4, 4)
-        p.fillPath(shadow, QColor(0, 0, 0, 22))
-
-        # Paper
-        paper = QPainterPath()
-        paper.addRoundedRect(ox, oy, pw, ph, 4, 4)
-        p.fillPath(paper, QColor(C_SURFACE))
-        p.setPen(QPen(QColor(C_BORDER2), 0.5))
-        p.drawPath(paper)
-
-        # Labels
-        lw = self._label_w * scale
-        lh = self._label_h * scale
-        gh = self._gap_h   * scale
-        gv = self._gap_v   * scale
-        ml = self._margin_lr * scale
-        mt = self._margin_tb * scale
-
-        idx = 0
-        items_flat: list[BarcodeItem] = []
-        for item in self._items:
-            items_flat.extend([item] * item.qty)
-
-        for r in range(self._rows):
-            for c in range(self._cols):
-                lx = ox + ml + c * (lw + gh)
-                ly = oy + mt + r * (lh + gv)
-
-                # Label cell background
-                cell = QPainterPath()
-                cell.addRoundedRect(lx, ly, lw, lh, 2, 2)
-
-                if idx < len(items_flat):
-                    item = items_flat[idx]
-                    p.fillPath(cell, QColor(C_SURFACE))
-                    p.setPen(QPen(QColor(C_BORDER), 0.4))
-                    p.drawPath(cell)
-
-                    # Draw barcode stripes inside cell
-                    inner = QRect(int(lx + 2), int(ly + 2), int(lw - 4), int(lh - 4))
-                    BarcodeRenderer.draw(
-                        p, inner,
-                        item.code,
-                        label=item.label or item.code,
-                        show_label=True,
-                        font_size=max(4, int(scale * 2.5)),
-                    )
-                    idx += 1
-                else:
-                    p.fillPath(cell, QColor("#F8FAFC"))
-                    p.setPen(QPen(QColor(C_BORDER), 0.3, Qt.DashLine))
-                    p.drawPath(cell)
-
-        p.end()
-
-
-# ── Item table ────────────────────────────────────────────────────────────────
-class ItemTable(QTableWidget):
-    items_changed = Signal()
-
-    COLS = ["", "Barcode Code", "Label Text", "Qty"]
-
-    def __init__(self, parent=None):
-        super().__init__(0, len(self.COLS), parent)
-        self.setStyleSheet(TABLE_STYLE)
-        self.setHorizontalHeaderLabels(self.COLS)
-        self.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        self.setAlternatingRowColors(True)
-        self.setStyleSheet(TABLE_STYLE + "QTableWidget { alternate-background-color: #F8FAFC; }")
-        self.verticalHeader().hide()
-        self.setFocusPolicy(Qt.StrongFocus)
-
-        hh = self.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Fixed)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Stretch)
-        hh.setSectionResizeMode(3, QHeaderView.Fixed)
-        self.setColumnWidth(0, 36)
-        self.setColumnWidth(3, 70)
-        self.setShowGrid(False)
-        self.verticalHeader().setDefaultSectionSize(36)
-
-        self.itemChanged.connect(self._on_item_changed)
-
-    # ── Row helpers ───────────────────────────────────────────────────────────
-    def add_item(self, item: BarcodeItem):
-        self.blockSignals(True)
-        row = self.rowCount()
-        self.insertRow(row)
-
-        chk = QTableWidgetItem()
-        chk.setCheckState(Qt.Checked if item.selected else Qt.Unchecked)
-        chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-        self.setItem(row, 0, chk)
-
-        code_item = QTableWidgetItem(item.code)
-        self.setItem(row, 1, code_item)
-
-        label_item = QTableWidgetItem(item.label)
-        self.setItem(row, 2, label_item)
-
-        qty_item = QTableWidgetItem(str(item.qty))
-        qty_item.setTextAlignment(Qt.AlignCenter)
-        self.setItem(row, 3, qty_item)
-
-        self.blockSignals(False)
-
-    def get_items(self) -> list[BarcodeItem]:
-        items = []
-        for row in range(self.rowCount()):
-            chk  = self.item(row, 0)
-            code = self.item(row, 1)
-            lbl  = self.item(row, 2)
-            qty  = self.item(row, 3)
-            if not code:
-                continue
-            try:
-                q = max(1, int((qty.text() if qty else "1") or "1"))
-            except ValueError:
-                q = 1
-            items.append(BarcodeItem(
-                code     = code.text().strip(),
-                label    = lbl.text().strip() if lbl else "",
-                qty      = q,
-                selected = (chk.checkState() == Qt.Checked) if chk else True,
-            ))
-        return items
-
-    def get_selected_items(self) -> list[BarcodeItem]:
-        return [i for i in self.get_items() if i.selected]
-
-    def remove_selected_rows(self):
-        rows = sorted({i.row() for i in self.selectedItems()}, reverse=True)
-        for r in rows:
-            self.removeRow(r)
-        self.items_changed.emit()
-
-    def _on_item_changed(self, _item):
-        self.items_changed.emit()
-
-
-# ── Print engine ──────────────────────────────────────────────────────────────
-class PrintEngine:
-    """Renders all label pages onto a QPrinter."""
-
-    def __init__(
-        self,
-        items: list[BarcodeItem],
-        cols: int,
-        rows: int,
-        label_w_mm: float,
-        label_h_mm: float,
-        margin_lr_mm: float,
-        margin_tb_mm: float,
-        gap_h_mm: float,
-        gap_v_mm: float,
-    ):
-        self._items      = items
-        self._cols       = cols
-        self._rows       = rows
-        self._label_w    = label_w_mm
-        self._label_h    = label_h_mm
-        self._ml         = margin_lr_mm
-        self._mt         = margin_tb_mm
-        self._gh         = gap_h_mm
-        self._gv         = gap_v_mm
-
-    def print_to(self, printer: QPrinter):
-        p   = QPainter()
-        ok  = p.begin(printer)
-        if not ok:
+        if not self._code:
+            p.setPen(QPen(QColor(HINT)))
+            p.setFont(QFont("Segoe UI", 9))
+            p.drawText(self.rect(), Qt.AlignCenter, "Load a design to preview")
+            p.end()
             return
 
-        dpi   = printer.resolution()
-        mm2pt = dpi / 25.4
+        bx   = pad + 12
+        bw   = W - 2*pad - 24
+        bh   = int((H - 2*pad) * 0.55)
+        by   = pad + 10
+        seed = int(hashlib.md5(self._code.encode()).hexdigest()[:8], 16)
 
-        lw = self._label_w * mm2pt
-        lh = self._label_h * mm2pt
-        gh = self._gh      * mm2pt
-        gv = self._gv      * mm2pt
-        ml = self._ml      * mm2pt
-        mt = self._mt      * mm2pt
+        p.setBrush(QBrush(Qt.black))
+        p.setPen(Qt.NoPen)
+        x = bx; i = 0
+        while x < bx + bw - 2:
+            w = max(1, int(((seed >> (i % 16)) & 3) * 1.4 + 1))
+            if i % 2 == 0:
+                p.drawRect(int(x), by, max(1, w), bh)
+            x += w + 1; i += 1
 
-        per_page = self._cols * self._rows
-        items_flat: list[BarcodeItem] = []
-        for item in self._items:
-            items_flat.extend([item] * item.qty)
+        f1 = QFont("Courier New", 7)
+        p.setFont(f1)
+        p.setPen(QPen(QColor(INPUT_TXT)))
+        tw = QFontMetrics(f1).horizontalAdvance(self._code)
+        p.drawText(bx + (bw - tw) // 2, by + bh + 13, self._code)
 
-        total = len(items_flat)
-        pages = max(1, math.ceil(total / per_page))
-
-        for pg in range(pages):
-            if pg > 0:
-                printer.newPage()
-            start = pg * per_page
-            page_items = items_flat[start: start + per_page]
-            idx = 0
-            for r in range(self._rows):
-                for c in range(self._cols):
-                    if idx >= len(page_items):
-                        break
-                    x = int(ml + c * (lw + gh))
-                    y = int(mt + r * (lh + gv))
-                    rect = QRect(x, y, int(lw), int(lh))
-                    item = page_items[idx]
-                    BarcodeRenderer.draw(
-                        p, rect, item.code,
-                        label=item.label or item.code,
-                        show_label=True,
-                        font_size=6,
-                    )
-                    idx += 1
-
+        f2 = QFont("Segoe UI", 8)
+        p.setFont(f2)
+        p.setPen(QPen(QColor(MUTED)))
+        p.drawText(
+            self.rect().adjusted(pad + 6, by + bh + 22, -(pad + 6), -4),
+            Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, self._name,
+        )
         p.end()
 
 
-# ── Main page widget ──────────────────────────────────────────────────────────
-class BarcodePrintPage(QWidget):
-    """
-    Full barcode print page.
+# ─────────────────────────────────────────────────────────────────────────────
+# Print log
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Left panel  : item list (add / remove / edit barcodes + quantities)
-    Right panel : layout settings + live sheet preview + print button
-    """
-
+class _PrintLog(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f"background: {C_BG};")
-        self._build_ui()
-        self._load_defaults()
-        self._refresh_preview()
+        self.setReadOnly(True)
+        self.setStyleSheet(
+            "QTextEdit { background: #0F172A; color: #475569; border: none;"
+            "font-family: 'Consolas','Courier New',monospace; font-size: 11px; padding: 8px; }"
+        )
+        self._put("— print log —", "#334155")
 
-    # ── UI construction ───────────────────────────────────────────────────────
+    def _put(self, msg: str, color: str):
+        self.append(f"<span style='color:{color};'>{msg}</span>")
+        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+    def log(self, msg: str, level: str = "info"):
+        c = {"info": "#475569", "ok": "#4ADE80", "error": "#F87171", "warn": "#FCD34D"}.get(level, "#475569")
+        self._put(msg, c)
+
+    def clear_log(self):
+        self.clear()
+        self._put("— print log —", "#334155")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Page
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BarcodePrintPage(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"background: {BG};")
+        self._build_ui()
+        self._print_fields_card.setVisible(False)
+        self._btn_print.setEnabled(False)
+
+    # ── build ─────────────────────────────────────────────────────────────────
+
     def _build_ui(self):
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(1)
-        splitter.setStyleSheet(f"QSplitter::handle {{ background: {C_BORDER}; }}")
+        spl = QSplitter(Qt.Horizontal)
+        spl.setHandleWidth(1)
+        spl.setStyleSheet(f"QSplitter::handle {{ background: {BORDER}; }}")
+        spl.addWidget(self._build_left())
+        spl.addWidget(self._build_right())
+        spl.setSizes([620, 360])
+        root.addWidget(spl)
 
-        splitter.addWidget(self._build_left_panel())
-        splitter.addWidget(self._build_right_panel())
-        splitter.setSizes([480, 560])
+    # ── Left panel ────────────────────────────────────────────────────────────
 
-        root.addWidget(splitter)
+    def _build_left(self) -> QWidget:
+        outer = QWidget()
+        outer.setStyleSheet(f"background: {BG};")
+        vbox = QVBoxLayout(outer)
+        vbox.setContentsMargins(20, 16, 12, 16)
+        vbox.setSpacing(12)
 
-    # ── Left panel: item list ─────────────────────────────────────────────────
-    def _build_left_panel(self) -> QWidget:
-        w = QWidget()
-        w.setStyleSheet(f"background: {C_BG};")
-        vbox = QVBoxLayout(w)
-        vbox.setContentsMargins(20, 20, 12, 20)
-        vbox.setSpacing(14)
+        # Page title + action buttons
+        hdr = QHBoxLayout()
+        title = QLabel("Barcode Print")
+        title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {INPUT_TXT};")
+        hdr.addWidget(title)
+        hdr.addStretch()
 
-        # ── Header ────────────────────────────────────────────────────────────
-        header = QHBoxLayout()
-        title  = QLabel("Barcode Items")
-        title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {C_TEXT};")
-        header.addWidget(title)
-        header.addStretch()
-
-        self._count_lbl = QLabel("0 items")
-        self._count_lbl.setStyleSheet(f"font-size: 12px; color: {C_MUTED};")
-        header.addWidget(self._count_lbl)
-        vbox.addLayout(header)
-
-        # ── Quick-add row ─────────────────────────────────────────────────────
-        add_box = QGroupBox("ADD ITEM")
-        add_box.setStyleSheet(GROUP_STYLE)
-        form = QFormLayout(add_box)
-        form.setContentsMargins(14, 18, 14, 12)
-        form.setSpacing(8)
-        form.setLabelAlignment(Qt.AlignRight)
-
-        self._inp_code  = QLineEdit()
-        self._inp_code.setPlaceholderText("e.g. 1234567890")
-        self._inp_code.setStyleSheet(SPIN_STYLE)
-
-        self._inp_label = QLineEdit()
-        self._inp_label.setPlaceholderText("Display text (optional)")
-        self._inp_label.setStyleSheet(SPIN_STYLE)
-
-        self._inp_qty   = QSpinBox()
-        self._inp_qty.setRange(1, 9999)
-        self._inp_qty.setValue(1)
-        self._inp_qty.setStyleSheet(SPIN_STYLE)
-        self._inp_qty.setFixedWidth(80)
-
-        form.addRow("Code:", self._inp_code)
-        form.addRow("Label:", self._inp_label)
-        form.addRow("Qty:", self._inp_qty)
-
-        btn_row = QHBoxLayout()
-        self._btn_add = QPushButton("Add")
-        self._btn_add.setStyleSheet(BTN_PRIMARY)
-        self._btn_add.setIcon(qta.icon("fa5s.plus", color="#FFFFFF"))
-        self._btn_add.clicked.connect(self._on_add_item)
-        self._inp_code.returnPressed.connect(self._on_add_item)
-
-        btn_row.addStretch()
-        btn_row.addWidget(self._btn_add)
-        form.addRow("", btn_row)
-        vbox.addWidget(add_box)
-
-        # ── Table ─────────────────────────────────────────────────────────────
-        self._table = ItemTable()
-        self._table.items_changed.connect(self._refresh_preview)
-        vbox.addWidget(self._table, stretch=1)
-
-        # ── Table toolbar ─────────────────────────────────────────────────────
-        tbar = QHBoxLayout()
-        self._btn_remove = QPushButton("Remove Selected")
-        self._btn_remove.setStyleSheet(BTN_DANGER)
-        self._btn_remove.setIcon(qta.icon("fa5s.trash-alt", color=C_DANGER))
-        self._btn_remove.clicked.connect(self._on_remove_items)
-
-        self._btn_clear = QPushButton("Clear All")
-        self._btn_clear.setStyleSheet(BTN_SECONDARY)
-        self._btn_clear.setIcon(qta.icon("fa5s.broom", color=C_MUTED))
-        self._btn_clear.clicked.connect(self._on_clear_all)
-
-        self._btn_demo = QPushButton("Load Demo Data")
-        self._btn_demo.setStyleSheet(BTN_SECONDARY)
-        self._btn_demo.setIcon(qta.icon("fa5s.database", color=C_MUTED))
-        self._btn_demo.clicked.connect(self._on_load_demo)
-
-        tbar.addWidget(self._btn_remove)
-        tbar.addWidget(self._btn_clear)
-        tbar.addStretch()
-        tbar.addWidget(self._btn_demo)
-        vbox.addLayout(tbar)
-
-        return w
-
-    # ── Right panel: settings + preview ──────────────────────────────────────
-    def _build_right_panel(self) -> QWidget:
-        w = QWidget()
-        w.setStyleSheet(f"background: {C_BG};")
-        vbox = QVBoxLayout(w)
-        vbox.setContentsMargins(12, 20, 20, 20)
-        vbox.setSpacing(14)
-
-        # ── Header + print buttons ────────────────────────────────────────────
-        header = QHBoxLayout()
-        title  = QLabel("Print Layout")
-        title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {C_TEXT};")
-        header.addWidget(title)
-        header.addStretch()
-
-        self._btn_preview = QPushButton("Preview")
-        self._btn_preview.setStyleSheet(BTN_SECONDARY)
-        self._btn_preview.setIcon(qta.icon("fa5s.eye", color=C_MUTED))
-        self._btn_preview.clicked.connect(self._on_print_preview)
+        self._btn_stop = QPushButton("Stop")
+        self._btn_stop.setStyleSheet(BTN_OUTLINE)
+        self._btn_stop.setIcon(qta.icon("fa5s.stop-circle", color=MUTED))
+        self._btn_stop.setEnabled(False)
+        self._btn_stop.clicked.connect(self._on_stop)
 
         self._btn_print = QPushButton("Print")
         self._btn_print.setStyleSheet(BTN_PRIMARY)
-        self._btn_print.setIcon(qta.icon("fa5s.print", color="#FFFFFF"))
+        self._btn_print.setIcon(qta.icon("fa5s.print", color="#fff"))
         self._btn_print.clicked.connect(self._on_print)
 
-        header.addWidget(self._btn_preview)
-        header.addSpacing(8)
-        header.addWidget(self._btn_print)
-        vbox.addLayout(header)
+        hdr.addWidget(self._btn_stop)
+        hdr.addSpacing(6)
+        hdr.addWidget(self._btn_print)
+        vbox.addLayout(hdr)
 
-        # ── Layout settings ────────────────────────────────────────────────────
-        settings_box = QGroupBox("LABEL LAYOUT")
-        settings_box.setStyleSheet(GROUP_STYLE)
-        grid = QGridLayout(settings_box)
-        grid.setContentsMargins(14, 18, 14, 12)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(8)
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { background: transparent; width: 4px; }"
+            f"QScrollBar::handle:vertical {{ background: {INPUT_BD}; border-radius: 2px; min-height: 16px; }}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(0, 0, 6, 0)
+        cv.setSpacing(0)
 
-        def lbl(t):
-            l = QLabel(t)
-            l.setStyleSheet(f"font-size: 12px; color: {C_MUTED}; font-weight: 500;")
-            return l
+        # Wrap all cards in one bordered container (matches General tab)
+        from PySide6.QtWidgets import QFrame as _QF
+        wrapper = _QF()
+        wrapper.setStyleSheet(
+            f'background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px;'
+        )
+        wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        wv = QVBoxLayout(wrapper)
+        wv.setContentsMargins(0, 0, 0, 0)
+        wv.setSpacing(0)
+        wv.addWidget(self._build_design_card())
+        _sep = QFrame(); _sep.setFrameShape(QFrame.HLine)
+        _sep.setFixedHeight(1)
+        _sep.setStyleSheet(f'background: {BORDER}; border: none;')
+        wv.addWidget(_sep)
+        wv.addWidget(self._build_printer_card())
+        self._print_fields_card = self._build_print_fields_card()
+        wv.addWidget(self._print_fields_card)
+        cv.addWidget(wrapper)
+        cv.addStretch()
 
-        # Paper size
-        self._paper_combo = QComboBox()
-        self._paper_combo.setStyleSheet(SPIN_STYLE)
-        self._paper_combo.addItems(["A4 (210 × 297 mm)", "Letter (216 × 279 mm)", "A5 (148 × 210 mm)"])
-        grid.addWidget(lbl("Paper:"),       0, 0)
-        grid.addWidget(self._paper_combo,   0, 1, 1, 3)
+        scroll.setWidget(content)
+        vbox.addWidget(scroll, 1)
+        return outer
 
-        # Columns / Rows
-        self._spin_cols = QSpinBox(); self._spin_cols.setRange(1, 10); self._spin_cols.setValue(3)
-        self._spin_rows = QSpinBox(); self._spin_rows.setRange(1, 20); self._spin_rows.setValue(8)
-        self._spin_cols.setStyleSheet(SPIN_STYLE)
-        self._spin_rows.setStyleSheet(SPIN_STYLE)
-        grid.addWidget(lbl("Columns:"),     1, 0);  grid.addWidget(self._spin_cols, 1, 1)
-        grid.addWidget(lbl("Rows:"),        1, 2);  grid.addWidget(self._spin_rows, 1, 3)
+    # ── Design card ───────────────────────────────────────────────────────────
 
-        # Label size
-        self._spin_lw = QDoubleSpinBox(); self._spin_lw.setRange(10, 200); self._spin_lw.setSuffix(" mm"); self._spin_lw.setValue(60)
-        self._spin_lh = QDoubleSpinBox(); self._spin_lh.setRange(5,  100); self._spin_lh.setSuffix(" mm"); self._spin_lh.setValue(30)
-        self._spin_lw.setStyleSheet(SPIN_STYLE)
-        self._spin_lh.setStyleSheet(SPIN_STYLE)
-        grid.addWidget(lbl("Label W:"),     2, 0);  grid.addWidget(self._spin_lw, 2, 1)
-        grid.addWidget(lbl("Label H:"),     2, 2);  grid.addWidget(self._spin_lh, 2, 3)
+    def _build_design_card(self) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(CARD_STYLE)
+        g = QGridLayout(card)
+        g.setContentsMargins(20, 16, 20, 16)
+        g.setHorizontalSpacing(12)
+        g.setVerticalSpacing(12)
 
-        # Margins
-        self._spin_ml = QDoubleSpinBox(); self._spin_ml.setRange(0, 50); self._spin_ml.setSuffix(" mm"); self._spin_ml.setValue(10)
-        self._spin_mt = QDoubleSpinBox(); self._spin_mt.setRange(0, 50); self._spin_mt.setSuffix(" mm"); self._spin_mt.setValue(10)
-        self._spin_ml.setStyleSheet(SPIN_STYLE)
-        self._spin_mt.setStyleSheet(SPIN_STYLE)
-        grid.addWidget(lbl("Margin L/R:"),  3, 0);  grid.addWidget(self._spin_ml, 3, 1)
-        grid.addWidget(lbl("Margin T/B:"),  3, 2);  grid.addWidget(self._spin_mt, 3, 3)
+        # Design Code
+        self._inp_code = QLineEdit()
+        self._inp_code.setPlaceholderText("Enter or browse design code…")
+        self._inp_code.setStyleSheet(INPUT_STYLE)
+        self._inp_code.returnPressed.connect(
+            lambda: self.load_design_by_code(self._inp_code.text().strip())
+        )
+        self._btn_browse_code = QPushButton("···")
+        self._btn_browse_code.setStyleSheet(BTN_BROWSE)
+        self._btn_browse_code.setToolTip("Browse design codes")
+        self._btn_browse_code.clicked.connect(self._on_browse_code)
 
-        # Gap
-        self._spin_gh = QDoubleSpinBox(); self._spin_gh.setRange(0, 20); self._spin_gh.setSuffix(" mm"); self._spin_gh.setValue(3)
-        self._spin_gv = QDoubleSpinBox(); self._spin_gv.setRange(0, 20); self._spin_gv.setSuffix(" mm"); self._spin_gv.setValue(3)
-        self._spin_gh.setStyleSheet(SPIN_STYLE)
-        self._spin_gv.setStyleSheet(SPIN_STYLE)
-        grid.addWidget(lbl("Gap H:"),       4, 0);  grid.addWidget(self._spin_gh, 4, 1)
-        grid.addWidget(lbl("Gap V:"),       4, 2);  grid.addWidget(self._spin_gv, 4, 3)
+        code_w = QWidget(); code_w.setStyleSheet("background:transparent;")
+        cr = QHBoxLayout(code_w); cr.setContentsMargins(0,0,0,0); cr.setSpacing(6)
+        cr.addWidget(self._inp_code); cr.addWidget(self._btn_browse_code)
 
-        vbox.addWidget(settings_box)
+        g.addWidget(_field_label("CODE"), 0, 0)
+        g.addWidget(code_w, 0, 1)
 
-        # Connect all layout spinners to preview refresh
-        for sp in [self._spin_cols, self._spin_rows]:
-            sp.valueChanged.connect(self._refresh_preview)
-        for sp in [self._spin_lw, self._spin_lh, self._spin_ml, self._spin_mt, self._spin_gh, self._spin_gv]:
-            sp.valueChanged.connect(self._refresh_preview)
-        self._paper_combo.currentIndexChanged.connect(self._refresh_preview)
+        # Name
+        self._inp_name = QLineEdit()
+        self._inp_name.setReadOnly(True)
+        self._inp_name.setPlaceholderText("Auto-filled from design code")
+        self._inp_name.setStyleSheet(INPUT_STYLE)
+        g.addWidget(_field_label("NAME"), 1, 0)
+        g.addWidget(self._inp_name, 1, 1)
 
-        # ── Summary strip ──────────────────────────────────────────────────────
-        summ = QHBoxLayout()
-        self._lbl_total  = self._make_chip("Total labels", "0")
-        self._lbl_pages  = self._make_chip("Pages needed", "0")
-        self._lbl_perp   = self._make_chip("Per page", "0")
-        summ.addWidget(self._lbl_total)
-        summ.addWidget(self._lbl_pages)
-        summ.addWidget(self._lbl_perp)
-        summ.addStretch()
-        vbox.addLayout(summ)
+        g.setColumnStretch(1, 1)
+        return card
 
-        # ── Sheet preview ──────────────────────────────────────────────────────
-        prev_box = QGroupBox("SHEET PREVIEW")
-        prev_box.setStyleSheet(GROUP_STYLE)
-        prev_vbox = QVBoxLayout(prev_box)
-        prev_vbox.setContentsMargins(8, 16, 8, 8)
+    # ── Printer settings card ─────────────────────────────────────────────────
 
-        self._sheet_preview = SheetPreviewWidget()
-        prev_vbox.addWidget(self._sheet_preview)
-        vbox.addWidget(prev_box, stretch=1)
+    def _build_printer_card(self) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(CARD_STYLE)
+        g = QGridLayout(card)
+        g.setContentsMargins(20, 16, 20, 16)
+        g.setHorizontalSpacing(12)
+        g.setVerticalSpacing(12)
+
+        # COM status
+        self._lbl_timbangan = _status_lbl("NOT CONNECTED", False)
+        self._lbl_gate      = _status_lbl("NOT CONNECTED", False)
+        g.addWidget(_field_label("COM TIMBANGAN"), 0, 0)
+        g.addWidget(self._lbl_timbangan, 0, 1)
+        g.addWidget(_field_label("COM GATE"), 1, 0)
+        g.addWidget(self._lbl_gate, 1, 1)
+
+        # Speed
+        self._spin_speed = QSpinBox()
+        self._spin_speed.setRange(1, 10); self._spin_speed.setValue(3)
+        self._spin_speed.setStyleSheet(INPUT_STYLE); self._spin_speed.setFixedWidth(80)
+        g.addWidget(_field_label("SPEED"), 2, 0)
+        g.addWidget(self._spin_speed, 2, 1, Qt.AlignLeft)
+
+        # Divider
+
+
+        # Margin Left
+        self._spin_ml = QSpinBox()
+        self._spin_ml.setRange(-999, 999); self._spin_ml.setValue(0)
+        self._spin_ml.setStyleSheet(INPUT_STYLE); self._spin_ml.setFixedWidth(80)
+        g.addWidget(_field_label("MARGIN LEFT"), 4, 0)
+        g.addWidget(self._spin_ml, 4, 1, Qt.AlignLeft)
+
+        # Margin Top + 300 dpi
+        self._spin_mt = QSpinBox()
+        self._spin_mt.setRange(-999, 999); self._spin_mt.setValue(0)
+        self._spin_mt.setStyleSheet(INPUT_STYLE); self._spin_mt.setFixedWidth(80)
+        self._chk_dpi = _CheckBox("300 dpi")
+        mt_w = QWidget(); mt_w.setStyleSheet("background:transparent;")
+        ml = QHBoxLayout(mt_w); ml.setContentsMargins(0,0,0,0); ml.setSpacing(12)
+        ml.addWidget(self._spin_mt); ml.addWidget(self._chk_dpi); ml.addStretch()
+        g.addWidget(_field_label("MARGIN TOP"), 5, 0)
+        g.addWidget(mt_w, 5, 1)
+
+        # Printer Type
+        self._chk_non_zebra = _CheckBox("Non Zebra Printer")
+        self._spin_offset = QSpinBox()
+        self._spin_offset.setRange(-999, 999); self._spin_offset.setValue(-11)
+        self._spin_offset.setStyleSheet(INPUT_STYLE); self._spin_offset.setFixedWidth(70)
+        pt_w = QWidget(); pt_w.setStyleSheet("background:transparent;")
+        pl = QHBoxLayout(pt_w); pl.setContentsMargins(0,0,0,0); pl.setSpacing(12)
+        pl.addWidget(self._chk_non_zebra); pl.addWidget(self._spin_offset); pl.addStretch()
+        g.addWidget(_field_label("PRINTER TYPE"), 6, 0)
+        g.addWidget(pt_w, 6, 1)
+
+        g.setColumnStretch(1, 1)
+        return card
+
+    # ── Print fields card ─────────────────────────────────────────────────────
+
+    def _build_print_fields_card(self) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(CARD_STYLE)
+        g = QGridLayout(card)
+        g.setContentsMargins(20, 16, 20, 16)
+        g.setHorizontalSpacing(12)
+        g.setVerticalSpacing(12)
+
+        # Part No
+        self._inp_part = QLineEdit()
+        self._inp_part.setPlaceholderText("Enter or browse part number…")
+        self._inp_part.setStyleSheet(INPUT_STYLE)
+        self._btn_browse_part = QPushButton("···")
+        self._btn_browse_part.setStyleSheet(BTN_BROWSE)
+        self._btn_browse_part.clicked.connect(self._on_browse_part)
+        part_w = QWidget(); part_w.setStyleSheet("background:transparent;")
+        pw = QHBoxLayout(part_w); pw.setContentsMargins(0,0,0,0); pw.setSpacing(6)
+        pw.addWidget(self._inp_part); pw.addWidget(self._btn_browse_part)
+        g.addWidget(_field_label("PART NO. PRINT"), 0, 0)
+        g.addWidget(part_w, 0, 1)
+
+        # QTY
+        self._inp_qty = QLineEdit()
+        self._inp_qty.setReadOnly(True)
+        self._inp_qty.setPlaceholderText("Auto-filled")
+        self._inp_qty.setStyleSheet(INPUT_STYLE)
+        g.addWidget(_field_label("QTY"), 1, 0)
+        g.addWidget(self._inp_qty, 1, 1)
+
+        # WHS
+        self._inp_whs = QLineEdit()
+        self._inp_whs.setReadOnly(True)
+        self._inp_whs.setPlaceholderText("Auto-filled")
+        self._inp_whs.setStyleSheet(INPUT_STYLE)
+        g.addWidget(_field_label("WHS"), 2, 0)
+        g.addWidget(self._inp_whs, 2, 1)
+
+        # Date Code
+        self._inp_date = QDateEdit()
+        self._inp_date.setCalendarPopup(True)
+        self._inp_date.setDate(QDate.currentDate())
+        self._inp_date.setDisplayFormat("dd-MMM-yyyy")
+        self._inp_date.setStyleSheet(INPUT_STYLE)
+        self._inp_date.setFixedWidth(160)
+        g.addWidget(_field_label("DATE CODE"), 3, 0)
+        g.addWidget(self._inp_date, 3, 1, Qt.AlignLeft)
+
+        # Print QTY
+        self._spin_print_qty = QSpinBox()
+        self._spin_print_qty.setRange(1, 9999); self._spin_print_qty.setValue(1)
+        self._spin_print_qty.setStyleSheet(INPUT_STYLE); self._spin_print_qty.setFixedWidth(100)
+        g.addWidget(_field_label("PRINT QTY"), 4, 0)
+        g.addWidget(self._spin_print_qty, 4, 1, Qt.AlignLeft)
+
+        g.setColumnStretch(1, 1)
+        return card
+
+    # ── Right panel ───────────────────────────────────────────────────────────
+
+    def _build_right(self) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet(f"background: {BG};")
+        vbox = QVBoxLayout(w)
+        vbox.setContentsMargins(6, 16, 16, 16)
+        vbox.setSpacing(0)
+
+        # Preview card
+        p_hdr = QHBoxLayout()
+        p_title = QLabel("Preview")
+        p_title.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {INPUT_TXT};")
+        p_hdr.addWidget(p_title); p_hdr.addStretch()
+        vbox.addLayout(p_hdr)
+        vbox.addSpacing(6)
+
+        pf = QFrame()
+        pf.setStyleSheet(CARD_STYLE)
+        pf.setMinimumHeight(160)
+        pfv = QVBoxLayout(pf); pfv.setContentsMargins(0,0,0,0)
+        self._preview = _LabelPreview()
+        pfv.addWidget(self._preview)
+        vbox.addWidget(pf, 3)
+
+        vbox.addSpacing(10)
+
+        # Log card
+        l_hdr = QHBoxLayout()
+        l_title = QLabel("Print Log")
+        l_title.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {INPUT_TXT};")
+        self._btn_clear = QPushButton("Clear")
+        self._btn_clear.setStyleSheet(BTN_GHOST)
+        self._btn_clear.clicked.connect(lambda: self._log.clear_log())
+        l_hdr.addWidget(l_title); l_hdr.addStretch(); l_hdr.addWidget(self._btn_clear)
+        vbox.addLayout(l_hdr)
+        vbox.addSpacing(6)
+
+        lf = QFrame()
+        lf.setStyleSheet("background: #0F172A; border: 1px solid #1E293B; border-radius: 8px;")
+        lfv = QVBoxLayout(lf); lfv.setContentsMargins(0,0,0,0)
+        self._log = _PrintLog()
+        lfv.addWidget(self._log)
+        vbox.addWidget(lf, 2)
 
         return w
 
-    @staticmethod
-    def _make_chip(title: str, value: str) -> QLabel:
-        lbl = QLabel(f"<b style='color:{C_TEXT};font-size:18px;'>{value}</b><br>"
-                     f"<span style='color:{C_MUTED};font-size:11px;'>{title}</span>")
-        lbl.setTextFormat(Qt.RichText)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
-            f"background:{C_SURFACE}; border:1px solid {C_BORDER};"
-            f"border-radius:8px; padding:8px 18px; min-width:100px;"
-        )
-        return lbl
-
-    # ── Defaults ──────────────────────────────────────────────────────────────
-    def _load_defaults(self):
-        pass   # Layout spinners already have default values from _build_right_panel
-
     # ── Slots ─────────────────────────────────────────────────────────────────
-    def _on_add_item(self):
-        code = self._inp_code.text().strip()
-        if not code:
-            self._inp_code.setFocus()
-            return
-        label = self._inp_label.text().strip()
-        qty   = self._inp_qty.value()
-        self._table.add_item(BarcodeItem(code=code, label=label, qty=qty))
-        self._inp_code.clear()
-        self._inp_label.clear()
-        self._inp_qty.setValue(1)
-        self._inp_code.setFocus()
-        self._refresh_preview()
 
-    def _on_remove_items(self):
-        self._table.remove_selected_rows()
-
-    def _on_clear_all(self):
-        if self._table.rowCount() == 0:
-            return
-        ans = QMessageBox.question(
-            self, "Clear All",
-            "Remove all items from the print list?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if ans == QMessageBox.Yes:
-            self._table.setRowCount(0)
-            self._refresh_preview()
-
-    def _on_load_demo(self):
-        demo = [
-            BarcodeItem("8991234567890", "Aqua 600ml",     3),
-            BarcodeItem("8990987654321", "Fruit Tea Lemon", 2),
-            BarcodeItem("8991111222333", "Green Tea 500ml", 5),
-            BarcodeItem("8994444555666", "Mineral Water",   4),
-            BarcodeItem("8997777888999", "Sparkling Water", 2),
-            BarcodeItem("8990001112222", "Energy Drink",    1),
-        ]
-        self._table.setRowCount(0)
-        for item in demo:
-            self._table.add_item(item)
-        self._refresh_preview()
-
-    def _refresh_preview(self):
-        items    = self._table.get_selected_items()
-        cols     = self._spin_cols.value()
-        rows     = self._spin_rows.value()
-        per_page = cols * rows
-
-        total = sum(i.qty for i in items)
-        pages = max(1, math.ceil(total / per_page)) if total else 0
-
-        # Update chips
-        def _set(lbl: QLabel, val: int, title: str):
-            lbl.setText(
-                f"<b style='color:{C_TEXT};font-size:18px;'>{val}</b><br>"
-                f"<span style='color:{C_MUTED};font-size:11px;'>{title}</span>"
+    def _on_browse_code(self):
+        if not hasattr(self, '_design_picker'):
+            self._design_picker = _DesignPickerPopup(self)
+            self._design_picker.design_picked.connect(
+                lambda code, name: self.load_design_by_code(code, name)
             )
-        _set(self._lbl_total,  total,    "Total labels")
-        _set(self._lbl_pages,  pages,    "Pages needed")
-        _set(self._lbl_perp,   per_page, "Per page")
+        self._design_picker.show_below(self._btn_browse_code)
 
-        # Update count label
-        row_count = self._table.rowCount()
-        self._count_lbl.setText(
-            f"{row_count} item{'s' if row_count != 1 else ''}"
-        )
-
-        # Update sheet preview
-        self._sheet_preview.set_layout(
-            cols   = cols,
-            rows   = rows,
-            label_w  = self._spin_lw.value(),
-            label_h  = self._spin_lh.value(),
-            margin_lr= self._spin_ml.value(),
-            margin_tb= self._spin_mt.value(),
-            gap_h    = self._spin_gh.value(),
-            gap_v    = self._spin_gv.value(),
-        )
-        self._sheet_preview.set_items(items)
-
-    def _get_engine(self) -> PrintEngine:
-        return PrintEngine(
-            items       = self._table.get_selected_items(),
-            cols        = self._spin_cols.value(),
-            rows        = self._spin_rows.value(),
-            label_w_mm  = self._spin_lw.value(),
-            label_h_mm  = self._spin_lh.value(),
-            margin_lr_mm= self._spin_ml.value(),
-            margin_tb_mm= self._spin_mt.value(),
-            gap_h_mm    = self._spin_gh.value(),
-            gap_v_mm    = self._spin_gv.value(),
-        )
-
-    def _setup_printer(self, printer: QPrinter):
-        idx  = self._paper_combo.currentIndex()
-        size = [QPageSize.A4, QPageSize.Letter, QPageSize.A5][idx]
-        printer.setPageSize(QPageSize(size))
-        printer.setPageOrientation(QPageLayout.Portrait)
-        printer.setFullPage(True)
-
-    def _on_print_preview(self):
-        if not self._table.get_selected_items():
-            QMessageBox.information(self, "No Items", "Please add at least one item to print.")
-            return
-        printer = QPrinter(QPrinter.HighResolution)
-        self._setup_printer(printer)
-
-        dialog = QPrintPreviewDialog(printer, self)
-        dialog.setWindowTitle("Barcode Print Preview")
-        dialog.paintRequested.connect(lambda p: self._get_engine().print_to(p))
-        dialog.resize(900, 700)
-        dialog.exec()
+    def _on_browse_part(self):
+        try:
+            from PySide6.QtWidgets import QInputDialog
+            part, ok = QInputDialog.getText(self, "Browse Part No.", "Enter Part No.:")
+            if ok and part.strip():
+                self._inp_part.setText(part.strip())
+        except Exception as e:
+            self._log.log(f"✗  {e}", "error")
 
     def _on_print(self):
-        items = self._table.get_selected_items()
-        if not items:
-            QMessageBox.information(self, "No Items", "Please add at least one item to print.")
+        code = self._inp_code.text().strip()
+        if not code:
+            self._log.log("✗  No design code selected.", "error")
             return
-        printer = QPrinter(QPrinter.HighResolution)
-        self._setup_printer(printer)
-        dlg = QPrintDialog(printer, self)
-        dlg.setWindowTitle("Print Barcodes")
-        if dlg.exec() == QPrintDialog.Accepted:
-            self._get_engine().print_to(printer)
+        qty    = self._spin_print_qty.value()
+        part   = self._inp_part.text().strip() or "(no part)"
+        date_s = self._inp_date.date().toString("dd-MMM-yyyy")
+        self._log.log(f"▶  [{code}]  ×{qty}  part={part}  date={date_s}", "ok")
+        self._btn_stop.setEnabled(True)
+        self._btn_print.setEnabled(False)
+
+    def _on_stop(self):
+        self._log.log("■  Stopped.", "warn")
+        self._btn_stop.setEnabled(False)
+        self._btn_print.setEnabled(True)
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def load_design_by_code(self, code: str, name: str = ""):
+        if not code:
+            return
+        self._inp_code.setText(code)
+        self._inp_name.setText(name or code)
+        self._preview.set_design(code, name or code)
+        self._print_fields_card.setVisible(True)
+        self._btn_print.setEnabled(True)
+        self._log.log(f"✓  Design loaded: {code}", "ok")
+
+    def load_design(self, code: str, name: str = ""):
+        self.load_design_by_code(code, name)
+
+    def set_part_no(self, part: str, qty: str = "", whs: str = ""):
+        self._inp_part.setText(part)
+        self._inp_qty.setText(qty)
+        self._inp_whs.setText(whs)
+
+    def set_com_status(self, timbangan: bool = False, gate: bool = False):
+        def _upd(lbl: QLabel, ok: bool):
+            lbl.setText("CONNECTED" if ok else "NOT CONNECTED")
+            lbl.setStyleSheet(
+                f"color: {SUCCESS if ok else DANGER}; font-size: 12px;"
+                "font-weight: 600; background: transparent;"
+            )
+        _upd(self._lbl_timbangan, timbangan)
+        _upd(self._lbl_gate, gate)
