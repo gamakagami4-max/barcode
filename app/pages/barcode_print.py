@@ -548,7 +548,7 @@ class _BarcodePreviewItem(QGraphicsRectItem):
 def _form_row(label: str, widget: QWidget, layout):
     row = QWidget(); row.setStyleSheet("background: transparent; border: none;")
     rl = QHBoxLayout(row); rl.setContentsMargins(0,0,0,0); rl.setSpacing(10); rl.setAlignment(Qt.AlignVCenter)
-    lbl_w = _lbl(label); lbl_w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    lbl_w = _lbl(label); lbl_w.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     rl.addWidget(lbl_w); rl.addWidget(widget, 1); layout.addWidget(row)
 
 
