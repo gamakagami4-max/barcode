@@ -21,6 +21,53 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem, QGraphicsLineItem, QGraphicsRectItem,
 )
 
+
+class StandardButton(QPushButton):
+    """
+    A custom button component with pre-defined styles for
+    Primary, Secondary, Danger, and Success variants.
+    """
+    def __init__(self, text, icon_name=None, variant="primary", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(38)
+
+        self.variants = {
+            "primary":   ("#3B82F6", "#2563EB", "#FFFFFF"),
+            "secondary": ("#FFFFFF", "#F9FAFB", "#374151"),
+            "danger":    ("#EF4444", "#DC2626", "#FFFFFF"),
+            "success":   ("#10B981", "#059669", "#FFFFFF"),
+        }
+
+        bg, hover, text_color = self.variants.get(variant, self.variants["primary"])
+        border_style = "border: 1px solid #E5E7EB;" if variant == "secondary" else "border: none;"
+
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg};
+                color: {text_color};
+                border-radius: 6px;
+                padding: 0px 16px;
+                font-weight: 600;
+                font-size: 13px;
+                {border_style}
+            }}
+            QPushButton:hover {{
+                background-color: {hover};
+            }}
+            QPushButton:pressed {{
+                background-color: {bg};
+            }}
+            QPushButton:disabled {{
+                background-color: #D1D5DB;
+                color: #9CA3AF;
+            }}
+        """)
+
+        if icon_name:
+            self.setIcon(qta.icon(icon_name, color=text_color))
+            self.setIconSize(QSize(16, 16))
+
 try:
     from components.barcode_editor.utils import (
         COLORS, MODERN_INPUT_STYLE, make_chevron_combo,
@@ -498,30 +545,6 @@ class _BarcodePreviewItem(QGraphicsRectItem):
         painter.drawRect(r)
 
 
-# ── Print log ─────────────────────────────────────────────────────────────────
-
-class _PrintLog(QTextEdit):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setStyleSheet(
-            "QTextEdit { background: #0F172A; color: #475569; border: none; "
-            "font-family: 'Consolas','Courier New',monospace; font-size: 11px; padding: 8px; }"
-        )
-        self._put("— print log —", "#334155")
-
-    def _put(self, msg: str, color: str):
-        self.append(f"<span style='color:{color};'>{msg}</span>")
-        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
-
-    def log(self, msg: str, level: str = "info"):
-        c = {"info": "#475569", "ok": "#4ADE80", "error": "#F87171", "warn": "#FCD34D"}.get(level, "#475569")
-        self._put(msg, c)
-
-    def clear_log(self):
-        self.clear(); self._put("— print log —", "#334155")
-
-
 def _form_row(label: str, widget: QWidget, layout):
     row = QWidget(); row.setStyleSheet("background: transparent; border: none;")
     rl = QHBoxLayout(row); rl.setContentsMargins(0,0,0,0); rl.setSpacing(10); rl.setAlignment(Qt.AlignVCenter)
@@ -558,17 +581,12 @@ class BarcodePrintPage(QWidget):
         title = QLabel("Barcode Print"); title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {_TEXT};")
         hdr.addWidget(title); hdr.addStretch()
 
-        self._btn_stop = QPushButton("Stop")
-        self._btn_stop.setStyleSheet(_BTN_SECONDARY)
-        self._btn_stop.setIcon(qta.icon("fa5s.stop-circle", color=_MUTED))
-        self._btn_stop.setEnabled(False); self._btn_stop.clicked.connect(self._on_stop)
+        # ── Stop button removed ──────────────────────────────────────────────
 
-        self._btn_print = QPushButton("Print")
-        self._btn_print.setStyleSheet(_BTN_PRIMARY)
-        self._btn_print.setIcon(qta.icon("fa5s.print", color="#fff"))
+        self._btn_print = StandardButton("Print", icon_name="fa5s.print", variant="primary")
         self._btn_print.clicked.connect(self._on_print)
 
-        hdr.addWidget(self._btn_stop); hdr.addSpacing(6); hdr.addWidget(self._btn_print)
+        hdr.addWidget(self._btn_print)
         vbox.addLayout(hdr)
 
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
@@ -713,17 +731,17 @@ class BarcodePrintPage(QWidget):
         pfv.addWidget(self._preview)
         vbox.addWidget(pf, 3); vbox.addSpacing(12)
 
-        lh = QHBoxLayout()
-        lt = QLabel("Print Log"); lt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
-        self._btn_clear = QPushButton("Clear"); self._btn_clear.setStyleSheet(_BTN_GHOST)
-        self._btn_clear.clicked.connect(lambda: self._log.clear_log())
-        lh.addWidget(lt); lh.addStretch(); lh.addWidget(self._btn_clear)
-        vbox.addLayout(lh); vbox.addSpacing(6)
+        # ── Text Item Code section (replaces Print Log) ───────────────────────
+        th = QHBoxLayout()
+        tt = QLabel("Text Item Code"); tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
+        th.addWidget(tt); th.addStretch()
+        vbox.addLayout(th); vbox.addSpacing(6)
 
-        lf = QFrame(); lf.setStyleSheet("background: #0F172A; border: 1px solid #1E293B; border-radius: 8px;")
-        lfv = QVBoxLayout(lf); lfv.setContentsMargins(0,0,0,0)
-        self._log = _PrintLog(); lfv.addWidget(self._log)
-        vbox.addWidget(lf, 2)
+        tf = QFrame(); tf.setStyleSheet(_CARD_STYLE)
+        tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 12, 12, 12); tfv.setSpacing(0)
+        vbox.addWidget(tf, 1)
+        # ─────────────────────────────────────────────────────────────────────
+
         return w
 
     # ── Internal: load design by fetching full row_dict from DB ───────────────
@@ -741,8 +759,8 @@ class BarcodePrintPage(QWidget):
                 if layout:
                     row_dict["usrm"] = layout.get("usrm", "")
                     row_dict["itrm"] = layout.get("itrm", "")
-        except Exception as e:
-            self._log.log(f"✗  DB fetch error: {e}", "error")
+        except Exception:
+            pass
 
         name = (row_dict.get("name", "") if row_dict else "") or code
         self.load_design_by_code(code, name, row_dict)
@@ -762,25 +780,19 @@ class BarcodePrintPage(QWidget):
             from PySide6.QtWidgets import QInputDialog
             part, ok = QInputDialog.getText(self, "Browse Part No.", "Enter Part No.:")
             if ok and part.strip(): self._inp_part.setText(part.strip())
-        except Exception as e:
-            self._log.log(f"✗  {e}", "error")
+        except Exception:
+            pass
 
     def _on_print(self):
         code = self._inp_code.text().strip()
         if not code:
-            self._log.log("✗  No design code selected.", "error"); return
+            return
         try: speed = self._combo_speed.currentText()
         except AttributeError: speed = "3"
         qty  = self._spin_print_qty.value()
         part = self._inp_part.text().strip() or "(no part)"
         try: date_s = self._date_combo._current or self._date_combo.currentText()
         except AttributeError: date_s = self._date_combo.currentText()
-        self._log.log(f"▶  [{code}]  ×{qty}  part={part}  date={date_s}  speed={speed}", "ok")
-        self._btn_stop.setEnabled(True); self._btn_print.setEnabled(False)
-
-    def _on_stop(self):
-        self._log.log("■  Stopped.", "warn")
-        self._btn_stop.setEnabled(False); self._btn_print.setEnabled(True)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -808,11 +820,8 @@ class BarcodePrintPage(QWidget):
 
         if usrm:
             self._preview.set_design(usrm, itrm)
-            self._log.log(f"✓  Design loaded: {code}", "ok")
         else:
-            # No usrm yet — try fetching from DB in background
             self._preview.clear()
-            self._log.log(f"✓  Design loaded: {code} (fetching layout…)", "ok")
             self._fetch_and_refresh_preview(code)
 
     def _fetch_and_refresh_preview(self, code: str):
@@ -825,9 +834,8 @@ class BarcodePrintPage(QWidget):
                 itrm = layout.get("itrm", "")
                 if usrm:
                     self._preview.set_design(usrm, itrm)
-                    self._log.log(f"✓  Preview updated for: {code}", "ok")
-        except Exception as e:
-            self._log.log(f"⚠  Preview not available: {e}", "warn")
+        except Exception:
+            pass
 
     def load_design(self, code: str, name: str = "", row_dict: dict | None = None):
         self.load_design_by_code(code, name, row_dict)
@@ -841,3 +849,11 @@ class BarcodePrintPage(QWidget):
             lbl.setStyleSheet(f"color: {_SUCCESS if ok else _DANGER}; font-size: 11px; font-weight: 600; background: transparent; border: none;")
         _upd(self._lbl_timbangan, timbangan)
         _upd(self._lbl_gate, gate)
+
+    def get_text_item_code(self) -> str:
+        """Returns the current value of the Text Item Code field."""
+        return self._inp_text_item_code.text().strip()
+
+    def set_text_item_code(self, value: str):
+        """Programmatically set the Text Item Code field."""
+        self._inp_text_item_code.setText(value)
