@@ -917,24 +917,28 @@ class BarcodeListPage(QWidget):
 
         pk   = self.selected_row_data[0]
         name = self.selected_row_data[1] if len(self.selected_row_data) > 1 else ""
+        row_dict = dict(self.all_dicts.get(pk) or {})
+
+        # Fetch usrm/itrm layout so preview works
+        try:
+            from server.repositories.mbarcd_repo import fetch_mbarcd_layout
+            layout = fetch_mbarcd_layout(pk)
+            if layout:
+                row_dict["usrm"] = layout.get("usrm", "")
+                row_dict["itrm"] = layout.get("itrm", "")
+        except Exception as e:
+            print(f"[handle_print_action] layout fetch error: {e}")
 
         parent = self.parent()
         while parent is not None:
             if hasattr(parent, "navigate_to"):
                 parent.navigate_to(10)
-                print_page = None
                 for i in range(parent._tabs.count()):
                     w = parent._tabs.widget(i)
                     from pages.barcode_print import BarcodePrintPage
                     if isinstance(w, BarcodePrintPage):
-                        print_page = w
+                        # Pass full row_dict so preview has usrm/itrm
+                        w.load_design_by_code(pk, name, row_dict)
                         break
-                if print_page is not None:
-                    from pages.barcode_print import BarcodeItem as PrintItem
-                    print_page._table.setRowCount(0)
-                    print_page._table.add_item(PrintItem(code=pk, label=name, qty=1))
-                    print_page._inp_code.setText(pk)
-                    print_page._inp_label.setText(name)
-                    print_page._refresh_preview()
                 break
             parent = parent.parent()
