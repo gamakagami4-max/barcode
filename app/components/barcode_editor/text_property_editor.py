@@ -668,7 +668,7 @@ class TextPropertyEditor(
         layout.addRow(_lbl("VISIBLE :"), self.visible_combo)
 
         # ── Remaining fields ──────────────────────────────────────────────────
-        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "SAVE"])
+        self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "PRPMNO"] + [f"PRPM{i:02d}" for i in range(1, 31)])
         self.column_spin      = make_spin(1, 999, 1)
         self.mandatory_combo  = make_chevron_combo(["FALSE", "TRUE"])
         self.batch_no_combo   = make_chevron_combo([])
