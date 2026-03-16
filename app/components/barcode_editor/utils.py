@@ -37,6 +37,11 @@ MODERN_INPUT_STYLE = """
     QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QDoubleSpinBox:focus {
         border: 1.5px solid #6366F1;
     }
+    QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled, QDoubleSpinBox:disabled {
+        background-color: #F8FAFC;
+        color: #94A3B8;
+        border-color: #E2E8F0;
+    }
     QSpinBox::up-button, QSpinBox::down-button,
     QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
         subcontrol-origin: border;
@@ -121,42 +126,16 @@ _LINE_DISABLED = """
 # ── Canvas helpers ────────────────────────────────────────────────────────────
 
 def keep_within_bounds(item, new_pos):
-    """Constrain item movement so its visual AABB stays within the scene rect.
-
-    The OLD implementation clamped pos() directly to scene bounds:
-        x = max(scene_rect.left(), new_pos.x())
-
-    That is wrong for rotated items because pos() is the local origin, not the
-    visual top-left.  At 90°/270° the AABB top-left is offset from pos() by
-    off_x = (width - height) / 2 ≈ 23-30 px for typical text labels.  Clamping
-    pos.x >= 0 therefore prevented the AABB from reaching x=0, producing the
-    hard ~30 px floor that users could not drag past.
-
-    The correct approach:
-      1. Compute the current AABB→pos() offset (rotation-dependent, but
-         constant for a given rotation — independent of translation).
-      2. Project new_pos into AABB space, clamp there, project back.
-    """
     scene_rect = item.scene().sceneRect()
-
-    # Current AABB in scene coordinates
     aabb = item.mapToScene(item.boundingRect()).boundingRect()
-
-    # Offset between pos() and AABB top-left — constant for a given rotation.
     off_x = aabb.left() - item.pos().x()
     off_y = aabb.top()  - item.pos().y()
-
-    # Where the AABB top-left would land at new_pos
     new_aabb_x = new_pos.x() + off_x
     new_aabb_y = new_pos.y() + off_y
-
-    # Clamp AABB to scene bounds
     clamped_x = max(scene_rect.left(),
                     min(new_aabb_x, scene_rect.right()  - aabb.width()))
     clamped_y = max(scene_rect.top(),
                     min(new_aabb_y, scene_rect.bottom() - aabb.height()))
-
-    # Convert back to pos() space
     return QPointF(clamped_x - off_x, clamped_y - off_y)
 
 
@@ -177,8 +156,6 @@ def setup_item_logic(item, on_move_callback):
 # ── CheckmarkCheckBox ─────────────────────────────────────────────────────────
 
 class CheckmarkCheckBox(QCheckBox):
-    """QCheckBox that draws a dark tick on white."""
-
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setStyleSheet("""
@@ -274,13 +251,10 @@ class _ComboDropdown(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
         content_h = self._PAD * 2 + len(self._options) * (self._ITEM_H + 2)
-
-        # ── FIX: auto-size width to fit the longest option text ──────────────
         opt_font = QFont()
         opt_font.setPointSize(9)
         fm = QFontMetrics(opt_font)
         max_text_w = max((fm.horizontalAdvance(o) for o in self._options), default=0)
-        # btn left+right padding (8+8) + scrollbar room (8) + border (2) + frame padding
         min_content_w = max_text_w + 8 + 8 + 8 + 2 + self._PAD * 2
         self.setFixedWidth(max(width, min_content_w, 160))
         self.setFixedHeight(min(content_h + 2, self._MAX_H))
@@ -313,19 +287,13 @@ class _ComboDropdown(QFrame):
 
     def popup_below(self, trigger):
         screen = QApplication.primaryScreen().availableGeometry()
-
-        # Resize width to at least trigger width (content width already set in _build)
         new_w = max(self.width(), trigger.width())
         self.setFixedWidth(new_w)
-
         pos_below = trigger.mapToGlobal(trigger.rect().bottomLeft())
-
-        # ── FIX: clamp x so dropdown never bleeds off the right (or left) edge ──
         x = pos_below.x()
         if x + self.width() > screen.right():
             x = screen.right() - self.width()
         x = max(screen.left(), x)
-
         if screen.bottom() - pos_below.y() < self.height():
             pos_above = trigger.mapToGlobal(trigger.rect().topLeft())
             self.move(x, pos_above.y() - self.height())
@@ -337,6 +305,11 @@ class _ComboDropdown(QFrame):
 
 class CustomCombo(QFrame):
     currentTextChanged = Signal(str)
+
+    # Colours used for label text
+    _COLOR_NORMAL   = "#18181B"
+    _COLOR_DISABLED = "#94A3B8"
+    _COLOR_PLACEHOLDER = "#71717A"
 
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
@@ -356,7 +329,9 @@ class CustomCombo(QFrame):
         layout.setContentsMargins(10, 0, 8, 0)
         layout.setSpacing(6)
         self._label = QLabel()
-        self._label.setStyleSheet("color: #18181B; font-size: 12px; background: transparent; border: none;")
+        self._label.setStyleSheet(
+            f"color: {self._COLOR_NORMAL}; font-size: 12px; background: transparent; border: none;"
+        )
         self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._chevron = QLabel()
         self._chevron.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -367,7 +342,11 @@ class CustomCombo(QFrame):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self._current:
+        # Respect disabled state when the widget first becomes visible
+        # (e.g. when a parent is shown after setEnabled(False) was already called)
+        if not self.isEnabled():
+            self._apply_enabled_style(False)
+        elif self._current:
             self._set_label_text(self._current)
 
     def _apply_style(self, open_):
@@ -384,10 +363,19 @@ class CustomCombo(QFrame):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, '_label') and self._current:
-            self._set_label_text(self._current)
+            if self.isEnabled():
+                self._set_label_text(self._current)
+            # Don't reset color on resize when disabled
 
-    def _set_label_text(self, text, color="#18181B"):
-        self._label.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent; border: none;")
+    def _set_label_text(self, text, color=None):
+        # Always use disabled color when widget is disabled
+        if not self.isEnabled():
+            color = self._COLOR_DISABLED
+        elif color is None:
+            color = self._COLOR_NORMAL
+        self._label.setStyleSheet(
+            f"color: {color}; font-size: 12px; background: transparent; border: none;"
+        )
         fm = QFontMetrics(self._label.font())
         available = self.width() - 34
         elided = fm.elidedText(text, Qt.ElideRight, max(available, 20))
@@ -407,13 +395,31 @@ class CustomCombo(QFrame):
     def _apply_enabled_style(self, enabled):
         if enabled:
             self._apply_style(self._is_open)
-            self._set_chevron(self._is_open)
+            if hasattr(self, '_label'):
+                self._label.setStyleSheet(
+                    f"color: {self._COLOR_NORMAL}; font-size: 12px; background: transparent; border: none;"
+                )
+            if hasattr(self, '_chevron'):
+                self._set_chevron(self._is_open)
+                self._chevron.setVisible(True)
         else:
             self.setStyleSheet("""
                 CustomCombo { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; }
                 CustomCombo:hover { border-color: #E2E8F0; }
             """)
-            self._chevron.setVisible(False)
+            if hasattr(self, '_label'):
+                self._label.setStyleSheet(
+                    f"color: {self._COLOR_DISABLED}; font-size: 12px; background: transparent; border: none;"
+                )
+            if hasattr(self, '_chevron'):
+                self._chevron.setVisible(False)
+
+    def changeEvent(self, event):
+        """Re-apply disabled style whenever Qt changes the enabled state externally
+        (e.g. when a parent widget is disabled, Qt calls QEvent.EnabledChange on each child)."""
+        super().changeEvent(event)
+        if event.type() == QEvent.EnabledChange:
+            self._apply_enabled_style(self.isEnabled())
 
     def mousePressEvent(self, event):
         if not self.isEnabled():
@@ -478,7 +484,9 @@ class CustomCombo(QFrame):
         if index == -1:
             self._current = ""
             self._label.setText("")
-            self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
+            self._label.setStyleSheet(
+                f"color: {self._COLOR_PLACEHOLDER}; font-size: 12px; background: transparent; border: none;"
+            )
         elif 0 <= index < len(self._items):
             self.setCurrentText(self._items[index])
 
@@ -501,7 +509,9 @@ class CustomCombo(QFrame):
     def setPlaceholderText(self, text):
         if not self._current:
             self._label.setText(text)
-            self._label.setStyleSheet("color: #71717A; font-size: 12px; background: transparent; border: none;")
+            self._label.setStyleSheet(
+                f"color: {self._COLOR_PLACEHOLDER}; font-size: 12px; background: transparent; border: none;"
+            )
 
     def blockSignals(self, block):
         self._signals_blocked = block
