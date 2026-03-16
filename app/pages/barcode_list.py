@@ -129,7 +129,7 @@ class BarcodeListPage(QWidget):
     _VIEW_LIST   = 0
     _VIEW_EDITOR = 1
 
-    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Edit", "Delete", "View Detail"]
+    _ALL_HEADER_ACTIONS = ["Add", "Excel", "Refresh", "Print", "Edit", "Delete", "View Detail"]
 
     def __init__(self):
         super().__init__()
@@ -439,7 +439,7 @@ class BarcodeListPage(QWidget):
         layout.setContentsMargins(40, 20, 40, 12)
         layout.setSpacing(0)
 
-        enabled = ["Add", "Excel", "Refresh", "View Detail"]
+        enabled = ["Add", "Excel", "Refresh", "Print", "Edit", "Delete", "View Detail"]
         self.header = StandardPageHeader(
             title="Barcode Design",
             subtitle="Generate and manage enterprise-wide barcode assets.",
@@ -450,6 +450,7 @@ class BarcodeListPage(QWidget):
         self.header.get_action_button("Refresh").clicked.connect(self.load_data)
         self.header.get_action_button("Add").clicked.connect(self.handle_add_action)
         self.header.get_action_button("Excel").clicked.connect(self.handle_export_action)
+        self.header.get_action_button("Print").clicked.connect(self.handle_print_action)
         self.header.get_action_button("Edit").clicked.connect(self.handle_edit_action)
         self.header.get_action_button("Delete").clicked.connect(self.handle_delete_action)
         self.header.get_action_button("View Detail").clicked.connect(self.handle_view_detail_action)
@@ -505,7 +506,7 @@ class BarcodeListPage(QWidget):
     # ------------------------------------------------------------------
 
     def _update_selection_dependent_state(self, enabled: bool):
-        for label in ("Edit", "Delete", "View Detail"):
+        for label in ("Edit", "Delete", "View Detail", "Print"):
             btn = self.header.get_action_button(label)
             if btn:
                 btn.setEnabled(enabled)
@@ -908,3 +909,32 @@ class BarcodeListPage(QWidget):
                 self, "Deleted",
                 f"Barcode '{code_to_delete}' has been deleted successfully!"
             )
+
+    def handle_print_action(self):
+        if not self.selected_row_data:
+            QMessageBox.warning(self, "Print", "Please select a barcode to print.")
+            return
+
+        pk   = self.selected_row_data[0]
+        name = self.selected_row_data[1] if len(self.selected_row_data) > 1 else ""
+
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "navigate_to"):
+                parent.navigate_to(10)
+                print_page = None
+                for i in range(parent._tabs.count()):
+                    w = parent._tabs.widget(i)
+                    from pages.barcode_print import BarcodePrintPage
+                    if isinstance(w, BarcodePrintPage):
+                        print_page = w
+                        break
+                if print_page is not None:
+                    from pages.barcode_print import BarcodeItem as PrintItem
+                    print_page._table.setRowCount(0)
+                    print_page._table.add_item(PrintItem(code=pk, label=name, qty=1))
+                    print_page._inp_code.setText(pk)
+                    print_page._inp_label.setText(name)
+                    print_page._refresh_preview()
+                break
+            parent = parent.parent()
