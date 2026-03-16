@@ -731,6 +731,10 @@ class BarcodePrintPage(QWidget):
         pfv.addWidget(self._preview)
         vbox.addWidget(pf, 3); vbox.addSpacing(12)
 
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {_BORDER}; border: none;")
+        vbox.addWidget(sep); vbox.addSpacing(12)
+
         # ── Text Item Code section (replaces Print Log) ───────────────────────
         th = QHBoxLayout()
         tt = QLabel("Text Item Code"); tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
@@ -849,11 +853,3 @@ class BarcodePrintPage(QWidget):
             lbl.setStyleSheet(f"color: {_SUCCESS if ok else _DANGER}; font-size: 11px; font-weight: 600; background: transparent; border: none;")
         _upd(self._lbl_timbangan, timbangan)
         _upd(self._lbl_gate, gate)
-
-    def get_text_item_code(self) -> str:
-        """Returns the current value of the Text Item Code field."""
-        return self._inp_text_item_code.text().strip()
-
-    def set_text_item_code(self, value: str):
-        """Programmatically set the Text Item Code field."""
-        self._inp_text_item_code.setText(value)
