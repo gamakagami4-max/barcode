@@ -21,7 +21,7 @@ from pages.brand import BrandPage
 from pages.product_type import ProductTypePage
 from pages.brand_case import BrandCasePage
 from pages.barcode_list import BarcodeListPage
-
+from pages.barcode_print import BarcodePrintPage
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE REGISTRY
@@ -38,6 +38,7 @@ PAGE_REGISTRY: dict[int, dict] = {
     7:  {"title": "Item Master",    "class": MasterItemPage,    "icon": "📋"},
     8:  {"title": "Brand Case",     "class": BrandCasePage,     "icon": "🗃️"},
     9:  {"title": "Barcode Design", "class": BarcodeListPage,   "icon": "📊"},
+    10: {"title": "Barcode Print", "class": BarcodePrintPage, "icon": "🖨️"},
 }
 
 

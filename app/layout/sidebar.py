@@ -444,7 +444,11 @@ class Sidebar(QFrame):
                 "Master Item":         lambda: self.nav_callback(7),
                 "Master Brand Case":   lambda: self.nav_callback(8),
             }),
-            ("Barcode", "fa5s.barcode",  {"Barcode Design": lambda: self.nav_callback(9)}),
+            ("Barcode", "fa5s.barcode",  {
+                "Barcode Design": lambda: self.nav_callback(9),
+                "Barcode Print":  lambda: self.nav_callback(10), 
+            }),
+            
         ]
 
         for title, icon, items in menu_defs:
