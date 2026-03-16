@@ -551,6 +551,7 @@ class Sidebar(QFrame):
             7: ("Master Item",      1),
             8: ("Master Brand Case",1),
             9: ("Barcode Design",   2),
+            10: ("Barcode Print",   2)
         }
         entry = mapping.get(page_id)
         if not entry:
