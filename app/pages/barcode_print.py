@@ -517,9 +517,11 @@ class _CanvasPreview(QWidget):
         self._scene.setBackgroundBrush(QBrush(QColor("#FFFFFF")))
 
         self._view = QGraphicsView(self._scene)
+        self._view.setBackgroundBrush(QBrush(Qt.transparent))  # add this
+        self._view.viewport().setAutoFillBackground(False)      # add this
         self._view.setRenderHint(QPainter.Antialiasing)
         self._view.setRenderHint(QPainter.TextAntialiasing)
-        self._view.setStyleSheet("background: #FFFFFF; border: none;")
+        self._view.setStyleSheet("background: transparent; border: none;")
         self._view.setAlignment(Qt.AlignCenter)
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -529,7 +531,7 @@ class _CanvasPreview(QWidget):
         # placeholder shown when no design loaded
         self._placeholder = QLabel("Load a design to preview")
         self._placeholder.setAlignment(Qt.AlignCenter)
-        self._placeholder.setStyleSheet(f"color: {_HINT}; font-size: 11px; background: transparent;")
+        self._placeholder.setStyleSheet(f"color: {_HINT}; font-size: 11px; background: #DCE5ED;")
         layout.addWidget(self._placeholder)
 
         self._view.setVisible(False)
@@ -867,7 +869,7 @@ class BarcodePrintPage(QWidget):
         return w
 
     def _build_right(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet(f"background: {_BG_MAIN};")
+        w = QWidget(); w.setStyleSheet("background: #DCE5ED;")
         vbox = QVBoxLayout(w); vbox.setContentsMargins(6,16,20,16); vbox.setSpacing(0)
 
         ph = QHBoxLayout()
@@ -875,8 +877,8 @@ class BarcodePrintPage(QWidget):
         ph.addWidget(pt); ph.addStretch()
         vbox.addLayout(ph); vbox.addSpacing(6)
 
-        pf = QFrame(); pf.setStyleSheet(_CARD_STYLE); pf.setMinimumHeight(200)
-        pfv = QVBoxLayout(pf); pfv.setContentsMargins(8,8,8,8)
+        pf = QFrame(); pf.setStyleSheet(f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}"); pf.setMinimumHeight(200)
+        pfv = QVBoxLayout(pf); pfv.setContentsMargins(0,0,0,0)
         self._preview = _CanvasPreview()
         pfv.addWidget(self._preview)
         vbox.addWidget(pf, 3); vbox.addSpacing(12)
