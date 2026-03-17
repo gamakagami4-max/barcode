@@ -109,6 +109,15 @@ _DISABLED_STYLE = (
     "QLabel:disabled { color: #94A3B8; }"
 )
 
+# Shared style for read-only "display" fields populated by pickers.
+# min-height + max-height are set to 30px (+ 1px border each side = 32px total)
+# so they stay flush with the adjacent ··· browse button's setFixedHeight(32).
+_READONLY_PICKER_STYLE = (
+    "QLineEdit { background: #F8FAFC; color: #1E293B; border: 1px solid #E2E8F0; "
+    "border-radius: 4px; padding: 0px 8px; font-size: 11px; "
+    "min-height: 30px; max-height: 30px; }"
+)
+
 _ACCENT      = "#6366F1"
 _ACCENT_LIGHT= "#EEF2FF"
 _BORDER2     = "#CBD5E1"
@@ -973,10 +982,15 @@ class BarcodePrintPage(QWidget):
         w = QWidget(); w.setStyleSheet("background: transparent; border: none;")
         layout = QVBoxLayout(w); layout.setContentsMargins(16,16,16,16); layout.setSpacing(10)
 
-        self._inp_code = QLineEdit(); self._inp_code.setPlaceholderText("Enter or browse design code…")
-        self._inp_code.setStyleSheet(MODERN_INPUT_STYLE + _DISABLED_STYLE)
-        self._inp_code.returnPressed.connect(lambda: self._load_design_from_code(self._inp_code.text().strip()))
-        self._btn_browse_code = QPushButton("···"); self._btn_browse_code.setStyleSheet(_BTN_BROWSE)
+        # CODE: read-only, populated only via the browse picker
+        self._inp_code = QLineEdit()
+        self._inp_code.setPlaceholderText("Browse to select design code…")
+        self._inp_code.setReadOnly(True)
+        self._inp_code.setFocusPolicy(Qt.NoFocus)
+        self._inp_code.setFixedHeight(32)
+        self._inp_code.setStyleSheet(MODERN_INPUT_STYLE + _READONLY_PICKER_STYLE)
+
+        self._btn_browse_code = QPushButton("···"); self._btn_browse_code.setFixedHeight(32); self._btn_browse_code.setStyleSheet(_BTN_BROWSE)
         self._btn_browse_code.setToolTip("Browse design codes"); self._btn_browse_code.clicked.connect(self._on_browse_code)
         code_w = QWidget(); code_w.setStyleSheet("background: transparent; border: none;")
         cr = QHBoxLayout(code_w); cr.setContentsMargins(0,0,0,0); cr.setSpacing(6)
@@ -1027,9 +1041,15 @@ class BarcodePrintPage(QWidget):
         w = QWidget(); w.setStyleSheet("background: transparent; border: none;")
         layout = QVBoxLayout(w); layout.setContentsMargins(16,16,16,16); layout.setSpacing(10)
 
-        self._inp_part = QLineEdit(); self._inp_part.setPlaceholderText("Enter or browse part number…")
-        self._inp_part.setStyleSheet(MODERN_INPUT_STYLE + _DISABLED_STYLE)
-        self._btn_browse_part = QPushButton("···"); self._btn_browse_part.setStyleSheet(_BTN_BROWSE)
+        # PART NO. PRINT: read-only, populated only via the browse picker
+        self._inp_part = QLineEdit()
+        self._inp_part.setPlaceholderText("Browse to select part number…")
+        self._inp_part.setReadOnly(True)
+        self._inp_part.setFocusPolicy(Qt.NoFocus)
+        self._inp_part.setFixedHeight(32)
+        self._inp_part.setStyleSheet(MODERN_INPUT_STYLE + _READONLY_PICKER_STYLE)
+
+        self._btn_browse_part = QPushButton("···"); self._btn_browse_part.setFixedHeight(32); self._btn_browse_part.setStyleSheet(_BTN_BROWSE)
         self._btn_browse_part.setToolTip("Browse master items")
         self._btn_browse_part.clicked.connect(self._on_browse_part)
         part_w = QWidget(); part_w.setStyleSheet("background: transparent; border: none;")
