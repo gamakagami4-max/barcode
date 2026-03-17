@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog,
     QComboBox, QGraphicsScene, QGraphicsView,
     QGraphicsTextItem, QGraphicsLineItem, QGraphicsRectItem,
+    QCalendarWidget,
 )
 
 
@@ -223,6 +224,158 @@ class _CheckBox(QCheckBox):
 
     def mousePressEvent(self, _event):
         self.setChecked(not self.isChecked()); self.update()
+
+
+# ── Calendar combo ────────────────────────────────────────────────────────────
+
+class _CalendarCombo(QWidget):
+    """
+    A button that pops up a compact QCalendarWidget and formats
+    the selected date as 'dd-MMM-yyyy', matching the old combo output.
+    """
+    currentTextChanged = Signal(str)
+
+    _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFixedHeight(32)
+        self._date = QDate.currentDate()
+        self._popup: QDialog | None = None
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._btn = QPushButton()
+        self._btn.setCursor(Qt.PointingHandCursor)
+        self._btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #FFFFFF; border: 1px solid #CBD5E1;
+                border-radius: 4px; padding: 5px 10px;
+                font-size: 12px; color: #1E293B;
+                text-align: left;
+            }}
+            QPushButton:hover   {{ border-color: #6366F1; }}
+            QPushButton:disabled {{
+                background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0;
+            }}
+        """)
+        self._btn.clicked.connect(self._open_popup)
+        self._update_btn_text(self._date, open_=False)
+        layout.addWidget(self._btn)
+
+    def _update_btn_text(self, d: QDate, open_: bool = False):
+        chevron = "▴" if open_ else "▾"
+        # Use icon from qtawesome if available, fallback to unicode
+        try:
+            icon_name = "fa5s.chevron-up" if open_ else "fa5s.chevron-down"
+            self._btn.setIcon(qta.icon(icon_name, color="#64748B"))
+            self._btn.setIconSize(QSize(10, 10))
+            self._btn.setLayoutDirection(Qt.RightToLeft)  # icon on right side
+        except Exception:
+            pass
+        self._btn.setText(self._fmt(d))
+
+    @staticmethod
+    def _fmt(d: QDate) -> str:
+        return f"{d.day():02d}-{_CalendarCombo._MONTHS[d.month() - 1]}-{d.year()}"
+
+    def _open_popup(self):
+        if self._popup and self._popup.isVisible():
+            self._popup.close()
+            self._update_btn_text(self._date, open_=False)
+            return
+
+        dlg = QDialog(self, Qt.Popup | Qt.FramelessWindowHint)
+        dlg.setStyleSheet("""
+            QDialog {
+                background: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+            }
+        """)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(6, 6, 6, 6)
+
+        cal = QCalendarWidget()
+        cal.setSelectedDate(self._date)
+        cal.setGridVisible(False)
+        cal.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        cal.setStyleSheet(f"""
+            QCalendarWidget QWidget {{ background: #FFFFFF; color: #1E293B; }}
+            QCalendarWidget QAbstractItemView {{
+                font-size: 12px;
+                selection-background-color: #3B82F6;
+                selection-color: #FFFFFF;
+                gridline-color: transparent;
+            }}
+            QCalendarWidget QAbstractItemView:enabled {{
+                color: #1E293B; background: #FFFFFF;
+            }}
+            QCalendarWidget QAbstractItemView:disabled {{ color: #94A3B8; }}
+            QCalendarWidget QToolButton {{
+                color: #1E293B; background: transparent; border: none;
+                font-size: 12px; font-weight: 600;
+            }}
+            QCalendarWidget QToolButton:hover {{
+                background: #F1F5F9; border-radius: 4px;
+            }}
+            QCalendarWidget #qt_calendar_navigationbar {{
+                background: #F8FAFC; border-bottom: 1px solid #E2E8F0;
+            }}
+        """)
+        cal.clicked.connect(lambda d: self._on_date_picked(d, dlg))
+        v.addWidget(cal)
+
+        dlg.adjustSize()
+
+        # Flip above the button if there isn't enough space below
+        screen = QApplication.primaryScreen().availableGeometry()
+        pos_below = self._btn.mapToGlobal(self._btn.rect().bottomLeft())
+        pos_above = self._btn.mapToGlobal(self._btn.rect().topLeft())
+        if pos_below.y() + dlg.height() > screen.bottom():
+            dlg.move(pos_above.x(), pos_above.y() - dlg.height())
+        else:
+            dlg.move(pos_below)
+
+        self._update_btn_text(self._date, open_=True)
+        dlg.finished.connect(lambda _: self._update_btn_text(self._date, open_=False))
+        self._popup = dlg
+        dlg.exec()
+
+    def _on_date_picked(self, d: QDate, dlg: QDialog):
+        self._date = d
+        dlg.accept()
+        self._update_btn_text(d, open_=False)
+        self.currentTextChanged.emit(self._fmt(d))
+
+    # ── Public API (mirrors CustomCombo / QComboBox subset used elsewhere) ──
+
+    def currentText(self) -> str:
+        return self._fmt(self._date)
+
+    def setCurrentText(self, text: str):
+        """Accept 'dd-MMM-yyyy' strings (same format the old combo produced)."""
+        for i, m in enumerate(self._MONTHS):
+            if m in text:
+                parts = text.replace(m, str(i + 1)).split("-")
+                try:
+                    d = QDate(int(parts[2]), i + 1, int(parts[0]))
+                    if d.isValid():
+                        self._date = d
+                        self._update_btn_text(d, open_=False)
+                except Exception:
+                    pass
+                break
+
+    def setEnabled(self, enabled: bool):
+        super().setEnabled(enabled)
+        self._btn.setEnabled(enabled)
 
 
 # ── Design picker ─────────────────────────────────────────────────────────────
@@ -581,8 +734,6 @@ class BarcodePrintPage(QWidget):
         title = QLabel("Barcode Print"); title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {_TEXT};")
         hdr.addWidget(title); hdr.addStretch()
 
-        # ── Stop button removed ──────────────────────────────────────────────
-
         self._btn_print = StandardButton("Print", icon_name="fa5s.print", variant="primary")
         self._btn_print.clicked.connect(self._on_print)
 
@@ -701,13 +852,12 @@ class BarcodePrintPage(QWidget):
         self._inp_whs.setStyleSheet(MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("WHS :", self._inp_whs, layout)
 
-        _today = QDate.currentDate()
-        _date_items = [_today.addDays(i).toString("dd-MMM-yyyy") for i in range(-30, 31)]
-        self._date_combo = make_chevron_combo(_date_items)
-        self._date_combo.setCurrentText(_today.toString("dd-MMM-yyyy"))
+        # ── Date code: calendar popup instead of long scrolling list ──────────
+        self._date_combo = _CalendarCombo()
         self._date_combo.setFixedWidth(200)
         date_w = QWidget(); date_w.setStyleSheet('background: transparent; border: none;')
-        dw_l = QHBoxLayout(date_w); dw_l.setContentsMargins(0,0,0,0); dw_l.setSpacing(0); dw_l.addWidget(self._date_combo); dw_l.addStretch()
+        dw_l = QHBoxLayout(date_w); dw_l.setContentsMargins(0,0,0,0); dw_l.setSpacing(0)
+        dw_l.addWidget(self._date_combo); dw_l.addStretch()
         _form_row("DATE CODE :", date_w, layout)
 
         self._spin_print_qty = make_spin(1, 9999, 1); self._spin_print_qty.setFixedWidth(100)
@@ -735,7 +885,7 @@ class BarcodePrintPage(QWidget):
         sep.setStyleSheet(f"background: {_BORDER}; border: none;")
         vbox.addWidget(sep); vbox.addSpacing(12)
 
-        # ── Text Item Code section (replaces Print Log) ───────────────────────
+        # ── Text Item Code section ────────────────────────────────────────────
         th = QHBoxLayout()
         tt = QLabel("Text Item Code"); tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
         th.addWidget(tt); th.addStretch()
@@ -744,7 +894,6 @@ class BarcodePrintPage(QWidget):
         tf = QFrame(); tf.setStyleSheet(_CARD_STYLE)
         tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 12, 12, 12); tfv.setSpacing(0)
         vbox.addWidget(tf, 1)
-        # ─────────────────────────────────────────────────────────────────────
 
         return w
 
@@ -795,8 +944,7 @@ class BarcodePrintPage(QWidget):
         except AttributeError: speed = "3"
         qty  = self._spin_print_qty.value()
         part = self._inp_part.text().strip() or "(no part)"
-        try: date_s = self._date_combo._current or self._date_combo.currentText()
-        except AttributeError: date_s = self._date_combo.currentText()
+        date_s = self._date_combo.currentText()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
