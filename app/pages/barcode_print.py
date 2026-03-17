@@ -271,12 +271,11 @@ class _CalendarCombo(QWidget):
 
     def _update_btn_text(self, d: QDate, open_: bool = False):
         chevron = "▴" if open_ else "▾"
-        # Use icon from qtawesome if available, fallback to unicode
         try:
             icon_name = "fa5s.chevron-up" if open_ else "fa5s.chevron-down"
             self._btn.setIcon(qta.icon(icon_name, color="#64748B"))
             self._btn.setIconSize(QSize(10, 10))
-            self._btn.setLayoutDirection(Qt.RightToLeft)  # icon on right side
+            self._btn.setLayoutDirection(Qt.RightToLeft)
         except Exception:
             pass
         self._btn.setText(self._fmt(d))
@@ -334,7 +333,6 @@ class _CalendarCombo(QWidget):
 
         dlg.adjustSize()
 
-        # Flip above the button if there isn't enough space below
         screen = QApplication.primaryScreen().availableGeometry()
         pos_below = self._btn.mapToGlobal(self._btn.rect().bottomLeft())
         pos_above = self._btn.mapToGlobal(self._btn.rect().topLeft())
@@ -354,13 +352,10 @@ class _CalendarCombo(QWidget):
         self._update_btn_text(d, open_=False)
         self.currentTextChanged.emit(self._fmt(d))
 
-    # ── Public API (mirrors CustomCombo / QComboBox subset used elsewhere) ──
-
     def currentText(self) -> str:
         return self._fmt(self._date)
 
     def setCurrentText(self, text: str):
-        """Accept 'dd-MMM-yyyy' strings (same format the old combo produced)."""
         for i, m in enumerate(self._MONTHS):
             if m in text:
                 parts = text.replace(m, str(i + 1)).split("-")
@@ -493,6 +488,219 @@ class _DesignPickerPopup(QDialog):
         self._load_records(); self._search.clear(); self._rebuild_list(self._records); self._search.setFocus(); self.exec()
 
 
+# ── Master Item picker (Part No. Print browser) ───────────────────────────────
+
+class _MasterItemPickerPopup(QDialog):
+    """
+    Picker modal for Part No. Print.
+    Columns: PART NO PRINT | ITEM CODE | NAME
+    Emits item_picked(part_no, item_code, name, qty, whs) on selection.
+    """
+    item_picked = Signal(str, str, str, str, str)   # part_no, item_code, name, qty, whs
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setWindowTitle("Select Master Item")
+        self.setMinimumSize(680, 500)
+        self.setModal(True)
+        self.setStyleSheet(f"QDialog {{ background: {_WHITE}; }}")
+        self._records: list[dict] = []
+        self._build_ui()
+
+    def _build_ui(self):
+        vbox = QVBoxLayout(self); vbox.setContentsMargins(0, 0, 0, 0); vbox.setSpacing(0)
+
+        # ── Header ────────────────────────────────────────────────────────────
+        header = QWidget()
+        header.setStyleSheet(f"background: {_WHITE}; border-bottom: 1px solid {_BORDER};")
+        hl = QHBoxLayout(header); hl.setContentsMargins(16, 14, 16, 14)
+        title = QLabel("Select Master Item")
+        title.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {_TEXT}; background: transparent;")
+        hl.addWidget(title); hl.addStretch()
+        vbox.addWidget(header)
+
+        # ── Search bar ────────────────────────────────────────────────────────
+        search_row = QWidget()
+        search_row.setStyleSheet(f"background: #F8FAFC; border-bottom: 1px solid {_BORDER};")
+        sr = QHBoxLayout(search_row); sr.setContentsMargins(14, 10, 14, 10); sr.setSpacing(8)
+        search_icon = QLabel("⌕")
+        search_icon.setStyleSheet(f"font-size: 15px; color: {_HINT}; background: transparent; border: none;")
+        sr.addWidget(search_icon)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search part no., item code, or name…")
+        self._search.setFrame(False)
+        self._search.setStyleSheet(f"border: none; background: transparent; font-size: 12px; color: {_TEXT};")
+        self._search.textChanged.connect(self._filter)
+        self._search.installEventFilter(self)
+        sr.addWidget(self._search)
+        vbox.addWidget(search_row)
+
+        # ── Column header ─────────────────────────────────────────────────────
+        col_hdr = QWidget()
+        col_hdr.setStyleSheet(f"background: #F1F5F9; border-bottom: 1px solid {_BORDER};")
+        ch = QHBoxLayout(col_hdr); ch.setContentsMargins(16, 7, 16, 7); ch.setSpacing(0)
+
+        def _ch(text, w=None):
+            l = QLabel(text)
+            l.setStyleSheet(
+                f"color: {_LEGACY_BLUE}; font-size: 9px; font-weight: 700; "
+                "letter-spacing: 0.5px; background: transparent;"
+            )
+            if w:
+                l.setFixedWidth(w)
+            return l
+
+        ch.addWidget(_ch("PART NO PRINT", 160))
+        ch.addWidget(_ch("ITEM CODE", 160))
+        ch.addWidget(_ch("NAME"))
+        vbox.addWidget(col_hdr)
+
+        # ── List ──────────────────────────────────────────────────────────────
+        self._list = QListWidget()
+        self._list.setFrameShape(QFrame.NoFrame)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list.setStyleSheet(f"""
+            QListWidget {{
+                background: {_WHITE}; border: none;
+                font-size: 12px; color: {_TEXT}; outline: none;
+            }}
+            QListWidget::item {{
+                padding: 0px; border-bottom: 1px solid {_BORDER};
+            }}
+            QListWidget::item:selected {{ background: {_ACCENT_LIGHT}; }}
+            QListWidget::item:hover:!selected {{ background: #F8FAFC; }}
+            QScrollBar:vertical {{ background: transparent; width: 5px; }}
+            QScrollBar::handle:vertical {{
+                background: {_BORDER2}; border-radius: 2px; min-height: 20px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        self._list.itemDoubleClicked.connect(self._on_activated)
+        self._list.itemSelectionChanged.connect(
+            lambda: self._select_btn.setEnabled(len(self._list.selectedItems()) > 0)
+        )
+        vbox.addWidget(self._list, 1)
+
+        # ── Footer ────────────────────────────────────────────────────────────
+        footer = QWidget()
+        footer.setStyleSheet(f"background: #F8FAFC; border-top: 1px solid {_BORDER};")
+        fl = QHBoxLayout(footer); fl.setContentsMargins(16, 10, 16, 10); fl.setSpacing(8)
+        self._footer = QLabel()
+        self._footer.setStyleSheet(f"font-size: 11px; color: {_HINT}; background: transparent;")
+        fl.addWidget(self._footer); fl.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(_BTN_SECONDARY)
+        cancel_btn.clicked.connect(self.reject)
+        self._select_btn = QPushButton("Select")
+        self._select_btn.setStyleSheet(_BTN_PRIMARY)
+        self._select_btn.setEnabled(False)
+        self._select_btn.clicked.connect(self._on_select)
+        fl.addWidget(cancel_btn); fl.addSpacing(6); fl.addWidget(self._select_btn)
+        vbox.addWidget(footer)
+
+    # ── Event filter: keyboard navigation ─────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if obj is self._search and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self.hide(); return True
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                items = self._list.selectedItems()
+                if items:
+                    self._on_activated(items[0])
+                elif self._list.count() > 0:
+                    self._on_activated(self._list.item(0))
+                return True
+        return super().eventFilter(obj, event)
+
+    # ── Data ──────────────────────────────────────────────────────────────────
+
+    def _load_records(self):
+        try:
+            from server.repositories.mtitms_repo import fetch_all_mtitms
+            self._records = fetch_all_mtitms()
+        except Exception:
+            self._records = []
+
+    def _rebuild_list(self, records: list[dict]):
+        self._list.clear()
+        for r in records:
+            part_no   = str(r.get("po_no")      or "")
+            item_code = str(r.get("pk")          or "")
+            name      = str(r.get("description") or "")
+            qty       = str(r.get("qty")         or "0")
+            whs       = str(r.get("warehouse")   or "")
+
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, (part_no, item_code, name, qty, whs))
+
+            row_w = QWidget(); row_w.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row_w)
+            rl.setContentsMargins(16, 9, 16, 9); rl.setSpacing(0)
+
+            part_lbl = QLabel(part_no)
+            part_lbl.setStyleSheet(
+                f"font-size: 12px; font-weight: 600; color: {_LEGACY_BLUE}; "
+                "background: transparent; min-width: 160px; max-width: 160px;"
+            )
+            code_lbl = QLabel(item_code)
+            code_lbl.setStyleSheet(
+                f"font-size: 12px; color: {_MUTED}; "
+                "background: transparent; min-width: 160px; max-width: 160px;"
+            )
+            name_lbl = QLabel(name)
+            name_lbl.setStyleSheet(f"font-size: 12px; color: {_TEXT}; background: transparent;")
+
+            rl.addWidget(part_lbl)
+            rl.addWidget(code_lbl)
+            rl.addWidget(name_lbl, 1)
+
+            item.setSizeHint(QSize(0, 38))
+            self._list.addItem(item)
+            self._list.setItemWidget(item, row_w)
+
+        count = len(records)
+        self._footer.setText(f"{count} record{'s' if count != 1 else ''}")
+        self._select_btn.setEnabled(False)
+
+    def _filter(self, q: str):
+        q = q.lower()
+        if not q:
+            self._rebuild_list(self._records)
+            return
+        filtered = [
+            r for r in self._records
+            if q in str(r.get("po_no")      or "").lower()
+            or q in str(r.get("pk")          or "").lower()
+            or q in str(r.get("description") or "").lower()
+        ]
+        self._rebuild_list(filtered)
+
+    # ── Selection ─────────────────────────────────────────────────────────────
+
+    def _on_activated(self, _item):
+        self._on_select()
+
+    def _on_select(self):
+        items = self._list.selectedItems()
+        if not items:
+            return
+        data = items[0].data(Qt.UserRole)
+        if data:
+            part_no, item_code, name, qty, whs = data
+            self.item_picked.emit(part_no, item_code, name, qty, whs)
+            self.accept()
+
+    def open_modal(self):
+        self._load_records()
+        self._search.clear()
+        self._rebuild_list(self._records)
+        self._search.setFocus()
+        self.exec()
+
+
 # ── Real canvas preview using QGraphicsView ───────────────────────────────────
 
 class _CanvasPreview(QWidget):
@@ -517,18 +725,17 @@ class _CanvasPreview(QWidget):
         self._scene.setBackgroundBrush(QBrush(QColor("#FFFFFF")))
 
         self._view = QGraphicsView(self._scene)
-        self._view.setBackgroundBrush(QBrush(Qt.transparent))  # add this
-        self._view.viewport().setAutoFillBackground(False)      # add this
+        self._view.setBackgroundBrush(QBrush(Qt.transparent))
+        self._view.viewport().setAutoFillBackground(False)
         self._view.setRenderHint(QPainter.Antialiasing)
         self._view.setRenderHint(QPainter.TextAntialiasing)
         self._view.setStyleSheet("background: transparent; border: none;")
         self._view.setAlignment(Qt.AlignCenter)
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._view.setInteractive(False)  # read-only, no selection/drag
+        self._view.setInteractive(False)
         layout.addWidget(self._view)
 
-        # placeholder shown when no design loaded
         self._placeholder = QLabel("Load a design to preview")
         self._placeholder.setAlignment(Qt.AlignCenter)
         self._placeholder.setStyleSheet(f"color: {_HINT}; font-size: 11px; background: #DCE5ED;")
@@ -538,7 +745,6 @@ class _CanvasPreview(QWidget):
         self._placeholder.setVisible(True)
 
     def set_design(self, usrm_json: str, itrm_json: str = ""):
-        """Parse usrm/itrm JSON and render the canvas."""
         self._scene.clear()
 
         try:
@@ -564,11 +770,9 @@ class _CanvasPreview(QWidget):
         self._canvas_h = canvas_h
         self._scene.setSceneRect(QRectF(0, 0, canvas_w, canvas_h))
 
-        # Draw white canvas background + border
         bg = self._scene.addRect(QRectF(0, 0, canvas_w, canvas_h), QPen(QColor("#CBD5E1"), 1), QBrush(QColor("#FFFFFF")))
         bg.setZValue(-1000)
 
-        # Deserialize each element
         for d in sorted(elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
 
@@ -605,7 +809,6 @@ class _CanvasPreview(QWidget):
             item.setBrush(Qt.NoBrush)
 
         elif kind == "barcode":
-            # Draw a realistic barcode representation using QPainter-drawn bars
             w = d.get("container_width", 80)
             h = d.get("container_height", 80)
             item = _BarcodePreviewItem(w, h, d.get("design", "CODE128"))
@@ -616,14 +819,11 @@ class _CanvasPreview(QWidget):
         item.setZValue(z)
         item.setVisible(vis)
 
-        # Apply rotation around item center
         if rot != 0:
             br = item.boundingRect()
             item.setTransformOriginPoint(br.center())
             item.setRotation(rot)
 
-        # Position: aabb_x/y is the scene-space top-left of the bounding box
-        # We need to offset back from pos() the same way the editor does
         item.setPos(0, 0)
         self._scene.addItem(item)
         aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
@@ -632,7 +832,6 @@ class _CanvasPreview(QWidget):
         item.setPos(x - off_x, y - off_y)
 
     def _fit(self):
-        """Scale the view to fit the canvas."""
         self._view.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
 
     def resizeEvent(self, event):
@@ -647,10 +846,6 @@ class _CanvasPreview(QWidget):
 
 
 class _BarcodePreviewItem(QGraphicsRectItem):
-    """
-    A QGraphicsRectItem that paints a realistic barcode bar pattern
-    plus the design type label underneath.
-    """
     def __init__(self, w: float, h: float, design: str = "CODE128"):
         super().__init__(0, 0, w, h)
         self._design = design
@@ -662,10 +857,8 @@ class _BarcodePreviewItem(QGraphicsRectItem):
         r = self.rect()
         w, h = r.width(), r.height()
 
-        # White background
         painter.fillRect(r, QColor("#FFFFFF"))
 
-        # Bar area: top 70% of height
         bar_h = h * 0.72
         bar_top = r.top()
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:8], 16)
@@ -681,7 +874,6 @@ class _BarcodePreviewItem(QGraphicsRectItem):
             x += bar_w + 0.8
             i += 1
 
-        # Design label underneath bars
         label_top = bar_top + bar_h + 2
         label_h   = h - bar_h - 2
         if label_h > 4:
@@ -694,7 +886,6 @@ class _BarcodePreviewItem(QGraphicsRectItem):
                 self._design,
             )
 
-        # Outer border
         painter.setPen(QPen(QColor("#CBD5E1"), 0.5))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(r)
@@ -713,7 +904,7 @@ class BarcodePrintPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(f"background: {_BG_MAIN};")
-        self._row_dict: dict | None = None  # stores full DB record including usrm/itrm
+        self._row_dict: dict | None = None
         self._build_ui()
         self._print_fields_with_sep.setEnabled(False)
         self._btn_print.setEnabled(False)
@@ -839,9 +1030,11 @@ class BarcodePrintPage(QWidget):
         self._inp_part = QLineEdit(); self._inp_part.setPlaceholderText("Enter or browse part number…")
         self._inp_part.setStyleSheet(MODERN_INPUT_STYLE + _DISABLED_STYLE)
         self._btn_browse_part = QPushButton("···"); self._btn_browse_part.setStyleSheet(_BTN_BROWSE)
+        self._btn_browse_part.setToolTip("Browse master items")
         self._btn_browse_part.clicked.connect(self._on_browse_part)
         part_w = QWidget(); part_w.setStyleSheet("background: transparent; border: none;")
-        pl = QHBoxLayout(part_w); pl.setContentsMargins(0,0,0,0); pl.setSpacing(6); pl.addWidget(self._inp_part); pl.addWidget(self._btn_browse_part)
+        pl = QHBoxLayout(part_w); pl.setContentsMargins(0,0,0,0); pl.setSpacing(6)
+        pl.addWidget(self._inp_part); pl.addWidget(self._btn_browse_part)
         _form_row("PART NO. PRINT :", part_w, layout)
 
         self._inp_qty = QLineEdit(); self._inp_qty.setReadOnly(True); self._inp_qty.setFocusPolicy(Qt.NoFocus)
@@ -854,7 +1047,6 @@ class BarcodePrintPage(QWidget):
         self._inp_whs.setStyleSheet(MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("WHS :", self._inp_whs, layout)
 
-        # ── Date code: calendar popup instead of long scrolling list ──────────
         self._date_combo = _CalendarCombo()
         self._date_combo.setFixedWidth(200)
         date_w = QWidget(); date_w.setStyleSheet('background: transparent; border: none;')
@@ -887,22 +1079,29 @@ class BarcodePrintPage(QWidget):
         sep.setStyleSheet(f"background: {_BORDER2}; border: none; margin: 0px;")
         vbox.addSpacing(4); vbox.addWidget(sep); vbox.addSpacing(12)
 
-        # ── Text Item Code section ────────────────────────────────────────────
         th = QHBoxLayout()
-        tt = QLabel("Text Item Code"); tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
+        tt = QLabel("Item Code"); tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
         th.addWidget(tt); th.addStretch()
         vbox.addLayout(th); vbox.addSpacing(6)
 
         tf = QFrame(); tf.setStyleSheet(_CARD_STYLE)
         tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 12, 12, 12); tfv.setSpacing(0)
+        self._lbl_item_code = QLabel("")
+        self._lbl_item_code.setStyleSheet(
+            f"color: {_BLUE}; font-size: 18px; font-weight: 700; "
+            "background: transparent; border: none;"
+        )
+        self._lbl_item_code.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._lbl_item_code.setWordWrap(True)
+        tfv.addWidget(self._lbl_item_code)
+        tfv.addStretch()
         vbox.addWidget(tf, 1)
 
         return w
 
-    # ── Internal: load design by fetching full row_dict from DB ───────────────
+    # ── Internal: load design ─────────────────────────────────────────────────
 
     def _load_design_from_code(self, code: str):
-        """Fetch the full design record from DB (including usrm/itrm) and load preview."""
         if not code:
             return
         row_dict = None
@@ -931,12 +1130,17 @@ class BarcodePrintPage(QWidget):
         self._design_picker.open_modal()
 
     def _on_browse_part(self):
-        try:
-            from PySide6.QtWidgets import QInputDialog
-            part, ok = QInputDialog.getText(self, "Browse Part No.", "Enter Part No.:")
-            if ok and part.strip(): self._inp_part.setText(part.strip())
-        except Exception:
-            pass
+        """Open the master item picker and populate Part No. / QTY / WHS on selection."""
+        if not hasattr(self, "_master_item_picker"):
+            self._master_item_picker = _MasterItemPickerPopup(self)
+            self._master_item_picker.item_picked.connect(self._on_master_item_picked)
+        self._master_item_picker.open_modal()
+
+    def _on_master_item_picked(self, part_no: str, item_code: str, name: str, qty: str, whs: str):
+        self._inp_part.setText(part_no)
+        self._inp_qty.setText(qty)
+        self._inp_whs.setText(whs)
+        self._lbl_item_code.setText(item_code)
 
     def _on_print(self):
         code = self._inp_code.text().strip()
@@ -951,11 +1155,6 @@ class BarcodePrintPage(QWidget):
     # ── Public API ────────────────────────────────────────────────────────────
 
     def load_design_by_code(self, code: str, name: str = "", row_dict: dict | None = None):
-        """
-        Primary entry point. Accepts:
-          - code + name only (will attempt DB fetch for usrm/itrm)
-          - code + name + row_dict already containing usrm/itrm (no extra fetch)
-        """
         if not code:
             return
 
@@ -964,7 +1163,6 @@ class BarcodePrintPage(QWidget):
         self._print_fields_with_sep.setEnabled(True)
         self._btn_print.setEnabled(True)
 
-        # If row_dict already has usrm, use it directly
         usrm = ""
         itrm = ""
         if row_dict:
@@ -979,7 +1177,6 @@ class BarcodePrintPage(QWidget):
             self._fetch_and_refresh_preview(code)
 
     def _fetch_and_refresh_preview(self, code: str):
-        """Try to fetch usrm/itrm from DB and update preview."""
         try:
             from server.repositories.mbarcd_repo import fetch_mbarcd_layout
             layout = fetch_mbarcd_layout(code)
