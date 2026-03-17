@@ -16,9 +16,17 @@ def fetch_all_mtitms() -> list[dict]:
             mmtyp1   AS type1,
             mmtyp2   AS type2,
             mmweig   AS weight,
-            mmcont AS qty,
+            mmcont   AS qty,
             mmumcd   AS uom,
             mmbupc   AS upc,
+            mmitc1   AS itc1,
+            mmitc2   AS itc2,
+            mmitc3   AS itc3,
+            mmitc4   AS itc4,
+            mmitc5   AS itc5,
+            mmitc6   AS itc6,
+            mmitc7   AS itc7,
+            mmitc8   AS itc8,
             mmrgid   AS added_by,
             mmrgdt   AS added_at,
             mmchby   AS changed_by,
@@ -50,9 +58,17 @@ def fetch_mtitms_by_pk(pk: str) -> dict | None:
             mmtyp1   AS type1,
             mmtyp2   AS type2,
             mmweig   AS weight,
-            mmcont AS qty,
+            mmcont   AS qty,
             mmumcd   AS uom,
             mmbupc   AS upc,
+            mmitc1   AS itc1,
+            mmitc2   AS itc2,
+            mmitc3   AS itc3,
+            mmitc4   AS itc4,
+            mmitc5   AS itc5,
+            mmitc6   AS itc6,
+            mmitc7   AS itc7,
+            mmitc8   AS itc8,
             mmrgid   AS added_by,
             mmrgdt   AS added_at,
             mmchby   AS changed_by,
@@ -79,9 +95,16 @@ def create_mtitms(
     item_no: str,
     description: str | None,
     sap_code: str | None,
-    type1: str | None,
     warehouse: str | None,
     part_no: str | None,
+    itc1: str | None,
+    itc2: str | None,
+    itc3: str | None,
+    itc4: str | None,
+    itc5: str | None,
+    itc6: str | None,
+    itc7: str | None,
+    itc8: str | None,
     qty: int,
     uom: str,
     user: str = "Admin",
@@ -98,9 +121,10 @@ def create_mtitms(
                 mmitno,
                 mmitds,
                 mmisap,
-                mmtyp1,
                 mmwho,
                 mmpono,
+                mmitc1, mmitc2, mmitc3, mmitc4,
+                mmitc5, mmitc6, mmitc7, mmitc8,
                 mmcont,
                 mmumcd,
                 mmtbfg,
@@ -112,8 +136,11 @@ def create_mtitms(
                 mmdlfg
             )
             VALUES (
+                %s, %s, %s,
+                %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
+                %s, %s,
                 '0',
                 %s, %s,
                 %s, %s,
@@ -126,9 +153,10 @@ def create_mtitms(
                 item_no,
                 description,
                 sap_code,
-                type1,
                 warehouse,
                 part_no,
+                itc1, itc2, itc3, itc4,
+                itc5, itc6, itc7, itc8,
                 qty,
                 uom,
                 user,
@@ -148,14 +176,22 @@ def create_mtitms(
     finally:
         conn.close()
 
+
 # ── Update (Optimistic Locking) ───────────────────────────────────────────────
 
 def update_mtitms(
     pk: str,
     description: str | None,
-    type1: str | None,
     warehouse: str | None,
     part_no: str | None,
+    itc1: str | None,
+    itc2: str | None,
+    itc3: str | None,
+    itc4: str | None,
+    itc5: str | None,
+    itc6: str | None,
+    itc7: str | None,
+    itc8: str | None,
     qty: int,
     uom: str,
     old_changed_no: int,
@@ -175,9 +211,10 @@ def update_mtitms(
             UPDATE barcodesap.mtitms
             SET
                 mmitds = %s,
-                mmtyp1 = %s,
                 mmwho  = %s,
                 mmpono = %s,
+                mmitc1 = %s, mmitc2 = %s, mmitc3 = %s, mmitc4 = %s,
+                mmitc5 = %s, mmitc6 = %s, mmitc7 = %s, mmitc8 = %s,
                 mmcont = %s,
                 mmumcd = %s,
                 mmchby = %s,
@@ -188,9 +225,10 @@ def update_mtitms(
             """,
             (
                 description,
-                type1,
                 warehouse,
                 part_no,
+                itc1, itc2, itc3, itc4,
+                itc5, itc6, itc7, itc8,
                 qty,
                 uom,
                 user,
@@ -211,6 +249,7 @@ def update_mtitms(
         raise
     finally:
         conn.close()
+
 
 # ── Soft Delete ───────────────────────────────────────────────────────────────
 

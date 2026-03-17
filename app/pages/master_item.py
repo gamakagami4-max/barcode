@@ -34,24 +34,53 @@ COLORS = {
     "text_muted": "#64748B",
 }
 
-# Mapping: (display label, index into the row tuple used in the table)
+# ─────────────────────────────────────────────
+# Row tuple layout (index → field)
+# ─────────────────────────────────────────────
+# 0  pk
+# 1  description
+# 2  brand
+# 3  warehouse
+# 4  po_no  (Part No)
+# 5  itc1
+# 6  itc2
+# 7  itc3
+# 8  itc4
+# 9  itc5
+# 10 itc6
+# 11 itc7
+# 12 itc8
+# 13 qty
+# 14 uom
+# 15 added_by
+# 16 added_at
+# 17 changed_by
+# 18 changed_at
+# 19 changed_no
+# 20 pk  (hidden — used as a stable PK reference for DB ops)
+
+# Mapping: (display label, index into the row tuple)
 VIEW_DETAIL_FIELDS = [
     ("Item Code",     0),
     ("Name",          1),
     ("Brand",         2),
     ("Warehouse",     3),
-    ("Part No",       4),
+    ("Part No Print",  4),
     ("Interchange 1", 5),
     ("Interchange 2", 6),
     ("Interchange 3", 7),
     ("Interchange 4", 8),
-    ("Quantity",      9),
-    ("UOM",          10),
-    ("Added By",     11),
-    ("Added At",     12),
-    ("Changed By",   13),
-    ("Changed At",   14),
-    ("Changed No",   15),
+    ("Interchange 5", 9),
+    ("Interchange 6", 10),
+    ("Interchange 7", 11),
+    ("Interchange 8", 12),
+    ("Quantity",      13),
+    ("UOM",          14),
+    ("Added By",     15),
+    ("Added At",     16),
+    ("Changed By",   17),
+    ("Changed At",   18),
+    ("Changed No",   19),
 ]
 
 
@@ -63,15 +92,19 @@ def _build_form_schema(mode: str = "add") -> list[dict]:
             "type": "readonly" if mode == "edit" else "text",
             "placeholder": "e.g., EIF1-SFF1-FC-1001",
             "required": True,
-            "max_length": 50
+            "max_length": 50,
         },
-        {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True, "max_length": 50},
+        {"name": "name",          "label": "Item Name",       "type": "text",  "placeholder": "Enter item description",  "required": True,  "max_length": 50},
         {"name": "warehouse",     "label": "Warehouse",       "type": "text",  "placeholder": "e.g., EIF",              "required": False, "max_length": 10},
-        {"name": "part_no",       "label": "Part Number",     "type": "text",  "placeholder": "Enter part number",       "required": False, "max_length": 15},
-        {"name": "interchange_1", "label": "Interchange 1",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
-        {"name": "interchange_2", "label": "Interchange 2",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
-        {"name": "interchange_3", "label": "Interchange 3",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
-        {"name": "interchange_4", "label": "Interchange 4",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "part_no",       "label": "Part No Print",   "type": "text",  "placeholder": "Enter part number",       "required": False, "max_length": 15},
+        {"name": "itc1",          "label": "Interchange 1",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc2",          "label": "Interchange 2",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc3",          "label": "Interchange 3",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc4",          "label": "Interchange 4",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc5",          "label": "Interchange 5",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc6",          "label": "Interchange 6",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc7",          "label": "Interchange 7",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
+        {"name": "itc8",          "label": "Interchange 8",   "type": "text",  "placeholder": "Optional",               "required": False, "max_length": 50},
         {"name": "qty",           "label": "Quantity",        "type": "text",  "placeholder": "Enter quantity",          "required": True},
         {"name": "uom",           "label": "Unit of Measure", "type": "combo", "options": ["PCS", "SET", "BOX", "KG", "LTR"], "required": True},
     ]
@@ -103,18 +136,22 @@ def _row_to_tuple(r: dict) -> tuple:
         r.get("brand", ""),             # 2
         r.get("warehouse", ""),         # 3
         r.get("po_no", ""),             # 4
-        r.get("type1", ""),             # 5
-        "",                             # 6
-        "",                             # 7
-        "",                             # 8
-        str(r.get("qty", 0)),           # 9
-        r.get("uom", ""),               # 10
-        r.get("added_by", "-"),         # 11
-        _fmt_dt(r.get("added_at")),     # 12
-        r.get("changed_by") or "-",     # 13
-        _fmt_dt(r.get("changed_at")),   # 14
-        str(r.get("changed_no", 0)),    # 15
-        r.get("pk"),                    # 16
+        r.get("itc1", "") or "",        # 5
+        r.get("itc2", "") or "",        # 6
+        r.get("itc3", "") or "",        # 7
+        r.get("itc4", "") or "",        # 8
+        r.get("itc5", "") or "",        # 9
+        r.get("itc6", "") or "",        # 10
+        r.get("itc7", "") or "",        # 11
+        r.get("itc8", "") or "",        # 12
+        str(r.get("qty", 0)),           # 13
+        r.get("uom", ""),               # 14
+        r.get("added_by", "-"),         # 15
+        _fmt_dt(r.get("added_at")),     # 16
+        r.get("changed_by") or "-",     # 17
+        _fmt_dt(r.get("changed_at")),   # 18
+        str(r.get("changed_no", 0)),    # 19
+        r.get("pk"),                    # 20  ← hidden PK
     )
 
 
@@ -162,7 +199,10 @@ class MasterItemPage(QWidget):
         self.content_layout = QHBoxLayout()
 
         headers = [
-            "ITEM CODE", "NAME", "BRAND", "WHS", "PART NO", "QTY", "UOM",
+            "ITEM CODE", "NAME", "BRAND", "WHS", "PART NO PRINT",
+            "INTERCHANGE 1", "INTERCHANGE 2", "INTERCHANGE 3", "INTERCHANGE 4",
+            "INTERCHANGE 5", "INTERCHANGE 6", "INTERCHANGE 7", "INTERCHANGE 8",
+            "QTY", "UOM",
             "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ]
         self.table_comp = StandardTable(headers)
@@ -170,17 +210,20 @@ class MasterItemPage(QWidget):
 
         h_header = self.table.horizontalHeader()
         h_header.setSectionResizeMode(QHeaderView.Interactive)
-        self.table.setColumnWidth(0, 160)
-        self.table.setColumnWidth(2, 90)
-        self.table.setColumnWidth(3, 80)
-        self.table.setColumnWidth(4, 130)
-        self.table.setColumnWidth(5, 110)
-        self.table.setColumnWidth(6, 80)
-        self.table.setColumnWidth(7, 100)
-        h_header.setSectionResizeMode(8,  QHeaderView.ResizeToContents)
-        self.table.setColumnWidth(9, 60)
-        h_header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
-        h_header.setSectionResizeMode(1,  QHeaderView.Stretch)
+        self.table.setColumnWidth(0,  160)   # ITEM CODE
+        h_header.setSectionResizeMode(1, QHeaderView.Stretch)  # NAME
+        self.table.setColumnWidth(2,  90)    # BRAND
+        self.table.setColumnWidth(3,  80)    # WHS
+        self.table.setColumnWidth(4,  130)   # PART NO
+        for itc_col in range(5, 13):         # ITC 1–8
+            self.table.setColumnWidth(itc_col, 120)
+        self.table.setColumnWidth(13, 60)    # QTY
+        self.table.setColumnWidth(14, 60)    # UOM
+        self.table.setColumnWidth(15, 100)   # ADDED BY
+        h_header.setSectionResizeMode(16, QHeaderView.ResizeToContents)  # ADDED AT
+        self.table.setColumnWidth(17, 100)   # CHANGED BY
+        h_header.setSectionResizeMode(18, QHeaderView.ResizeToContents)  # CHANGED AT
+        self.table.setColumnWidth(19, 80)    # CHANGED NO
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         self.content_layout.addWidget(self.table_comp, stretch=4)
@@ -331,7 +374,11 @@ class MasterItemPage(QWidget):
             ("Interchange 2", data[6]),
             ("Interchange 3", data[7]),
             ("Interchange 4", data[8]),
-            ("Stock",         f"{data[9]} {data[10]}"),
+            ("Interchange 5", data[9]),
+            ("Interchange 6", data[10]),
+            ("Interchange 7", data[11]),
+            ("Interchange 8", data[12]),
+            ("Stock",         f"{data[13]} {data[14]}"),
         ]
         for label, val in fields:
             lbl = QLabel(
@@ -344,7 +391,7 @@ class MasterItemPage(QWidget):
         self.info_layout.addStretch()
 
     # ──────────────────────────────────────────
-    # Data loading  ← hits the real DB
+    # Data loading
     # ──────────────────────────────────────────
 
     def load_data(self):
@@ -370,9 +417,11 @@ class MasterItemPage(QWidget):
         end_idx   = min(start_idx + self.page_size, total)
         page_data = data[start_idx:end_idx]
 
-        # Indices into the display tuple that map to visible columns
-        # (index 16 is the hidden PK — never shown)
-        display_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15]
+        # Visible table columns:
+        # ITEM CODE(0), NAME(1), BRAND(2), WHS(3), PART NO(4),
+        # ITC1(5)–ITC8(12), QTY(13), UOM(14),
+        # ADDED BY(15), ADDED AT(16), CHANGED BY(17), CHANGED AT(18), CHANGED NO(19)
+        display_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
         for r, row_data in enumerate(page_data):
             self.table.insertRow(r)
@@ -512,16 +561,20 @@ class MasterItemPage(QWidget):
         self._open_modal(modal)
 
     def _on_add_submitted(self, data: dict):
-        item_code     = data.get("item_code",     "").strip()
-        name          = data.get("name",          "").strip()
-        warehouse     = data.get("warehouse",     "").strip()
-        part_no       = data.get("part_no",       "").strip()
-        interchange_1 = data.get("interchange_1", "").strip() or None
-        interchange_2 = data.get("interchange_2", "").strip() or None
-        interchange_3 = data.get("interchange_3", "").strip() or None
-        interchange_4 = data.get("interchange_4", "").strip() or None
-        qty_str       = data.get("qty",           "0").strip()
-        uom           = data.get("uom",           "PCS")
+        item_code = data.get("item_code", "").strip()
+        name      = data.get("name",      "").strip()
+        warehouse = data.get("warehouse", "").strip()
+        part_no   = data.get("part_no",   "").strip()
+        itc1      = data.get("itc1", "").strip() or None
+        itc2      = data.get("itc2", "").strip() or None
+        itc3      = data.get("itc3", "").strip() or None
+        itc4      = data.get("itc4", "").strip() or None
+        itc5      = data.get("itc5", "").strip() or None
+        itc6      = data.get("itc6", "").strip() or None
+        itc7      = data.get("itc7", "").strip() or None
+        itc8      = data.get("itc8", "").strip() or None
+        qty_str   = data.get("qty", "0").strip()
+        uom       = data.get("uom", "PCS")
 
         if not all([item_code, name, qty_str]):
             QMessageBox.warning(self, "Validation Error", "Item Code, Name, and Quantity are required.")
@@ -545,9 +598,10 @@ class MasterItemPage(QWidget):
                 item_no=item_code,
                 description=name,
                 sap_code=None,
-                type1=interchange_1,
                 warehouse=warehouse,
                 part_no=part_no,
+                itc1=itc1, itc2=itc2, itc3=itc3, itc4=itc4,
+                itc5=itc5, itc6=itc6, itc7=itc7, itc8=itc8,
                 qty=qty,
                 uom=uom,
                 user=CURRENT_USER,
@@ -574,12 +628,14 @@ class MasterItemPage(QWidget):
         ws = wb.active
         ws.title = "Master Item"
         ws.append([
-            "ITEM CODE", "NAME", "BRAND", "WAREHOUSE", "PART NO",
+            "ITEM CODE", "NAME", "BRAND", "WAREHOUSE", "PART NO PRINT",
             "INTERCHANGE 1", "INTERCHANGE 2", "INTERCHANGE 3", "INTERCHANGE 4",
-            "QTY", "UOM", "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
+            "INTERCHANGE 5", "INTERCHANGE 6", "INTERCHANGE 7", "INTERCHANGE 8",
+            "QTY", "UOM",
+            "ADDED BY", "ADDED AT", "CHANGED BY", "CHANGED AT", "CHANGED NO",
         ])
         for row in self.filtered_data:
-            ws.append([str(v) if v is not None else "" for v in row[:16]])
+            ws.append([str(v) if v is not None else "" for v in row[:20]])
         wb.save(path)
         QMessageBox.information(self, "Export Complete",
                                 f"Exported {len(self.filtered_data)} records to:\n{path}")
@@ -613,21 +669,25 @@ class MasterItemPage(QWidget):
         row = self.all_data[idx]
 
         initial = {
-            "item_code":     row[0],
-            "name":          row[1],
-            "warehouse":     row[3],
-            "part_no":       row[4],
-            "interchange_1": row[5],
-            "interchange_2": row[6],
-            "interchange_3": row[7],
-            "interchange_4": row[8],
-            "qty":           row[9],
-            "uom":           row[10],
-            "added_by":      row[11],
-            "added_at":      row[12],
-            "changed_by":    row[13],
-            "changed_at":    row[14],
-            "changed_no":    row[15],
+            "item_code":  row[0],
+            "name":       row[1],
+            "warehouse":  row[3],
+            "part_no":    row[4],
+            "itc1":       row[5],
+            "itc2":       row[6],
+            "itc3":       row[7],
+            "itc4":       row[8],
+            "itc5":       row[9],
+            "itc6":       row[10],
+            "itc7":       row[11],
+            "itc8":       row[12],
+            "qty":        row[13],
+            "uom":        row[14],
+            "added_by":   row[15],
+            "added_at":   row[16],
+            "changed_by": row[17],
+            "changed_at": row[18],
+            "changed_no": row[19],
         }
         modal = GenericFormModal(
             title="Edit Master Item",
@@ -640,16 +700,20 @@ class MasterItemPage(QWidget):
         self._open_modal(modal)
 
     def _on_edit_submitted(self, idx: int, data: dict):
-        item_code     = data.get("item_code",     "").strip()
-        name          = data.get("name",          "").strip()
-        warehouse     = data.get("warehouse",     "").strip()
-        part_no       = data.get("part_no",       "").strip()
-        interchange_1 = data.get("interchange_1", "").strip() or None
-        interchange_2 = data.get("interchange_2", "").strip() or None
-        interchange_3 = data.get("interchange_3", "").strip() or None
-        interchange_4 = data.get("interchange_4", "").strip() or None
-        qty_str       = data.get("qty",           "0").strip()
-        uom           = data.get("uom",           "PCS")
+        item_code = data.get("item_code", "").strip()
+        name      = data.get("name",      "").strip()
+        warehouse = data.get("warehouse", "").strip()
+        part_no   = data.get("part_no",   "").strip()
+        itc1      = data.get("itc1", "").strip() or None
+        itc2      = data.get("itc2", "").strip() or None
+        itc3      = data.get("itc3", "").strip() or None
+        itc4      = data.get("itc4", "").strip() or None
+        itc5      = data.get("itc5", "").strip() or None
+        itc6      = data.get("itc6", "").strip() or None
+        itc7      = data.get("itc7", "").strip() or None
+        itc8      = data.get("itc8", "").strip() or None
+        qty_str   = data.get("qty", "0").strip()
+        uom       = data.get("uom", "PCS")
 
         if not all([item_code, name, qty_str]):
             QMessageBox.warning(self, "Validation Error", "Item Code, Name, and Quantity are required.")
@@ -668,18 +732,19 @@ class MasterItemPage(QWidget):
                                     f'Item Code "{item_code}" already exists.')
                 return
 
-        pk = self.all_data[idx][16]   # hidden PK stored at index 16
+        pk = self.all_data[idx][20]   # hidden PK at index 20
 
         try:
             update_mtitms(
                 pk=pk,
                 description=name,
-                type1=interchange_1,
                 warehouse=warehouse,
                 part_no=part_no,
+                itc1=itc1, itc2=itc2, itc3=itc3, itc4=itc4,
+                itc5=itc5, itc6=itc6, itc7=itc7, itc8=itc8,
                 qty=qty,
                 uom=uom,
-                old_changed_no=int(self.all_data[idx][15]),
+                old_changed_no=int(self.all_data[idx][19]),
                 user=CURRENT_USER,
             )
         except Exception as exc:
@@ -696,7 +761,7 @@ class MasterItemPage(QWidget):
             return
         item_code = self.all_data[idx][0]
         name      = self.all_data[idx][1]
-        pk        = self.all_data[idx][16]
+        pk        = self.all_data[idx][20]   # hidden PK at index 20
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirm Delete")
