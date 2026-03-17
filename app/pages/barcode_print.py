@@ -883,9 +883,9 @@ class BarcodePrintPage(QWidget):
         pfv.addWidget(self._preview)
         vbox.addWidget(pf, 3); vbox.addSpacing(12)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {_BORDER}; border: none;")
-        vbox.addWidget(sep); vbox.addSpacing(12)
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setFixedHeight(2)
+        sep.setStyleSheet(f"background: {_BORDER2}; border: none; margin: 0px;")
+        vbox.addSpacing(4); vbox.addWidget(sep); vbox.addSpacing(12)
 
         # ── Text Item Code section ────────────────────────────────────────────
         th = QHBoxLayout()
