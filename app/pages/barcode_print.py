@@ -1250,44 +1250,58 @@ class BarcodePrintPage(QWidget):
     # ── Right panel ───────────────────────────────────────────────────────────
 
     def _build_right(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet("background: #DCE5ED;")
-        vbox = QVBoxLayout(w); vbox.setContentsMargins(6, 16, 20, 16); vbox.setSpacing(0)
+        w = QWidget(); w.setStyleSheet("background: #EEF2F7;")
+        vbox = QVBoxLayout(w); vbox.setContentsMargins(10, 16, 16, 16); vbox.setSpacing(10)
+
+        # ── Preview card ──────────────────────────────────────────────────────
+        preview_card = QFrame()
+        preview_card.setStyleSheet(
+            "QFrame { background: #DCE5ED; border: 1px solid #C8D5E3; border-radius: 12px; }")
+        preview_card.setMinimumHeight(200)
+        preview_card_v = QVBoxLayout(preview_card)
+        preview_card_v.setContentsMargins(10, 10, 10, 10); preview_card_v.setSpacing(6)
 
         ph = QHBoxLayout()
         pt = QLabel("Preview")
-        pt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
+        pt.setStyleSheet(
+            f"font-size: 11px; font-weight: 700; color: {_MUTED}; "
+            "background: transparent; border: none; letter-spacing: 0.5px;")
         ph.addWidget(pt); ph.addStretch()
-        vbox.addLayout(ph); vbox.addSpacing(6)
+        preview_card_v.addLayout(ph)
 
-        pf = QFrame()
-        pf.setStyleSheet(
-            f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}")
-        pf.setMinimumHeight(200)
-        pfv = QVBoxLayout(pf); pfv.setContentsMargins(0, 0, 0, 0)
+        inner_frame = QFrame()
+        inner_frame.setStyleSheet(
+            f"QFrame {{ background: {_WHITE}; border: 1px solid {_BORDER}; border-radius: 8px; }}")
+        inner_v = QVBoxLayout(inner_frame); inner_v.setContentsMargins(0, 0, 0, 0)
         self._preview = _CanvasPreview()
-        pfv.addWidget(self._preview)
-        vbox.addWidget(pf, 5); vbox.addSpacing(12)
+        inner_v.addWidget(self._preview)
+        preview_card_v.addWidget(inner_frame, 1)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setFixedHeight(2)
-        sep.setStyleSheet(f"background: {_BORDER2}; border: none; margin: 0px;")
-        vbox.addSpacing(4); vbox.addWidget(sep); vbox.addSpacing(12)
+        vbox.addWidget(preview_card, 5)
 
-        th = QHBoxLayout()
-        tt = QLabel("Part No. Print")
-        tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
-        th.addWidget(tt); th.addStretch()
-        vbox.addLayout(th); vbox.addSpacing(6)
+        # ── Part No. Print card ───────────────────────────────────────────────
+        part_card = QFrame()
+        part_card.setStyleSheet(
+            f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}")
+        part_card.setFixedHeight(82)
+        part_card_v = QVBoxLayout(part_card)
+        part_card_v.setContentsMargins(14, 10, 14, 10); part_card_v.setSpacing(2)
 
-        tf = QFrame(); tf.setStyleSheet(_CARD_STYLE); tf.setFixedHeight(60)
-        tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 8, 12, 8); tfv.setSpacing(0)
+        pn_title = QLabel("Part No. Print")
+        pn_title.setStyleSheet(
+            f"font-size: 10px; font-weight: 700; color: {_MUTED}; "
+            "background: transparent; border: none; letter-spacing: 0.5px;")
+        part_card_v.addWidget(pn_title)
+
         self._lbl_item_code = QLabel("")
         self._lbl_item_code.setStyleSheet(
             f"color: {_BLUE}; font-size: 18px; font-weight: 700; "
             "background: transparent; border: none;")
         self._lbl_item_code.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._lbl_item_code.setWordWrap(True)
-        tfv.addWidget(self._lbl_item_code)
-        vbox.addWidget(tf)
+        part_card_v.addWidget(self._lbl_item_code)
+
+        vbox.addWidget(part_card)
         return w
 
     # ── Slots ─────────────────────────────────────────────────────────────────
