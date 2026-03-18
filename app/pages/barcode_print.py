@@ -109,9 +109,6 @@ _DISABLED_STYLE = (
     "QLabel:disabled { color: #94A3B8; }"
 )
 
-# Shared style for read-only "display" fields populated by pickers.
-# min-height + max-height are set to 30px (+ 1px border each side = 32px total)
-# so they stay flush with the adjacent ··· browse button's setFixedHeight(32).
 _READONLY_PICKER_STYLE = (
     "QLineEdit { background: #F8FAFC; color: #1E293B; border: 1px solid #E2E8F0; "
     "border-radius: 4px; padding: 0px 8px; font-size: 11px; "
@@ -177,6 +174,28 @@ _CARD_STYLE = (
     " QFrame QWidget { border: none; background: transparent; }"
     " QFrame QFrame { border: none; background: transparent; }"
 )
+
+# Modern slim scrollbar style (6px, rounded handles)
+_SLIM_SCROLLBAR_STYLE = """
+    QScrollBar:vertical {
+        background: transparent; width: 6px; margin: 0;
+    }
+    QScrollBar::handle:vertical {
+        background: #B0BEC5; border-radius: 3px; min-height: 24px;
+    }
+    QScrollBar::handle:vertical:hover { background: #90A4AE; }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+    QScrollBar:horizontal {
+        background: transparent; height: 6px; margin: 0;
+    }
+    QScrollBar::handle:horizontal {
+        background: #B0BEC5; border-radius: 3px; min-width: 24px;
+    }
+    QScrollBar::handle:horizontal:hover { background: #90A4AE; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+"""
 
 
 def _lbl(text: str) -> QLabel:
@@ -716,6 +735,7 @@ class _CanvasPreview(QWidget):
     """
     Renders the actual barcode design canvas by deserializing the usrm JSON
     into a read-only QGraphicsScene, exactly like the editor does.
+    Canvas is shown at 100% (1:1) scale and is scrollable if it overflows.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -738,11 +758,16 @@ class _CanvasPreview(QWidget):
         self._view.viewport().setAutoFillBackground(False)
         self._view.setRenderHint(QPainter.Antialiasing)
         self._view.setRenderHint(QPainter.TextAntialiasing)
-        self._view.setStyleSheet("background: transparent; border: none;")
-        self._view.setAlignment(Qt.AlignCenter)
-        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._view.setStyleSheet(
+            "QGraphicsView { background: transparent; border: none; }"
+            + _SLIM_SCROLLBAR_STYLE
+        )
+        self._view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._view.setInteractive(False)
+        self._view.setTransformationAnchor(QGraphicsView.NoAnchor)
+        self._view.setResizeAnchor(QGraphicsView.NoAnchor)
         layout.addWidget(self._view)
 
         self._placeholder = QLabel("Load a design to preview")
@@ -787,7 +812,8 @@ class _CanvasPreview(QWidget):
 
         self._view.setVisible(True)
         self._placeholder.setVisible(False)
-        self._fit()
+        # Show at 1:1 scale — no fitInView
+        self._view.resetTransform()
 
     def _add_element(self, d: dict):
         kind = d.get("type")
@@ -840,13 +866,9 @@ class _CanvasPreview(QWidget):
         off_y = aabb0.top()
         item.setPos(x - off_x, y - off_y)
 
-    def _fit(self):
-        self._view.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self._view.isVisible():
-            self._fit()
+        # No auto-fit — canvas stays at 1:1 and scrolls if needed
 
     def clear(self):
         self._scene.clear()
@@ -947,9 +969,7 @@ class BarcodePrintPage(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet(
             f"QScrollArea {{ background: transparent; border: none; }}"
-            "QScrollBar:vertical { background: transparent; width: 5px; }"
-            f"QScrollBar::handle:vertical {{ background: {_BORDER2}; border-radius: 2px; min-height: 20px; }}"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            + _SLIM_SCROLLBAR_STYLE
         )
 
         content = QWidget(); content.setStyleSheet("background: transparent;")
@@ -1090,11 +1110,15 @@ class BarcodePrintPage(QWidget):
         ph.addWidget(pt); ph.addStretch()
         vbox.addLayout(ph); vbox.addSpacing(6)
 
-        pf = QFrame(); pf.setStyleSheet(f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}"); pf.setMinimumHeight(200)
+        pf = QFrame()
+        pf.setStyleSheet(f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}")
+        pf.setMinimumHeight(200)
         pfv = QVBoxLayout(pf); pfv.setContentsMargins(0,0,0,0)
         self._preview = _CanvasPreview()
         pfv.addWidget(self._preview)
-        vbox.addWidget(pf, 3); vbox.addSpacing(12)
+        # Preview gets the lion's share of vertical space
+        vbox.addWidget(pf, 5)
+        vbox.addSpacing(12)
 
         sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setFixedHeight(2)
         sep.setStyleSheet(f"background: {_BORDER2}; border: none; margin: 0px;")
@@ -1105,18 +1129,20 @@ class BarcodePrintPage(QWidget):
         th.addWidget(tt); th.addStretch()
         vbox.addLayout(th); vbox.addSpacing(6)
 
-        tf = QFrame(); tf.setStyleSheet(_CARD_STYLE)
-        tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 12, 12, 12); tfv.setSpacing(0)
+        tf = QFrame()
+        tf.setStyleSheet(_CARD_STYLE)
+        tf.setFixedHeight(60)  # compact — preview gets the space instead
+        tfv = QVBoxLayout(tf); tfv.setContentsMargins(12, 8, 12, 8); tfv.setSpacing(0)
         self._lbl_item_code = QLabel("")
         self._lbl_item_code.setStyleSheet(
             f"color: {_BLUE}; font-size: 18px; font-weight: 700; "
             "background: transparent; border: none;"
         )
-        self._lbl_item_code.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._lbl_item_code.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._lbl_item_code.setWordWrap(True)
         tfv.addWidget(self._lbl_item_code)
-        tfv.addStretch()
-        vbox.addWidget(tf, 1)
+        # No stretch — fixed height card
+        vbox.addWidget(tf)
 
         return w
 
