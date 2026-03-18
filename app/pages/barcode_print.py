@@ -756,7 +756,7 @@ class _CanvasPreview(QWidget):
         for d in sorted(self._elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
         self._view.setVisible(True); self._placeholder.setVisible(False)
-        self._view.resetTransform()
+        self._view.resetTransform()  # always 1:1 (100%)
 
     def set_values(self, name_to_text: dict[str, str]):
         """Push new values into named text elements and recompute MERGEs."""
@@ -797,7 +797,7 @@ class _CanvasPreview(QWidget):
 
         if kind == "text":
             ti = QGraphicsTextItem(d.get("text", ""))
-            font = QFont(d.get("font_family", "Arial"), d.get("font_size", 10))
+            font = QFont(d.get("font_family", "Arial"), int(d.get("font_size", 10)))
             font.setBold(d.get("bold", False)); font.setItalic(d.get("italic", False))
             ti.setFont(font)
             ti.setDefaultTextColor(QColor(d.get("color", "#000000")))
@@ -929,19 +929,38 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
         except Exception as exc:
             return False, f"win32print error: {exc}"
 
-        # Fallback: write temp file and `copy /b` to default printer
+        # Fallback: get default printer name then copy /b directly to it
+        try:
+            import winreg
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows NT\CurrentVersion\Windows"
+            ) as key:
+                printer_name, _ = winreg.QueryValueEx(key, "Device")
+                printer_name = printer_name.split(",")[0].strip()
+        except Exception:
+            printer_name = ""
+
         try:
             with tempfile.NamedTemporaryFile(
                     suffix=".zpl", delete=False) as tf:
                 tf.write(zpl_bytes)
                 tmp_path = tf.name
+
+            if printer_name:
+                # copy /b "<file>" "<printer_name>"
+                cmd = f'copy /b "{tmp_path}" "{printer_name}"'
+            else:
+                # Last resort: print to PRN (LPT1 equivalent on some systems)
+                cmd = f'copy /b "{tmp_path}" PRN'
+
             result = subprocess.run(
-                ["cmd", "/c", f'copy /b "{tmp_path}" /d'],
-                capture_output=True, text=True, timeout=10)
+                ["cmd", "/c", cmd],
+                capture_output=True, text=True, timeout=15)
             os.unlink(tmp_path)
             if result.returncode == 0:
-                return True, "Sent via copy /b"
-            return False, f"copy /b failed: {result.stderr.strip()}"
+                return True, f"Sent via copy /b to: {printer_name or 'PRN'}"
+            return False, f"copy /b failed: {result.stderr.strip() or result.stdout.strip()}"
         except Exception as exc:
             return False, f"Fallback copy error: {exc}"
 
@@ -1535,7 +1554,7 @@ class BarcodePrintPage(QWidget):
         _px_to_dots = getattr(zpl_mod, "_px_to_dots", None)
         if _px_to_dots is None:
             def _px_to_dots(px: float, dpi: int = 203) -> int:
-                return max(1, int(round(px * dpi / 96)))
+                return max(1, int(round(px)))  # canvas px = printer dots (1:1)
 
         try:
             zpl = canvas_to_zpl(
@@ -1557,6 +1576,28 @@ class BarcodePrintPage(QWidget):
             QMessageBox.critical(self, "ZPL Error",
                                  f"Failed to generate ZPL:\n{exc}")
             return
+
+        # ── Debug: print full ZPL + element coords to console ────────────────
+        print("=" * 60)
+        print(f"[ZPL DEBUG] Design: {code}  DPI: {dpi}  Copies: {copies}")
+        print(f"[ZPL DEBUG] Canvas: {self._preview.canvas_w}x{self._preview.canvas_h} dots")
+        print("[ZPL DEBUG] --- ELEMENT COORDINATES ---")
+        try:
+            import json as _dbg_json
+            _elems = _dbg_json.loads(self._usrm_json) if self._usrm_json else []
+            for _e in _elems:
+                _t = _e.get("type","?")
+                _n = _e.get("name","?")
+                _x  = _e.get("x","—");  _y  = _e.get("y","—")
+                _ax = _e.get("aabb_x","—"); _ay = _e.get("aabb_y","—")
+                _r  = _e.get("rotation", 0)
+                print(f"  [{_t}] {_n!r:20s}  x={_x}, y={_y}  |  aabb_x={_ax}, aabb_y={_ay}  rot={_r}")
+        except Exception as _dbg_exc:
+            print(f"  [coord debug error: {_dbg_exc}]")
+        print("[ZPL DEBUG] --- ZPL START ---")
+        print(zpl)
+        print("[ZPL DEBUG] --- ZPL END ---")
+        print("=" * 60)
 
         # ── Send to printer ───────────────────────────────────────────────────
         self._btn_print.setEnabled(False)

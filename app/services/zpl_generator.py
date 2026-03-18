@@ -38,8 +38,16 @@ _ZPL_BARCODE_CMD: dict[str, str] = {
     "AZTEC (2D)":          "^BO",
 }
 
-# ZPL orientation map: rotation degrees → ZPL orientation letter
-_ORIENT: dict[int, str] = {0: "N", 90: "R", 180: "I", 270: "B"}
+# ZPL orientation map: Qt rotation degrees → ZPL orientation letter
+# Qt rotation is clockwise; ZPL orientation is also clockwise BUT the
+# canvas serializer stores the rotation in the opposite convention.
+# Verified from debug: canvas rot=270 produces top-to-bottom text (= ZPL R/90°).
+# Correct mapping inverts the direction: ZPL_orient = (360 - qt_rot) % 360
+#   Qt 0°   → ZPL N (normal)
+#   Qt 90°  → ZPL B (270°CW = bottom-to-top)
+#   Qt 180° → ZPL I (180°)
+#   Qt 270° → ZPL R (90°CW = top-to-bottom)  ← what image confirms
+_ORIENT: dict[int, str] = {0: "N", 90: "B", 180: "I", 270: "R"}
 
 # ZPL font map: font-name → ZPL font letter / number
 _ZPL_FONT: dict[str, str] = {
@@ -56,14 +64,15 @@ _ZPL_FONT: dict[str, str] = {
     # "MONTSERRAT BOLD": "R",
 }
 
-# Canvas is designed at 96 dpi (screen pixels).
-# Dots = px * (printer_dpi / 96)
-_CANVAS_DPI = 96
+# The barcode editor canvas uses 1 px = 1 dot (203 dpi native).
+# Coordinates are already in printer dots — no scaling needed.
+# The dpi parameter is kept for font-size conversion only.
+_CANVAS_DPI = 203
 
 
 def _px_to_dots(px: float, dpi: int = 203) -> int:
-    """Convert canvas pixels (96 dpi) to ZPL printer dots."""
-    return max(1, int(round(px * dpi / _CANVAS_DPI)))
+    """Return canvas pixels as printer dots (1:1 — canvas is already in dots)."""
+    return max(0, int(round(px)))
 
 
 def _rotation_to_orient(rotation: float) -> str:
@@ -73,13 +82,20 @@ def _rotation_to_orient(rotation: float) -> str:
 
 
 def _field_origin(x: float, y: float, dpi: int) -> str:
-    return f"^FO{_px_to_dots(x, dpi)},{_px_to_dots(y, dpi)}"
+    # ^FO allows 0; negative coords are clamped to 0 (off-label = invisible)
+    fx = max(0, int(round(x)))
+    fy = max(0, int(round(y)))
+    return f"^FO{fx},{fy}"
 
 
 # ── Individual element converters ─────────────────────────────────────────────
 
 def _convert_text(d: dict, dpi: int) -> str:
     """Convert a text element to ZPL."""
+    # ZPL ^FO = visual top-left of the field on the label = aabb_x, aabb_y.
+    # Confirmed from debug: x,y = Qt item.pos() which is the pre-rotation pivot,
+    # NOT the visual position. aabb_x/y is the post-rotation visual bbox top-left
+    # which is exactly what ZPL ^FO expects.
     x = d.get("aabb_x", d.get("x", 0))
     y = d.get("aabb_y", d.get("y", 0))
     rotation = int(round(d.get("rotation", 0))) % 360
@@ -89,8 +105,9 @@ def _convert_text(d: dict, dpi: int) -> str:
     zpl_font  = _ZPL_FONT.get(font_name, "0")
     font_size = float(d.get("font_size", 10))
 
-    # Font height in dots: pt → inches → dots  (1 pt = 1/72 inch)
-    dot_h = max(10, _px_to_dots(font_size * 96 / 72, dpi))
+    # font_size is Qt point size rendered at 96dpi screen.
+    # Canvas px = printer dots (1:1), so: dots = pt * 96 / 72 = pt * 4/3
+    dot_h = max(10, int(round(font_size * 96 / 72)))
     dot_w = dot_h  # square cell (width = height is ZPL default)
 
     inverse = d.get("design_inverse", False) or d.get("inverse", False)
@@ -111,6 +128,7 @@ def _convert_text(d: dict, dpi: int) -> str:
 
 def _convert_barcode(d: dict, dpi: int) -> str:
     """Convert a barcode element to ZPL."""
+    # ZPL ^FO = visual top-left = aabb_x, aabb_y (same as _convert_text).
     x = d.get("aabb_x", d.get("x", 0))
     y = d.get("aabb_y", d.get("y", 0))
     rotation = int(round(d.get("rotation", 0))) % 360
@@ -119,7 +137,8 @@ def _convert_barcode(d: dict, dpi: int) -> str:
     design   = (d.get("design") or "CODE 128").upper()
     text     = str(d.get("design_text") or "")
 
-    # Height: prefer explicit height in dots; fall back to cm → dots
+    # Height: use design_height_cm → dots, or explicit design_height_dots.
+    # design_height_cm is the bar-length set by the user in the editor.
     height_dots_raw = d.get("design_height_dots")
     if height_dots_raw is not None:
         height_dots = max(10, int(height_dots_raw))
@@ -327,11 +346,30 @@ def canvas_to_zpl(
         if not visible:
             continue
 
+        # ── Per-element debug log ──────────────────────────────────────────
+        _dbg_x    = d.get("x",      "N/A")
+        _dbg_y    = d.get("y",      "N/A")
+        _dbg_ax   = d.get("aabb_x", "N/A")
+        _dbg_ay   = d.get("aabb_y", "N/A")
+        _dbg_rot  = d.get("rotation", 0)
+        _dbg_name = d.get("name", "?")
+        _dbg_txt  = d.get("text", d.get("design_text", ""))[:20] if kind in ("text","barcode") else ""
+        print(f"  [ZPL-ELEM] {kind:7s} {_dbg_name!r:18s} "
+              f"x={_dbg_x}, y={_dbg_y} | aabb_x={_dbg_ax}, aabb_y={_dbg_ay} "
+              f"rot={_dbg_rot}  text={_dbg_txt!r}")
+
         try:
             if kind == "text":
-                lines.append(_convert_text(d, dpi))
+                zpl_elem = _convert_text(d, dpi)
+                # Show which ^FO was emitted
+                _fo_line = next((l for l in zpl_elem.split("\n") if l.startswith("^FO")), "")
+                print(f"           → {_fo_line}")
+                lines.append(zpl_elem)
             elif kind == "barcode":
-                lines.append(_convert_barcode(d, dpi))
+                zpl_elem = _convert_barcode(d, dpi)
+                _fo_line = next((l for l in zpl_elem.split("\n") if l.startswith("^FO")), "")
+                print(f"           → {_fo_line}")
+                lines.append(zpl_elem)
             elif kind == "line":
                 lines.append(_convert_line(d, dpi))
             elif kind == "rect":
