@@ -674,9 +674,10 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                 batch_ref="", wh_ref="",
             ))
 
-        elif dt == "LINK" and ed == "ENABLED":
+        elif dt == "LINK":
             fields.append(dict(
-                type="freetext", caption=cap, name=name,
+                type="freetext" if ed == "ENABLED" else "link_readonly",
+                caption=cap, name=name,
                 component_id=cid, link_to=e.get("design_link", ""),
                 system_value=None, column=col,
                 batch_ref="", wh_ref="",
@@ -1112,6 +1113,13 @@ class BarcodePrintPage(QWidget):
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
 
+            elif ftype == "link_readonly":
+                inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
+                inp.setPlaceholderText("Auto-filled")
+                inp.setStyleSheet(_AUTOFILL_STYLE)
+                _form_row(f"{cap} :", inp, self._fields_vbox)
+                self._field_widgets[name] = inp
+                
             elif ftype == "freetext":
                 inp = QLineEdit()
                 inp.setPlaceholderText(f"Enter {cap.lower()}…")
