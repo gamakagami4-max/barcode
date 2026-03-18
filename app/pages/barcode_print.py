@@ -916,6 +916,7 @@ class BarcodePrintPage(QWidget):
         self._row_dict: dict | None = None
         self._build_ui()
         self._print_fields_with_sep.setEnabled(False)
+        self._print_fields_with_sep.setVisible(False)
         self._btn_print.setEnabled(False)
 
     def _build_ui(self):
@@ -1181,6 +1182,7 @@ class BarcodePrintPage(QWidget):
         self._inp_code.setText(code)
         self._inp_name.setText(name or code)
         self._print_fields_with_sep.setEnabled(True)
+        self._print_fields_with_sep.setVisible(True)
         self._btn_print.setEnabled(True)
 
         usrm = ""
