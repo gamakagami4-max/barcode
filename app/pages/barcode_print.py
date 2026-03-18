@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog,
     QComboBox, QGraphicsScene, QGraphicsView,
     QGraphicsTextItem, QGraphicsLineItem, QGraphicsRectItem,
-    QCalendarWidget,
+    QCalendarWidget, QMessageBox,
 )
 
 
@@ -624,30 +624,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
     """
     Walk the element list and return field descriptors for the print-fields
     panel, ordered by design_column.
-
-    design_type rules
-    -----------------
-    LOOKUP  + editor != INVISIBLE            → picker row (browseable)
-    LINK    + editor == ENABLED              → editable free-text
-    LINK    + editor != ENABLED              → read-only (auto-filled by parent LOOKUP)
-    SYSTEM  + system_value == LOT NO
-             + editor != INVISIBLE           → date picker
-    SYSTEM  + editor == ENABLED (other SVs)  → free-text
-    BATCH NO + editor != INVISIBLE           → auto-filled (qty from batch_ref,
-                                               whs from wh_ref element)
-    MERGE / FIX / anything with INVISIBLE   → skip (never shown)
-
-    Descriptor keys
-    ---------------
-    type         : 'lookup' | 'date' | 'autofill' | 'freetext' | 'link_readonly'
-    caption      : label shown in UI
-    name         : element name  (canvas key for preview binding)
-    component_id : str  (LOOKUP only, for resolving LINKs)
-    link_to      : component_id of parent LOOKUP (LINK-derived fields)
-    system_value : str | None
-    column       : int  (for ordering)
-    batch_ref    : str  (BATCH NO only — name of the LOOKUP element that feeds qty)
-    wh_ref       : str  (BATCH NO only — name of the element that carries whs)
     """
     fields: list[dict] = []
 
@@ -663,7 +639,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         cid  = e.get("component_id", "")
         col  = int(e.get("design_column") or 1)
 
-        # Always skip invisible elements
         if ed == "INVISIBLE":
             continue
 
@@ -708,8 +683,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                 batch_ref=e.get("design_batch_no", ""),
                 wh_ref=e.get("design_wh", ""),
             ))
-
-        # MERGE, FIX, and anything else → invisible, skip
 
     fields.sort(key=lambda f: f["column"])
     return fields
@@ -794,7 +767,6 @@ class _CanvasPreview(QWidget):
         self._recompute_merges()
 
     def _recompute_merges(self):
-        # Snapshot current text of every tracked item
         all_vals: dict[str, str] = {
             name: item.toPlainText()
             for name, item in self._text_items.items()
@@ -809,7 +781,6 @@ class _CanvasPreview(QWidget):
 
     @staticmethod
     def _eval_merge(template: str, values: dict[str, str]) -> str:
-        """Replace {LabelN} tokens; '+' is a separator, not literal text."""
         def replacer(m):
             return values.get(m.group(1), "")
         return re.sub(r"\{(\w+)\}", replacer, template).replace("+", "")
@@ -856,12 +827,10 @@ class _CanvasPreview(QWidget):
         if rot != 0:
             br = item.boundingRect()
             item.setTransformOriginPoint(br.center()); item.setRotation(rot)
-            # After rotation, correct for the shift in the scene bounding box top-left
             item.setPos(0, 0)
             aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
             item.setPos(x - aabb0.left(), y - aabb0.top())
         else:
-            # No rotation — place directly at design coordinates
             item.setPos(x, y)
 
     def resizeEvent(self, event):
@@ -870,6 +839,16 @@ class _CanvasPreview(QWidget):
     def clear(self):
         self._scene.clear(); self._text_items.clear(); self._elements = []
         self._view.setVisible(False); self._placeholder.setVisible(True)
+
+    # ── Accessors for ZPL export ──────────────────────────────────────────────
+
+    @property
+    def canvas_w(self) -> int:
+        return self._canvas_w
+
+    @property
+    def canvas_h(self) -> int:
+        return self._canvas_h
 
 
 class _BarcodePreviewItem(QGraphicsRectItem):
@@ -900,6 +879,99 @@ class _BarcodePreviewItem(QGraphicsRectItem):
         painter.drawRect(r)
 
 
+# ── ZPL send helper ───────────────────────────────────────────────────────────
+
+def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
+    """
+    Attempt to send ZPL to the default printer via the OS spooler.
+
+    Strategy (in order):
+    1. Windows  → write to a temp .zpl file and copy to the printer share
+                  via win32print (if available) or subprocess `copy /b`.
+    2. Linux/macOS → lpr -l (raw mode) or lp -o raw.
+    3. Fallback → write to a .zpl file in the working directory so the
+                  caller can handle it manually.
+
+    Returns (success: bool, message: str).
+    """
+    import sys, tempfile, os, subprocess
+
+    # Duplicate ZPL for the requested copy count using ^PQ
+    # Insert ^PQ<n> before the final ^XZ
+    if copies > 1:
+        zpl = zpl.rstrip()
+        if zpl.endswith("^XZ"):
+            zpl = zpl[:-3] + f"^PQ{copies},0,1,Y\n^XZ"
+        else:
+            zpl = zpl + f"\n^PQ{copies},0,1,Y\n^XZ"
+
+    zpl_bytes = zpl.encode("utf-8")
+
+    # ── Windows ──────────────────────────────────────────────────────────────
+    if sys.platform == "win32":
+        try:
+            import win32print  # type: ignore
+            printer_name = win32print.GetDefaultPrinter()
+            hprinter = win32print.OpenPrinter(printer_name)
+            try:
+                hjob = win32print.StartDocPrinter(
+                    hprinter, 1,
+                    ("ZPL Label", None, "RAW"))
+                win32print.StartPagePrinter(hprinter)
+                win32print.WritePrinter(hprinter, zpl_bytes)
+                win32print.EndPagePrinter(hprinter)
+                win32print.EndDocPrinter(hprinter)
+            finally:
+                win32print.ClosePrinter(hprinter)
+            return True, f"Sent to printer: {printer_name}"
+        except ImportError:
+            pass  # win32print not available — fall back to `copy /b`
+        except Exception as exc:
+            return False, f"win32print error: {exc}"
+
+        # Fallback: write temp file and `copy /b` to default printer
+        try:
+            with tempfile.NamedTemporaryFile(
+                    suffix=".zpl", delete=False) as tf:
+                tf.write(zpl_bytes)
+                tmp_path = tf.name
+            result = subprocess.run(
+                ["cmd", "/c", f'copy /b "{tmp_path}" /d'],
+                capture_output=True, text=True, timeout=10)
+            os.unlink(tmp_path)
+            if result.returncode == 0:
+                return True, "Sent via copy /b"
+            return False, f"copy /b failed: {result.stderr.strip()}"
+        except Exception as exc:
+            return False, f"Fallback copy error: {exc}"
+
+    # ── Linux / macOS ─────────────────────────────────────────────────────────
+    try:
+        with tempfile.NamedTemporaryFile(
+                suffix=".zpl", delete=False) as tf:
+            tf.write(zpl_bytes)
+            tmp_path = tf.name
+
+        # Try lpr first (most widely available), then lp
+        for cmd in (["lpr", "-l", tmp_path], ["lp", "-o", "raw", tmp_path]):
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    os.unlink(tmp_path)
+                    return True, f"Sent via {cmd[0]}"
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+
+        # Neither worked — leave the file so the user can print manually
+        return False, f"No printer command available. ZPL saved to: {tmp_path}"
+
+    except Exception as exc:
+        return False, f"Print error: {exc}"
+
+
 # ── Main page ─────────────────────────────────────────────────────────────────
 
 class BarcodePrintPage(QWidget):
@@ -909,12 +981,12 @@ class BarcodePrintPage(QWidget):
         self._row_dict: dict | None = None
         self._elements: list[dict] = []
         self._field_descriptors: list[dict] = []
-        # element name → current displayed text
         self._current_values: dict[str, str] = {}
-        # element name → input widget  (only for visible fields)
         self._field_widgets: dict[str, QWidget] = {}
-        # component_id → element name  (for resolving LINK → LOOKUP)
         self._cid_to_name: dict[str, str] = {}
+        # Stored usrm/itrm for ZPL export (set in load_design_by_code)
+        self._usrm_json: str = ""
+        self._itrm_json: str = ""
         self._build_ui()
         self._btn_print.setEnabled(False)
 
@@ -967,14 +1039,12 @@ class BarcodePrintPage(QWidget):
         self._card_layout.addWidget(sep1)
         self._card_layout.addWidget(self._build_printer_section())
 
-        # Separator shown only when there are dynamic fields
         self._sep_fields = QFrame(); self._sep_fields.setFrameShape(QFrame.HLine)
         self._sep_fields.setFixedHeight(1)
         self._sep_fields.setStyleSheet(f"background: {_BORDER}; border: none;")
         self._sep_fields.setVisible(False)
         self._card_layout.addWidget(self._sep_fields)
 
-        # Dynamic print-fields container
         self._fields_container = QWidget()
         self._fields_container.setStyleSheet("background: transparent;")
         self._fields_container.setVisible(False)
@@ -1067,7 +1137,6 @@ class BarcodePrintPage(QWidget):
         self._clear_dynamic_fields()
         self._elements = elements
 
-        # Build component_id → name lookup (used for LINK resolution)
         for e in elements:
             if e.get("type") == "text" and e.get("component_id"):
                 self._cid_to_name[e["component_id"]] = e.get("name", "")
@@ -1084,7 +1153,6 @@ class BarcodePrintPage(QWidget):
             ftype = fd["type"]
 
             if ftype == "lookup":
-                # Read-only + browse button
                 inp = QLineEdit()
                 inp.setPlaceholderText(f"Browse to select {cap.lower()}…")
                 inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
@@ -1108,7 +1176,6 @@ class BarcodePrintPage(QWidget):
                 dw_l.addWidget(cal); dw_l.addStretch()
                 _form_row(f"{cap} :", date_w, self._fields_vbox)
                 self._field_widgets[name] = cal
-                # Push today's date into the preview immediately
                 self._on_field_changed(name, cal.currentText())
 
             elif ftype == "autofill":
@@ -1133,7 +1200,6 @@ class BarcodePrintPage(QWidget):
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
 
-        # PRINT QTY is always the last field regardless of design
         self._spin_print_qty = make_spin(1, 9999, 1); self._spin_print_qty.setFixedWidth(100)
         pq_w = QWidget(); pq_w.setStyleSheet("background: transparent; border: none;")
         pql = QHBoxLayout(pq_w); pql.setContentsMargins(0, 0, 0, 0)
@@ -1146,12 +1212,10 @@ class BarcodePrintPage(QWidget):
     # ── Value change propagation ──────────────────────────────────────────────
 
     def _on_field_changed(self, name: str, text: str):
-        """Single entry point for all value changes → updates preview."""
         self._current_values[name] = text
         self._preview.set_values({name: text})
 
     def _on_browse_lookup(self, fd: dict):
-        """Open master-item picker for any LOOKUP field."""
         if not hasattr(self, "_master_item_picker"):
             self._master_item_picker = _MasterItemPickerPopup(self)
             self._master_item_picker.item_picked.connect(self._on_master_item_picked)
@@ -1160,12 +1224,6 @@ class BarcodePrintPage(QWidget):
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
                                 name: str, qty: str, whs: str):
-        """
-        Distribute picked values to:
-          • The LOOKUP element  → part_no
-          • LINK elements pointing at this LOOKUP → resolved via design_result
-          • BATCH NO elements that reference this LOOKUP by name → qty / whs
-        """
         fd = getattr(self, "_active_lookup_fd", None)
         if fd is None:
             return
@@ -1173,10 +1231,7 @@ class BarcodePrintPage(QWidget):
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
 
-        # Mapping from design_result field name → resolved value.
-        # Covers all known aliases used in design_result across different designs.
         result_map: dict[str, str] = {
-            # generic aliases
             "mmcsap":    item_code,
             "item_code": item_code,
             "itemcode":  item_code,
@@ -1186,7 +1241,6 @@ class BarcodePrintPage(QWidget):
             "quantity":  qty,
             "whs":       whs,
             "warehouse": whs,
-            # design-specific mm* keys
             "mmitno":    item_code,
             "mmcont":    qty,
             "mmwho":     whs,
@@ -1194,8 +1248,6 @@ class BarcodePrintPage(QWidget):
 
         updates: dict[str, str] = {}
 
-        # DEBUG — prints to console so you can verify design_result values.
-        # Remove this block once field mapping is confirmed correct.
         for e in self._elements:
             if (e.get("type") == "text"
                     and (e.get("design_type") or "").upper() == "LINK"
@@ -1208,13 +1260,11 @@ class BarcodePrintPage(QWidget):
         print(f"[DEBUG] picked → part_no={part_no!r} item_code={item_code!r} "
               f"qty={qty!r} whs={whs!r}")
 
-        # 1. Set the LOOKUP widget itself to part_no
         updates[lookup_name] = part_no
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
             w.setText(part_no)
 
-        # 2. Walk all elements for LINKs and BATCH NOs tied to this LOOKUP
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -1223,7 +1273,6 @@ class BarcodePrintPage(QWidget):
             res_fld  = (e.get("design_result") or "").lower().strip()
 
             if dt == "LINK" and e.get("design_link", "") == lookup_cid:
-                # Resolve via design_result; fall back to part_no if unknown
                 val = result_map.get(res_fld, part_no)
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
@@ -1253,7 +1302,6 @@ class BarcodePrintPage(QWidget):
         w = QWidget(); w.setStyleSheet("background: #EEF2F7;")
         vbox = QVBoxLayout(w); vbox.setContentsMargins(10, 16, 16, 16); vbox.setSpacing(10)
 
-        # ── Preview card ──────────────────────────────────────────────────────
         preview_card = QFrame()
         preview_card.setStyleSheet(
             "QFrame { background: #DCE5ED; border: 1px solid #C8D5E3; border-radius: 12px; }")
@@ -1279,7 +1327,6 @@ class BarcodePrintPage(QWidget):
 
         vbox.addWidget(preview_card, 5)
 
-        # ── Part No. Print card ───────────────────────────────────────────────
         part_card = QFrame()
         part_card.setStyleSheet(
             f"QFrame {{ background: #DCE5ED; border: 1px solid {_BORDER}; border-radius: 12px; }}")
@@ -1330,14 +1377,219 @@ class BarcodePrintPage(QWidget):
         dname = (row_dict.get("name", "") if row_dict else "") or code
         self.load_design_by_code(code, dname, row_dict)
 
+    # ── ZPL module loader ─────────────────────────────────────────────────────
+
+    def _load_zpl_converter(self):
+        """
+        Load app/services/zpl_generator.py using a path relative to this file.
+
+        Project layout:
+            app/
+              pages/
+                barcode_print.py   <- __file__
+              services/
+                zpl_generator.py   <- target
+
+        Falls back to sys.modules cache and named-import variants so the code
+        still works if the file is renamed or the package is restructured.
+
+        Returns the module object, or None (error dialog already shown).
+        """
+        import sys
+        import importlib
+        import importlib.util
+        from pathlib import Path
+
+        here = Path(__file__).resolve().parent   # app/pages/
+
+        # Candidate paths in priority order
+        candidates = [
+            here.parent / "services" / "zpl_generator.py",  # app/services/zpl_generator.py  (primary)
+            here / "zpl_generator.py",                       # app/pages/zpl_generator.py     (fallback)
+            here / "zpl_converter.py",                       # app/pages/zpl_converter.py     (fallback)
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                spec = importlib.util.spec_from_file_location(
+                    candidate.stem, str(candidate))
+                mod = importlib.util.module_from_spec(spec)
+                try:
+                    spec.loader.exec_module(mod)
+                    return mod
+                except Exception as exc:
+                    QMessageBox.critical(
+                        self, "ZPL Load Error",
+                        f"Found {candidate.name} but failed to load it:\n{exc}")
+                    return None
+
+        # Already cached in sys.modules (imported elsewhere in the app)
+        for cache_key in ("zpl_generator", "app.services.zpl_generator",
+                          "zpl_converter", "app.services.zpl_converter"):
+            if cache_key in sys.modules:
+                return sys.modules[cache_key]
+
+        # Last resort: named import
+        for mod_path in ("app.services.zpl_generator", "services.zpl_generator",
+                         "app.services.zpl_converter", "services.zpl_converter"):
+            try:
+                return importlib.import_module(mod_path)
+            except ImportError:
+                continue
+
+        expected = here.parent / "services" / "zpl_generator.py"
+        QMessageBox.critical(
+            self, "Missing Module",
+            f"Cannot find zpl_generator.py.\n\n"
+            f"Expected location:\n  {expected}\n\n"
+            "Make sure app/services/zpl_generator.py exists.")
+        return None
+
+    # ── Print button handler ──────────────────────────────────────────────────
+
     def _on_print(self):
+        """
+        Convert the current canvas + live field values to ZPL and send to printer.
+
+        Flow:
+        1. Validate — design must be loaded.
+        2. Resolve MERGE elements so their final text is baked into the export.
+        3. Build value_overrides from _current_values (all dynamic fields filled so far).
+        4. Call canvas_to_zpl with the correct DPI and margin offsets.
+        5. Send ZPL to the OS printer spooler (copies = spin_print_qty).
+        6. Show success / error feedback in a message box.
+        """
         code = self._inp_code.text().strip()
         if not code:
+            QMessageBox.warning(self, "No Design", "Please select a design first.")
             return
-        try: speed = self._combo_speed.currentText()
-        except AttributeError: speed = "3"
-        qty    = self._spin_print_qty.value()
-        values = dict(self._current_values)
+
+        if not self._usrm_json:
+            QMessageBox.warning(self, "No Canvas", "Design canvas is empty — nothing to print.")
+            return
+
+        # ── Resolve MERGE tokens so they appear in the final ZPL ─────────────
+        # Snapshot the current displayed values for every tracked text item
+        merged_values: dict[str, str] = dict(self._current_values)
+        all_text_vals: dict[str, str] = {
+            name: item.toPlainText()
+            for name, item in self._preview._text_items.items()
+        }
+        # Include MERGE results (computed by _CanvasPreview._recompute_merges)
+        for e in self._elements:
+            if (e.get("type") == "text"
+                    and (e.get("design_type") or "").upper() == "MERGE"):
+                ename = e.get("name", "")
+                if ename in all_text_vals:
+                    merged_values[ename] = all_text_vals[ename]
+
+        # Also carry static text for elements not covered by dynamic fields
+        for e in self._elements:
+            if e.get("type") == "text":
+                ename = e.get("name", "")
+                if ename and ename not in merged_values:
+                    merged_values[ename] = str(e.get("text", ""))
+
+        # ── Printer settings ──────────────────────────────────────────────────
+        dpi   = 300 if self._chk_dpi.isChecked() else 203
+        try:
+            copies = self._spin_print_qty.value()
+        except AttributeError:
+            copies = 1
+
+        margin_left = self._spin_ml.value()
+        margin_top  = self._spin_mt.value()
+
+        # Apply margin offsets to canvas coordinates if non-zero
+        # We do this by shifting the usrm elements before converting;
+        # easiest approach is to adjust via ^LH (label home offset) in ZPL.
+        try:
+            speed = self._combo_speed.currentText()
+        except AttributeError:
+            speed = "3"
+
+        # ── ZPL conversion ────────────────────────────────────────────────────
+        # Load zpl_converter from the same directory as this file so the import
+        # works regardless of how the package is installed or run.
+        zpl_mod = self._load_zpl_converter()
+        if zpl_mod is None:
+            return   # error dialog already shown by _load_zpl_converter
+
+        # Resolve the conversion function — zpl_generator.py may use a different
+        # name than zpl_converter.py. Try known names in order.
+        canvas_to_zpl = (
+            getattr(zpl_mod, "canvas_to_zpl", None)
+            or getattr(zpl_mod, "generate_zpl", None)
+            or getattr(zpl_mod, "zpl_generate", None)
+            or getattr(zpl_mod, "convert", None)
+        )
+        if canvas_to_zpl is None:
+            QMessageBox.critical(
+                self, "ZPL Error",
+                f"zpl_generator.py does not expose a recognised entry-point function.\n"
+                "Expected one of: canvas_to_zpl, generate_zpl, zpl_generate, convert.")
+            return
+
+        # _px_to_dots is used for margin offset calculation;
+        # define a local fallback if the service module does not export it.
+        _px_to_dots = getattr(zpl_mod, "_px_to_dots", None)
+        if _px_to_dots is None:
+            def _px_to_dots(px: float, dpi: int = 203) -> int:
+                return max(1, int(round(px * dpi / 96)))
+
+        try:
+            zpl = canvas_to_zpl(
+                canvas_json=self._usrm_json,
+                canvas_w=self._preview.canvas_w,
+                canvas_h=self._preview.canvas_h,
+                dpi=dpi,
+                label_name=code,
+                value_overrides=merged_values,
+            )
+
+            # Inject ^LH for margin offsets (dots) right after ^XA
+            if margin_left != 0 or margin_top != 0:
+                lh_dots_x = _px_to_dots(margin_left, dpi)
+                lh_dots_y = _px_to_dots(margin_top,  dpi)
+                zpl = zpl.replace("^LH0,0", f"^LH{lh_dots_x},{lh_dots_y}", 1)
+
+        except Exception as exc:
+            QMessageBox.critical(self, "ZPL Error",
+                                 f"Failed to generate ZPL:\n{exc}")
+            return
+
+        # ── Send to printer ───────────────────────────────────────────────────
+        self._btn_print.setEnabled(False)
+        self._btn_print.setText("Printing…")
+        QApplication.processEvents()
+
+        ok, msg = _send_zpl_to_printer(zpl, copies=copies)
+
+        self._btn_print.setEnabled(True)
+        self._btn_print.setText("Print")
+
+        if ok:
+            QMessageBox.information(
+                self, "Print OK",
+                f"Label sent successfully.\n{msg}\n\n"
+                f"Design: {code}   Copies: {copies}   DPI: {dpi}")
+        else:
+            # Show the ZPL in the error dialog so the user can copy/send manually
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Print Failed — ZPL Output")
+            dlg.setMinimumSize(560, 420)
+            v = QVBoxLayout(dlg)
+            v.addWidget(QLabel(f"<b>Could not send to printer:</b> {msg}"))
+            v.addWidget(QLabel("You can copy the ZPL below and send it manually:"))
+            txt = QLineEdit(); txt.setReadOnly(True); txt.setText(zpl[:200] + "…")
+            txt.setStyleSheet("font-family: monospace; font-size: 10px;")
+            ta = __import__("PySide6.QtWidgets", fromlist=["QPlainTextEdit"]).QPlainTextEdit()
+            ta.setReadOnly(True); ta.setPlainText(zpl)
+            ta.setStyleSheet("font-family: monospace; font-size: 10px;")
+            v.addWidget(ta, 1)
+            btn_close = QPushButton("Close"); btn_close.clicked.connect(dlg.accept)
+            v.addWidget(btn_close)
+            dlg.exec()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -1355,7 +1607,10 @@ class BarcodePrintPage(QWidget):
             usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
             itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
 
-        # Parse elements first so field builder and preview share the same list
+        # Store for ZPL export
+        self._usrm_json = usrm
+        self._itrm_json = itrm
+
         try:
             elements = _json.loads(usrm) if usrm else []
         except Exception:
@@ -1369,7 +1624,6 @@ class BarcodePrintPage(QWidget):
 
         self._build_dynamic_fields(elements)
 
-        # Seed the preview with the original static text values from the JSON
         initial: dict[str, str] = {
             e["name"]: str(e.get("text", ""))
             for e in elements
@@ -1385,6 +1639,8 @@ class BarcodePrintPage(QWidget):
                 usrm = layout.get("usrm", "")
                 itrm = layout.get("itrm", "")
                 if usrm:
+                    self._usrm_json = usrm  # also store the fetched usrm
+                    self._itrm_json = itrm
                     self._preview.set_design(usrm, itrm)
                     try:
                         elements = _json.loads(usrm)
