@@ -629,6 +629,7 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
     -----------------
     LOOKUP  + editor != INVISIBLE            → picker row (browseable)
     LINK    + editor == ENABLED              → editable free-text
+    LINK    + editor != ENABLED              → read-only (auto-filled by parent LOOKUP)
     SYSTEM  + system_value == LOT NO
              + editor != INVISIBLE           → date picker
     SYSTEM  + editor == ENABLED (other SVs)  → free-text
@@ -638,7 +639,7 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
 
     Descriptor keys
     ---------------
-    type         : 'lookup' | 'date' | 'autofill' | 'freetext'
+    type         : 'lookup' | 'date' | 'autofill' | 'freetext' | 'link_readonly'
     caption      : label shown in UI
     name         : element name  (canvas key for preview binding)
     component_id : str  (LOOKUP only, for resolving LINKs)
@@ -849,14 +850,19 @@ class _CanvasPreview(QWidget):
 
         if item is None:
             return
+
         item.setZValue(z); item.setVisible(vis)
+        self._scene.addItem(item)
         if rot != 0:
             br = item.boundingRect()
             item.setTransformOriginPoint(br.center()); item.setRotation(rot)
-        item.setPos(0, 0)
-        self._scene.addItem(item)
-        aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
-        item.setPos(x - aabb0.left(), y - aabb0.top())
+            # After rotation, correct for the shift in the scene bounding box top-left
+            item.setPos(0, 0)
+            aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
+            item.setPos(x - aabb0.left(), y - aabb0.top())
+        else:
+            # No rotation — place directly at design coordinates
+            item.setPos(x, y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1000,7 +1006,7 @@ class BarcodePrintPage(QWidget):
 
         self._inp_name = QLineEdit(); self._inp_name.setReadOnly(True)
         self._inp_name.setFocusPolicy(Qt.NoFocus)
-        self._inp_name.setPlaceholderText("Auto-filled from design code")
+        self._inp_name.setPlaceholderText("")
         self._inp_name.setStyleSheet(
             MODERN_INPUT_STYLE + "QLineEdit { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }")
         _form_row("NAME :", self._inp_name, layout)
@@ -1109,17 +1115,17 @@ class BarcodePrintPage(QWidget):
 
             elif ftype == "autofill":
                 inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
-                inp.setPlaceholderText("Auto-filled"); inp.setStyleSheet(_AUTOFILL_STYLE)
+                inp.setPlaceholderText(""); inp.setStyleSheet(_AUTOFILL_STYLE)
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
 
             elif ftype == "link_readonly":
                 inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
-                inp.setPlaceholderText("Auto-filled")
+                inp.setPlaceholderText("")
                 inp.setStyleSheet(_AUTOFILL_STYLE)
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
-                
+
             elif ftype == "freetext":
                 inp = QLineEdit()
                 inp.setPlaceholderText(f"Enter {cap.lower()}…")
@@ -1169,15 +1175,40 @@ class BarcodePrintPage(QWidget):
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
 
-        # Mapping from design_result field name → resolved value
+        # Mapping from design_result field name → resolved value.
+        # Covers all known aliases used in design_result across different designs.
         result_map: dict[str, str] = {
-            "mmcsap":   item_code,
-            "part_no":  part_no,
-            "qty":      qty,
-            "whs":      whs,
+            # generic aliases
+            "mmcsap":    item_code,
+            "item_code": item_code,
+            "itemcode":  item_code,
+            "part_no":   part_no,
+            "partno":    part_no,
+            "qty":       qty,
+            "quantity":  qty,
+            "whs":       whs,
+            "warehouse": whs,
+            # design-specific mm* keys
+            "mmitno":    item_code,
+            "mmcont":    qty,
+            "mmwho":     whs,
         }
 
         updates: dict[str, str] = {}
+
+        # DEBUG — prints to console so you can verify design_result values.
+        # Remove this block once field mapping is confirmed correct.
+        for e in self._elements:
+            if (e.get("type") == "text"
+                    and (e.get("design_type") or "").upper() == "LINK"
+                    and e.get("design_link", "") == lookup_cid):
+                print(f"[DEBUG] LINK element: name={e.get('name')!r} "
+                      f"design_result={e.get('design_result')!r} "
+                      f"design_link={e.get('design_link')!r}")
+        print(f"[DEBUG] lookup_cid={lookup_cid!r}  "
+              f"result_map keys={list(result_map.keys())}")
+        print(f"[DEBUG] picked → part_no={part_no!r} item_code={item_code!r} "
+              f"qty={qty!r} whs={whs!r}")
 
         # 1. Set the LOOKUP widget itself to part_no
         updates[lookup_name] = part_no
@@ -1191,11 +1222,11 @@ class BarcodePrintPage(QWidget):
                 continue
             dt       = (e.get("design_type") or "").upper()
             ename    = e.get("name", "")
-            res_fld  = (e.get("design_result") or "").lower()
+            res_fld  = (e.get("design_result") or "").lower().strip()
 
             if dt == "LINK" and e.get("design_link", "") == lookup_cid:
-                # Resolve via design_result; fall back to item_code
-                val = result_map.get(res_fld, item_code)
+                # Resolve via design_result; fall back to part_no if unknown
+                val = result_map.get(res_fld, part_no)
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
@@ -1216,7 +1247,7 @@ class BarcodePrintPage(QWidget):
 
         self._current_values.update(updates)
         self._preview.set_values(updates)
-        self._lbl_item_code.setText(item_code)
+        self._lbl_item_code.setText(part_no)
 
     # ── Right panel ───────────────────────────────────────────────────────────
 
@@ -1244,7 +1275,7 @@ class BarcodePrintPage(QWidget):
         vbox.addSpacing(4); vbox.addWidget(sep); vbox.addSpacing(12)
 
         th = QHBoxLayout()
-        tt = QLabel("Item Code")
+        tt = QLabel("Part No. Print")
         tt.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_TEXT};")
         th.addWidget(tt); th.addStretch()
         vbox.addLayout(th); vbox.addSpacing(6)
