@@ -478,12 +478,43 @@ class _DesignPickerPopup(QDialog):
 class _MasterItemPickerPopup(QDialog):
     item_picked = Signal(str, str, str, str, str)  # part_no, item_code, name, qty, whs
 
+    # Maps mm* field names → actual repo dict keys
+    _MM_TO_KEY: dict[str, str] = {
+        "mmcsap": "sap_code",
+        "mmitno": "pk",
+        "mmitds": "description",
+        "mmpono": "po_no",
+        "mmbrad": "brand",
+        "mmwho":  "warehouse",
+        "mmtyp1": "type1",
+        "mmtyp2": "type2",
+        "mmweig": "weight",
+        "mmcont": "qty",
+        "mmumcd": "uom",
+        "mmbupc": "upc",
+        "mmitc1": "itc1",
+        "mmitc2": "itc2",
+        "mmitc3": "itc3",
+        "mmitc4": "itc4",
+        "mmitc5": "itc5",
+        "mmitc6": "itc6",
+        "mmitc7": "itc7",
+        "mmitc8": "itc8",
+        "mmadby": "added_by",
+        "mmaddt": "added_at",
+        "mmchby": "changed_by",
+        "mmchdt": "changed_at",
+        "mmchno": "changed_no",
+    }
+
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setWindowTitle("Select Master Item")
         self.setMinimumSize(680, 500); self.setModal(True)
         self.setStyleSheet(f"QDialog {{ background: {_WHITE}; }}")
-        self._records: list[dict] = []; self._build_ui()
+        self._records: list[dict] = []
+        self._dyn_columns: list[str] = []
+        self._build_ui()
 
     def _build_ui(self):
         vbox = QVBoxLayout(self); vbox.setContentsMargins(0, 0, 0, 0); vbox.setSpacing(0)
@@ -511,17 +542,13 @@ class _MasterItemPickerPopup(QDialog):
         col_hdr = QWidget()
         col_hdr.setStyleSheet(f"background: #F1F5F9; border-bottom: 1px solid {_BORDER};")
         ch = QHBoxLayout(col_hdr); ch.setContentsMargins(16, 7, 16, 7); ch.setSpacing(0)
-        for text, w in [("PART NO PRINT", 160), ("ITEM CODE", 160), ("NAME", None)]:
-            l = QLabel(text)
-            l.setStyleSheet(
-                f"color: {_LEGACY_BLUE}; font-size: 9px; font-weight: 700; "
-                "letter-spacing: 0.5px; background: transparent;")
-            if w: l.setFixedWidth(w)
-            ch.addWidget(l)
+        self._col_hdr_widget = col_hdr
+        self._col_hdr_layout = ch
         vbox.addWidget(col_hdr)
 
         self._list = QListWidget(); self._list.setFrameShape(QFrame.NoFrame)
-        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._list.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._list.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list.setStyleSheet(f"""
             QListWidget {{ background: {_WHITE}; border: none; font-size: 12px; color: {_TEXT}; outline: none; }}
@@ -568,28 +595,40 @@ class _MasterItemPickerPopup(QDialog):
         except Exception:
             self._records = []
 
+    def _rebuild_column_headers(self):
+        while self._col_hdr_layout.count():
+            item = self._col_hdr_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
+        for col in cols:
+            l = QLabel(col.upper())
+            l.setStyleSheet(
+                f"color: {_LEGACY_BLUE}; font-size: 9px; font-weight: 700; "
+                "letter-spacing: 0.5px; background: transparent; min-width: 140px;")
+            self._col_hdr_layout.addWidget(l)
+        self._col_hdr_layout.addStretch()
+
     def _rebuild_list(self, records: list[dict]):
         self._list.clear()
+        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
         for r in records:
-            part_no   = str(r.get("po_no")      or "")
-            item_code = str(r.get("pk")          or "")
-            name      = str(r.get("description") or "")
-            qty       = str(r.get("qty")         or "0")
-            whs       = str(r.get("warehouse")   or "")
             item = QListWidgetItem()
-            item.setData(Qt.UserRole, (part_no, item_code, name, qty, whs))
+            item.setData(Qt.UserRole, r)
             row_w = QWidget(); row_w.setStyleSheet("background: transparent;")
+            row_w.setMinimumWidth(len(cols) * 140)
             rl = QHBoxLayout(row_w); rl.setContentsMargins(16, 9, 16, 9); rl.setSpacing(0)
-            for text, fw in [(part_no, 160), (item_code, 160)]:
-                lbl = QLabel(text)
+            for i, col in enumerate(cols):
+                key = self._MM_TO_KEY.get(col, col)
+                val = str(r.get(key) or "")
+                lbl = QLabel(val)
                 lbl.setStyleSheet(
-                    f"font-size: 12px; font-weight: 600; color: {_LEGACY_BLUE}; "
-                    f"background: transparent; min-width: {fw}px; max-width: {fw}px;")
+                    f"font-size: 12px; font-weight: {'600' if i == 0 else '400'}; "
+                    f"color: {_LEGACY_BLUE if i == 0 else _TEXT}; "
+                    f"background: transparent; min-width: 140px;")
                 rl.addWidget(lbl)
-            name_lbl = QLabel(name)
-            name_lbl.setStyleSheet(f"font-size: 12px; color: {_TEXT}; background: transparent;")
-            rl.addWidget(name_lbl, 1)
-            item.setSizeHint(QSize(0, 38))
+            rl.addStretch()
+            item.setSizeHint(QSize(len(cols) * 140, 38))
             self._list.addItem(item); self._list.setItemWidget(item, row_w)
         count = len(records)
         self._footer.setText(f"{count} record{'s' if count != 1 else ''}")
@@ -597,9 +636,12 @@ class _MasterItemPickerPopup(QDialog):
 
     def _filter(self, q: str):
         q = q.lower()
-        if not q: self._rebuild_list(self._records); return
+        if not q:
+            self._rebuild_list(self._records); return
+        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
         filtered = [r for r in self._records
-                    if q in str(r.get("po_no", "")).lower()
+                    if any(q in str(r.get(self._MM_TO_KEY.get(col, col), "")).lower() for col in cols)
+                    or q in str(r.get("po_no", "")).lower()
                     or q in str(r.get("pk", "")).lower()
                     or q in str(r.get("description", "")).lower()]
         self._rebuild_list(filtered)
@@ -609,11 +651,19 @@ class _MasterItemPickerPopup(QDialog):
     def _on_select(self):
         items = self._list.selectedItems()
         if not items: return
-        data = items[0].data(Qt.UserRole)
-        if data:
-            self.item_picked.emit(*data); self.accept()
+        r = items[0].data(Qt.UserRole)
+        if r:
+            part_no   = str(r.get("po_no")      or "")
+            item_code = str(r.get("sap_code")    or r.get("pk") or "")
+            name      = str(r.get("description") or "")
+            qty       = str(r.get("qty")         or "0")
+            whs       = str(r.get("warehouse")   or "")
+            self.item_picked.emit(part_no, item_code, name, qty, whs)
+            self.accept()
 
-    def open_modal(self):
+    def open_modal(self, dyn_columns: list[str] | None = None):
+        self._dyn_columns = dyn_columns or []
+        self._rebuild_column_headers()
         self._load_records(); self._search.clear()
         self._rebuild_list(self._records); self._search.setFocus(); self.exec()
 
@@ -673,8 +723,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
 
         elif dt == "SYSTEM":
             if sv == "LOT NO":
-                # ── FIX 1: LOT NO is readonly autofill (value comes from DB
-                #    function), NOT an editable date picker.
                 fields.append(dict(
                     type="autofill", caption=cap, name=name,
                     component_id=cid, link_to=None,
@@ -715,7 +763,6 @@ def _call_db_function(func_name: str, *args) -> str:
         conn = get_connection()
         cur = conn.cursor()
 
-        # Build args with explicit cast for datetime objects
         cast_args = []
         for a in args:
             if isinstance(a, datetime):
@@ -724,8 +771,6 @@ def _call_db_function(func_name: str, *args) -> str:
                 cast_args.append(a)
 
         placeholders = ", ".join(["%s::timestamp"] * len(cast_args))
-
-        # Prefix with barcodesap schema where the lot_no_* functions live
         cur.execute(f"SELECT barcodesap.{func_name}({placeholders})", cast_args)
         row = cur.fetchone()
         cur.close()
@@ -737,7 +782,6 @@ def _call_db_function(func_name: str, *args) -> str:
 
 # ── System value resolver ─────────────────────────────────────────────────────
 
-# Maps design_system_extra → DB function name for LOT NO type
 _SYSTEM_EXTRA_TO_FUNC: dict[str, str] = {
     "SAKURA":        "lot_no_sakura",
     "SAKURA_NEW":    "lot_no_sakura_new",
@@ -758,13 +802,6 @@ _SYSTEM_EXTRA_TO_FUNC: dict[str, str] = {
 
 
 def _resolve_system_value(design_system_value: str, design_system_extra: str) -> str:
-    """
-    Resolve a SYSTEM element's display value.
-    LOT NO   → call the matching DB function with the current timestamp.
-    DATETIME → format current time using design_system_extra as the format string.
-    DATE     → return today formatted as DD-Mon-YYYY.
-    USER ID  → return current logged-in user (falls back to empty string).
-    """
     sv  = (design_system_value or "").upper().strip()
     ext = (design_system_extra or "").upper().strip()
 
@@ -802,11 +839,6 @@ def _resolve_system_value(design_system_value: str, design_system_extra: str) ->
 # ── Live canvas preview ───────────────────────────────────────────────────────
 
 class _CanvasPreview(QWidget):
-    """
-    Renders the design at 1:1 scale, scrollable.
-    Call set_values({element_name: text}) to update live.
-    MERGE elements are recomputed automatically.
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self._elements: list[dict] = []
@@ -868,7 +900,6 @@ class _CanvasPreview(QWidget):
             QPen(QColor("#CBD5E1"), 1), QBrush(QColor("#FFFFFF")))
         bg.setZValue(-1000)
 
-        # ── Resolve SYSTEM values from DB functions before rendering ──────
         for e in self._elements:
             if (e.get("type") == "text"
                     and (e.get("design_type") or "").upper() == "SYSTEM"):
@@ -886,7 +917,6 @@ class _CanvasPreview(QWidget):
         self._view.resetTransform()
 
     def set_values(self, name_to_text: dict[str, str]):
-        """Push new values into named text elements and recompute MERGEs."""
         for name, text in name_to_text.items():
             item = self._text_items.get(name)
             if item is not None:
@@ -1108,13 +1138,13 @@ class BarcodePrintPage(QWidget):
 
         left_w = self._build_left()
         right_w = self._build_right()
-        left_w.setMinimumWidth(320)   # adjust to taste
-        right_w.setMinimumWidth(260)  # adjust to taste
+        left_w.setMinimumWidth(320)
+        right_w.setMinimumWidth(260)
 
         spl.addWidget(left_w)
         spl.addWidget(right_w)
-        spl.setCollapsible(0, False)  # left panel cannot collapse
-        spl.setCollapsible(1, False)  # right panel cannot collapse
+        spl.setCollapsible(0, False)
+        spl.setCollapsible(1, False)
         spl.setSizes([640, 360])
         root.addWidget(spl)
 
@@ -1305,8 +1335,6 @@ class BarcodePrintPage(QWidget):
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
 
-        # ── FIX 2: Resolve SYSTEM values (LOT NO, DATE, DATETIME, USER ID)
-        #    and push them into the readonly autofill widgets + preview.
         for e in elements:
             if e.get("type") != "text":
                 continue
@@ -1345,7 +1373,35 @@ class BarcodePrintPage(QWidget):
             self._master_item_picker = _MasterItemPickerPopup(self)
             self._master_item_picker.item_picked.connect(self._on_master_item_picked)
         self._active_lookup_fd = fd
-        self._master_item_picker.open_modal()
+        lookup_elem = next(
+            (e for e in self._elements
+             if e.get("name") == fd["name"] and e.get("type") == "text"),
+            None,
+        )
+        # Build column list from LOOKUP's own result + all linked LINK results
+        linked_results: list[str] = []
+        lookup_cid = fd.get("component_id", "")
+
+        if lookup_elem:
+            own_result = (lookup_elem.get("design_result") or "").strip()
+            if own_result:
+                linked_results.append(own_result)
+
+        for e in self._elements:
+            if (e.get("type") == "text"
+                    and (e.get("design_type") or "").upper() == "LINK"
+                    and e.get("design_link", "") == lookup_cid):
+                res = (e.get("design_result") or "").strip()
+                if res and res not in linked_results:
+                    linked_results.append(res)
+
+        # Fall back to design_field if nothing found
+        if not linked_results and lookup_elem:
+            raw = (lookup_elem.get("design_field") or "").strip()
+            if raw:
+                linked_results = [f.strip() for f in raw.split(",") if f.strip()]
+
+        self._master_item_picker.open_modal(dyn_columns=linked_results)
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
                                 name: str, qty: str, whs: str):
@@ -1372,18 +1428,6 @@ class BarcodePrintPage(QWidget):
         }
 
         updates: dict[str, str] = {}
-
-        for e in self._elements:
-            if (e.get("type") == "text"
-                    and (e.get("design_type") or "").upper() == "LINK"
-                    and e.get("design_link", "") == lookup_cid):
-                print(f"[DEBUG] LINK element: name={e.get('name')!r} "
-                      f"design_result={e.get('design_result')!r} "
-                      f"design_link={e.get('design_link')!r}")
-        print(f"[DEBUG] lookup_cid={lookup_cid!r}  "
-              f"result_map keys={list(result_map.keys())}")
-        print(f"[DEBUG] picked → part_no={part_no!r} item_code={item_code!r} "
-              f"qty={qty!r} whs={whs!r}")
 
         updates[lookup_name] = part_no
         w = self._field_widgets.get(lookup_name)
