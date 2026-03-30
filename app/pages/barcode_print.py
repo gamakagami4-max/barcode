@@ -1105,8 +1105,16 @@ class BarcodePrintPage(QWidget):
         spl = QSplitter(Qt.Horizontal)
         spl.setHandleWidth(1)
         spl.setStyleSheet(f"QSplitter::handle {{ background: {_BORDER}; }}")
-        spl.addWidget(self._build_left())
-        spl.addWidget(self._build_right())
+
+        left_w = self._build_left()
+        right_w = self._build_right()
+        left_w.setMinimumWidth(320)   # adjust to taste
+        right_w.setMinimumWidth(260)  # adjust to taste
+
+        spl.addWidget(left_w)
+        spl.addWidget(right_w)
+        spl.setCollapsible(0, False)  # left panel cannot collapse
+        spl.setCollapsible(1, False)  # right panel cannot collapse
         spl.setSizes([640, 360])
         root.addWidget(spl)
 
