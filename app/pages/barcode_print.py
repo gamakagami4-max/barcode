@@ -791,7 +791,6 @@ class _CanvasPreview(QWidget):
         y    = d.get("aabb_y", d.get("y", 0))
         z    = d.get("z", 0)
         rot  = d.get("rotation", 0)
-        vis  = d.get("visible", True)
         name = d.get("name", "")
         item = None
 
@@ -822,8 +821,10 @@ class _CanvasPreview(QWidget):
         if item is None:
             return
 
-        item.setZValue(z); item.setVisible(vis)
         self._scene.addItem(item)
+        item.setZValue(z)
+        # visibility intentionally ignored — show all elements in preview
+
         if rot != 0:
             br = item.boundingRect()
             item.setTransformOriginPoint(br.center()); item.setRotation(rot)
