@@ -131,18 +131,39 @@ def _convert_barcode(d: dict, dpi: int) -> str:
     design   = (d.get("design") or "CODE 128").upper()
     text     = str(d.get("design_text") or "")
 
+    # ── Barcode height ────────────────────────────────────────────────────────
+    # Priority 1: explicit dot value (rare, set programmatically)
+    # Priority 2: container_width/container_height — actual screen-px size of
+    #             the barcode box as drawn in the editor. For a rotated barcode
+    #             (270 or 90deg) the bar length runs along the canvas X axis,
+    #             so we use container_width; for 0deg we use container_height.
+    # Priority 3: design_height_cm fallback (real-world cm -> dots).
     height_dots_raw = d.get("design_height_dots")
     if height_dots_raw is not None:
-        height_dots = max(10, int(height_dots_raw))
-        height_source = f"design_height_dots={height_dots_raw}"
+        height_dots  = max(10, int(height_dots_raw))
+        height_source = f"design_height_dots={height_dots_raw} (explicit)"
     else:
-        height_cm = float(d.get("design_height_cm") or 1.0)
-        height_dots = max(10, int(round(height_cm / 2.54 * dpi)))
-        height_source = f"design_height_cm={height_cm} → {height_dots} dots @ {dpi}dpi"
+        container_w = d.get("container_width")
+        container_h = d.get("container_height")
+        if rotation in (90, 270) and container_w is not None:
+            height_dots  = max(10, int(round(float(container_w) * dpi / _SCREEN_DPI)))
+            height_source = f"container_width={container_w}px -> {height_dots} dots (rotated, scaled)"
+        elif container_h is not None:
+            height_dots  = max(10, int(round(float(container_h) * dpi / _SCREEN_DPI)))
+            height_source = f"container_height={container_h}px -> {height_dots} dots (scaled)"
+        else:
+            height_cm    = float(d.get("design_height_cm") or 1.0)
+            height_dots  = max(10, int(round(height_cm / 2.54 * dpi)))
+            height_source = f"design_height_cm={height_cm} -> {height_dots} dots @ {dpi}dpi (fallback)"
 
+    # ── Module width (narrow bar width) ───────────────────────────────────────
+    # design_magnification is a unitless 1-10 editor level, NOT screen pixels.
+    # It maps directly to ZPL module width in dots — no scaling needed.
+    # However the editor uses a wide default (6) which prints very wide;
+    # clamp to a safe maximum of 3 for typical small labels.
     mag = d.get("design_magnification")
     try:
-        module_w = max(1, min(10, int(mag)))
+        module_w = max(1, min(3, int(mag)))
     except (TypeError, ValueError):
         module_w = 2
 
