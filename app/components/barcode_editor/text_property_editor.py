@@ -135,7 +135,7 @@ class InlineChecklistWidget(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # allow horizontal scroll
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setMinimumHeight(0)
         self._scroll.setMaximumHeight(160)
@@ -148,6 +148,12 @@ class InlineChecklistWidget(QWidget):
             "  background:#94A3B8;border-radius:4px;min-height:24px;}"
             "QScrollBar::handle:vertical:hover{background:#6366F1;}"
             "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0px;}"
+            "QScrollBar:horizontal{"
+            "  background:#F1F5F9;height:8px;border-radius:4px;margin:0px 0px 2px 0px;}"
+            "QScrollBar::handle:horizontal{"
+            "  background:#94A3B8;border-radius:4px;min-width:24px;}"
+            "QScrollBar::handle:horizontal:hover{background:#6366F1;}"
+            "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0px;}"
         )
         self._rows_widget = QWidget()
         self._rows_widget.setStyleSheet("background:transparent;")
@@ -213,12 +219,8 @@ class InlineChecklistWidget(QWidget):
         self._refresh_row_styles()
 
     def set_items(self, items: list[str]):
-        def _fmt(s: str) -> str:
-            if " AS " in s:
-                parts = s.split(" AS ", 1)
-                return f"{parts[0]}\nAS {parts[1]}"
-            return s
-        self._items = [_fmt(i) for i in items]
+        # Store raw items as-is — no newline splitting, single line only
+        self._items = list(items)
         self._raw_items = list(items)
         self._selected.clear()
         self._rebuild_rows()
@@ -230,21 +232,15 @@ class InlineChecklistWidget(QWidget):
 
     def set_selected(self, value):
         names = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
-        raw = getattr(self, "_raw_items", self._items)
-        fmt_map = {r: f for r, f in zip(raw, self._items)}
         matched = set()
         for n in names:
             if n in self._items:
                 matched.add(n)
-            elif n in fmt_map:
-                matched.add(fmt_map[n])
         self._selected = matched
         self._refresh_row_styles()
 
     def get_selected(self) -> list[str]:
-        raw = getattr(self, "_raw_items", self._items)
-        fmt_map = {f: r for r, f in zip(raw, self._items)}
-        return [fmt_map.get(i, i) for i in self._items if i in self._selected]
+        return [i for i in self._items if i in self._selected]
 
     def _toggle(self, name: str):
         self._selected.discard(name) if name in self._selected else self._selected.add(name)
@@ -260,11 +256,11 @@ class InlineChecklistWidget(QWidget):
         for name in self._items:
             row_w = QWidget()
             row_w.setStyleSheet("background:transparent;")
-            row_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            row_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row_w.setFixedHeight(24)
             r_lay = QHBoxLayout(row_w)
-            r_lay.setContentsMargins(2, 2, 2, 2)
+            r_lay.setContentsMargins(2, 0, 2, 0)
             r_lay.setSpacing(6)
-            r_lay.setAlignment(Qt.AlignTop)
 
             box = QLabel()
             box.setFixedSize(13, 13)
@@ -272,13 +268,18 @@ class InlineChecklistWidget(QWidget):
             box.setCursor(Qt.PointingHandCursor)
 
             txt = QLabel(name)
-            txt.setWordWrap(True)
-            txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
-            txt.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            txt.setWordWrap(False)                          # single line
+            txt.setFixedHeight(20)
+            txt.setStyleSheet(
+                "color:#334155;font-size:11px;background:transparent;"
+                "border:none;white-space:nowrap;"
+            )
+            txt.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             txt.setCursor(Qt.PointingHandCursor)
 
-            r_lay.addWidget(box, 0, Qt.AlignTop)
-            r_lay.addWidget(txt, 1)
+            r_lay.addWidget(box, 0, Qt.AlignVCenter)
+            r_lay.addWidget(txt, 0, Qt.AlignVCenter)
+            r_lay.addStretch()
 
             box.mousePressEvent = lambda _e, n=name: self._toggle_only(n) if self.isEnabled() else None
             row_w.mousePressEvent = lambda _e, n=name: self._focus_row(n) if self.isEnabled() else None
@@ -288,10 +289,15 @@ class InlineChecklistWidget(QWidget):
             self._rows[name] = (row_w, box, txt)
 
         self._refresh_row_styles()
-        ROW_H, SPACING, MARGINS, MAX_H = 28, 2, 6, 140
+
+        # Fixed row height now so scroll calculation is simple
+        ROW_H, SPACING, MARGINS, MAX_H = 24, 2, 8, 140
         n = len(self._items)
         content_h = MARGINS + n * ROW_H + max(0, n - 1) * SPACING
         self._scroll.setFixedHeight(min(content_h, MAX_H))
+
+        # Let rows_widget expand to natural width so horizontal scroll works
+        self._rows_widget.setMinimumWidth(0)
 
     def _toggle_only(self, name: str):
         self._focused_name = name
@@ -331,12 +337,17 @@ class InlineChecklistWidget(QWidget):
                 )
 
             if is_focused:
-                txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;font-weight:600;")
+                txt.setStyleSheet(
+                    "color:#334155;font-size:11px;background:transparent;"
+                    "border:none;font-weight:600;white-space:nowrap;"
+                )
                 row_w.setStyleSheet("background:#E1E7EF;border-radius:4px;")
             else:
-                txt.setStyleSheet("color:#334155;font-size:11px;background:transparent;border:none;")
+                txt.setStyleSheet(
+                    "color:#334155;font-size:11px;background:transparent;"
+                    "border:none;white-space:nowrap;"
+                )
                 row_w.setStyleSheet("background:transparent;")
-
 
 # ── TextPropertyEditor ────────────────────────────────────────────────────────
 
