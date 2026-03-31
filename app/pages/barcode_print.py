@@ -1335,6 +1335,13 @@ class BarcodePrintPage(QWidget):
                 _form_row(f"{cap} :", inp, self._fields_vbox)
                 self._field_widgets[name] = inp
 
+        # ── Resolve all SYSTEM elements ───────────────────────────────────────
+        # FIX: resolve BEFORE checking for a widget so that invisible elements
+        # (design_editor = "" / "INVISIBLE") also get their live value stored in
+        # _current_values and pushed to the preview canvas.  Previously the
+        # `if widget is None: continue` guard meant elements like Label7
+        # (LOT NO, design_editor="") were silently skipped and the stale static
+        # text from the JSON ("22AMN") was used instead of the DB result ("31BOS").
         for e in elements:
             if e.get("type") != "text":
                 continue
@@ -1343,15 +1350,15 @@ class BarcodePrintPage(QWidget):
             ename  = e.get("name", "")
             sv     = (e.get("design_system_value") or "").upper().strip()
             ext    = (e.get("design_system_extra") or "").strip()
-            widget = self._field_widgets.get(ename)
-            if widget is None:
-                continue
             resolved = _resolve_system_value(sv, ext)
-            if resolved:
-                if isinstance(widget, QLineEdit):
-                    widget.setText(resolved)
-                self._current_values[ename] = resolved
-                self._preview.set_values({ename: resolved})
+            if not resolved:
+                continue
+            # Always store — widget may not exist for invisible/no-editor elements
+            self._current_values[ename] = resolved
+            self._preview.set_values({ename: resolved})
+            widget = self._field_widgets.get(ename)
+            if widget is not None and isinstance(widget, QLineEdit):
+                widget.setText(resolved)
 
         self._spin_print_qty = make_spin(1, 9999, 1); self._spin_print_qty.setFixedWidth(100)
         pq_w = QWidget(); pq_w.setStyleSheet("background: transparent; border: none;")
@@ -1378,7 +1385,6 @@ class BarcodePrintPage(QWidget):
              if e.get("name") == fd["name"] and e.get("type") == "text"),
             None,
         )
-        # Build column list from LOOKUP's own result + all linked LINK results
         linked_results: list[str] = []
         lookup_cid = fd.get("component_id", "")
 
@@ -1395,7 +1401,6 @@ class BarcodePrintPage(QWidget):
                 if res and res not in linked_results:
                     linked_results.append(res)
 
-        # Fall back to design_field if nothing found
         if not linked_results and lookup_elem:
             raw = (lookup_elem.get("design_field") or "").strip()
             if raw:
@@ -1625,6 +1630,26 @@ class BarcodePrintPage(QWidget):
                 ename = e.get("name", "")
                 if ename and ename not in merged_values:
                     merged_values[ename] = str(e.get("text", ""))
+
+        # FIX: Re-resolve every SYSTEM element at print time so the ZPL always
+        # gets the live DB / clock value (LOT NO, DATETIME, USER ID …) rather
+        # than whatever static placeholder was stored in the element JSON.
+        # This covers elements with design_editor = "" (no input widget) that
+        # were previously skipped in _build_dynamic_fields, and also guards
+        # against DATETIME values drifting between page load and print time.
+        for e in self._elements:
+            if e.get("type") != "text":
+                continue
+            if (e.get("design_type") or "").upper() != "SYSTEM":
+                continue
+            ename = e.get("name", "")
+            if not ename:
+                continue
+            sv  = (e.get("design_system_value") or "").upper().strip()
+            ext = (e.get("design_system_extra") or "").strip()
+            resolved = _resolve_system_value(sv, ext)
+            if resolved:
+                merged_values[ename] = resolved
 
         dpi   = 300 if self._chk_dpi.isChecked() else 203
         try:
