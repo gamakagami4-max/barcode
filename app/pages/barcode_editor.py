@@ -4,7 +4,7 @@ import uuid
 
 import qtawesome as qta
 import shiboken6
-
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QGraphicsScene, QGraphicsView, QGraphicsItem,
@@ -392,6 +392,27 @@ class BarcodeEditorPage(QWidget):
             toolbar.addWidget(btn)
         toolbar.addStretch()
 
+        self.preview_btn = QPushButton("Print Preview")
+        self.preview_btn.setFixedHeight(24)
+        self.preview_btn.setCursor(Qt.PointingHandCursor)
+        self.preview_btn.setToolTip("Print Preview — shows only visible items")
+        self.preview_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: 1px solid #E2E8F0;
+                border-radius: 5px;
+                padding: 0 8px;
+                font-size: 11px;
+                font-weight: 500;
+                color: #6366F1;
+            }
+            QPushButton:hover { background: #EEF2FF; border-color: #A5B4FC; }
+            QPushButton:pressed { background: #E0E7FF; }
+        """)
+        self.preview_btn.clicked.connect(self._show_print_preview)
+        toolbar.addWidget(self.preview_btn)
+        toolbar.addSpacing(4)
+
         self._zoom_level = 1.0
 
         _zoom_btn_style = """
@@ -670,6 +691,139 @@ class BarcodeEditorPage(QWidget):
             btn.setEnabled(enabled)
             btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
+    def _show_print_preview(self):
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+            QGraphicsScene, QGraphicsView, QLabel,
+        )
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtCore import QRectF, Qt
+        from PySide6.QtPrintSupport import QPrinter, QPrintDialog
+
+        # ── Temporarily hide invisible items ──────────────────────────────────
+        hidden_items = []
+        for item in self.scene.items():
+            if not getattr(item, "design_visible", True):
+                item.setVisible(False)
+                hidden_items.append(item)
+
+        # ── Render scene to pixmap ─────────────────────────────────────────────
+        scene_rect = self.scene.sceneRect()
+        scale = min(780 / scene_rect.width(), 520 / scene_rect.height(), 2.0)
+        px_w = int(scene_rect.width()  * scale)
+        px_h = int(scene_rect.height() * scale)
+
+        pixmap = QPixmap(px_w, px_h)
+        pixmap.fill(Qt.white)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        self.scene.render(painter, QRectF(0, 0, px_w, px_h), scene_rect)
+        painter.end()
+
+        # ── Restore hidden items ───────────────────────────────────────────────
+        for item in hidden_items:
+            item.setVisible(True)
+
+        # ── Build preview dialog ───────────────────────────────────────────────
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Print Preview")
+        dlg.setMinimumSize(860, 640)
+        dlg.setStyleSheet("""
+            QDialog { background: #F8FAFC; }
+            QLabel#canvas_label {
+                background: white;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+            }
+        """)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(16)
+
+        # header row
+        header = QHBoxLayout()
+        title = QLabel(f"Preview  —  {self._design_name or self._design_code}")
+        title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1E293B;")
+        size_lbl = QLabel(f"{self._canvas_w} × {self._canvas_h} px")
+        size_lbl.setStyleSheet("font-size: 12px; color: #94A3B8;")
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(size_lbl)
+        layout.addLayout(header)
+
+        # note about hidden items
+        if hidden_items:
+            note = QLabel(
+                f"ⓘ  {len(hidden_items)} item(s) with Visible = False are hidden in this preview."
+            )
+            note.setStyleSheet(
+                "font-size: 11px; color: #6366F1; background: #EEF2FF;"
+                "border: 1px solid #C7D2FE; border-radius: 6px; padding: 6px 10px;"
+            )
+            layout.addWidget(note)
+
+        # canvas
+        canvas = QLabel()
+        canvas.setObjectName("canvas_label")
+        canvas.setPixmap(pixmap)
+        canvas.setAlignment(Qt.AlignCenter)
+        canvas.setScaledContents(False)
+        layout.addWidget(canvas, stretch=1)
+
+        # bottom buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(34)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: white; border: 1px solid #CBD5E1;
+                border-radius: 6px; padding: 0 16px;
+                font-size: 12px; color: #334155;
+            }
+            QPushButton:hover { background: #F1F5F9; }
+        """)
+        close_btn.clicked.connect(dlg.reject)
+
+        print_btn = QPushButton("  Print…")
+        print_btn.setIcon(qta.icon("fa5s.print", color="#FFFFFF"))
+        print_btn.setFixedHeight(34)
+        print_btn.setStyleSheet("""
+            QPushButton {
+                background: #6366F1; border: none;
+                border-radius: 6px; padding: 0 16px;
+                font-size: 12px; color: white; font-weight: 600;
+            }
+            QPushButton:hover { background: #4F46E5; }
+            QPushButton:pressed { background: #4338CA; }
+        """)
+
+        def _do_print():
+            printer = QPrinter(QPrinter.HighResolution)
+            pdlg = QPrintDialog(printer, dlg)
+            if pdlg.exec() == QPrintDialog.Accepted:
+                p = QPainter(printer)
+                page_rect = printer.pageRect(QPrinter.DevicePixel)
+                scaled = pixmap.scaled(
+                    int(page_rect.width()), int(page_rect.height()),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation,
+                )
+                x = int((page_rect.width()  - scaled.width())  / 2)
+                y = int((page_rect.height() - scaled.height()) / 2)
+                p.drawPixmap(x, y, scaled)
+                p.end()
+
+        print_btn.clicked.connect(_do_print)
+
+        btn_row.addWidget(close_btn)
+        btn_row.addSpacing(8)
+        btn_row.addWidget(print_btn)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+        
     def reset_for_new(self, form_data: dict | None = None):
         SameWithRegistry.clear()
         self.scene.clearSelection()
