@@ -464,9 +464,17 @@ class _DesignPickerPopup(QDialog):
     def _on_select(self):
         items = self._list.selectedItems()
         if not items: return
-        data = items[0].data(Qt.UserRole)
-        if data:
-            self.design_picked.emit(data[0], data[1]); self.accept()
+        r = items[0].data(Qt.UserRole)
+        if r:
+            if isinstance(r, (tuple, list)) and len(r) >= 2:
+                code, name = str(r[0]), str(r[1])
+            elif isinstance(r, dict):
+                code = str(r.get("pk") or r.get("code") or "")
+                name = str(r.get("name") or "")
+            else:
+                code, name = str(r), ""
+            self.design_picked.emit(code, name)
+            self.accept()
 
     def open_modal(self):
         self._load_records(); self._search.clear()
@@ -653,11 +661,27 @@ class _MasterItemPickerPopup(QDialog):
         if not items: return
         r = items[0].data(Qt.UserRole)
         if r:
-            part_no   = str(r.get("po_no")      or "")
-            item_code = str(r.get("sap_code")    or r.get("pk") or "")
-            name      = str(r.get("description") or "")
-            qty       = str(r.get("qty")         or "0")
-            whs       = str(r.get("warehouse")   or "")
+            # ── FIXED: correct field mapping ──────────────────────────────
+            # mmcsap / sap_code → the SAP code     (e.g. RAF675)
+            # mmitno / pk       → the item/part no (e.g. ERM1-REP2-A-61530-V3)
+            # part_no  signal arg → po_no / upc (barcode/part number to print)
+            # item_code signal arg → sap_code   (SAP code = mmcsap)
+            part_no   = str(r.get("po_no")       or r.get("part_no_print") or r.get("upc") or "")
+            item_code = str(r.get("sap_code")    or r.get("pk")            or "")
+            name      = str(r.get("description") or r.get("name")          or "")
+            qty       = str(r.get("qty")         or r.get("mmcont")        or "")
+            whs       = str(r.get("warehouse")   or r.get("whs")           or "")
+
+            print("=" * 60)
+            print("[_on_select] Raw DB row keys:", list(r.keys()))
+            print("[_on_select] Raw DB row:", dict(r))
+            print(f"  → part_no   = {part_no!r}")
+            print(f"  → item_code = {item_code!r}  (sap_code / mmcsap)")
+            print(f"  → name      = {name!r}")
+            print(f"  → qty       = {qty!r}")
+            print(f"  → whs       = {whs!r}")
+            print("=" * 60)
+
             self.item_picked.emit(part_no, item_code, name, qty, whs)
             self.accept()
 
@@ -1293,6 +1317,13 @@ class BarcodePrintPage(QWidget):
         if not fields:
             return
 
+        # ── Compute label width from the longest caption ───────────────────
+        _fm = QFontMetrics(QFont())
+        _lbl_w = max(
+            120,
+            max(_fm.horizontalAdvance(f"{fd['caption'] or fd['name']} :") for fd in fields) + 20,
+        )
+
         for fd in fields:
             cap   = fd["caption"] or fd["name"]
             name  = fd["name"]
@@ -1310,20 +1341,20 @@ class BarcodePrintPage(QWidget):
                 row_w = QWidget(); row_w.setStyleSheet("background: transparent; border: none;")
                 rl = QHBoxLayout(row_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
                 rl.addWidget(inp); rl.addWidget(btn)
-                _form_row(f"{cap} :", row_w, self._fields_vbox)
+                _form_row(f"{cap} :", row_w, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
             elif ftype == "autofill":
                 inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
                 inp.setPlaceholderText(""); inp.setStyleSheet(_AUTOFILL_STYLE)
-                _form_row(f"{cap} :", inp, self._fields_vbox)
+                _form_row(f"{cap} :", inp, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
             elif ftype == "link_readonly":
                 inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
                 inp.setPlaceholderText("")
                 inp.setStyleSheet(_AUTOFILL_STYLE)
-                _form_row(f"{cap} :", inp, self._fields_vbox)
+                _form_row(f"{cap} :", inp, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
             elif ftype == "freetext":
@@ -1332,16 +1363,10 @@ class BarcodePrintPage(QWidget):
                 inp.setStyleSheet(MODERN_INPUT_STYLE)
                 inp.textChanged.connect(
                     lambda text, n=name: self._on_field_changed(n, text))
-                _form_row(f"{cap} :", inp, self._fields_vbox)
+                _form_row(f"{cap} :", inp, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
         # ── Resolve all SYSTEM elements ───────────────────────────────────────
-        # FIX: resolve BEFORE checking for a widget so that invisible elements
-        # (design_editor = "" / "INVISIBLE") also get their live value stored in
-        # _current_values and pushed to the preview canvas.  Previously the
-        # `if widget is None: continue` guard meant elements like Label7
-        # (LOT NO, design_editor="") were silently skipped and the stale static
-        # text from the JSON ("22AMN") was used instead of the DB result ("31BOS").
         for e in elements:
             if e.get("type") != "text":
                 continue
@@ -1353,7 +1378,6 @@ class BarcodePrintPage(QWidget):
             resolved = _resolve_system_value(sv, ext)
             if not resolved:
                 continue
-            # Always store — widget may not exist for invisible/no-editor elements
             self._current_values[ename] = resolved
             self._preview.set_values({ename: resolved})
             widget = self._field_widgets.get(ename)
@@ -1364,7 +1388,7 @@ class BarcodePrintPage(QWidget):
         pq_w = QWidget(); pq_w.setStyleSheet("background: transparent; border: none;")
         pql = QHBoxLayout(pq_w); pql.setContentsMargins(0, 0, 0, 0)
         pql.addWidget(self._spin_print_qty); pql.addStretch()
-        _form_row("PRINT QTY :", pq_w, self._fields_vbox)
+        _form_row("PRINT QTY :", pq_w, self._fields_vbox, lbl_width=_lbl_w)
 
         self._sep_fields.setVisible(True)
         self._fields_container.setVisible(True)
@@ -1410,35 +1434,84 @@ class BarcodePrintPage(QWidget):
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
                                 name: str, qty: str, whs: str):
+        print("=" * 60)
+        print("[MASTER ITEM PICKED] Raw signal values:")
+        print(f"  part_no   = {part_no!r}")
+        print(f"  item_code = {item_code!r}  (sap_code / mmcsap)")
+        print(f"  name      = {name!r}")
+        print(f"  qty       = {qty!r}")
+        print(f"  whs       = {whs!r}")
+
         fd = getattr(self, "_active_lookup_fd", None)
         if fd is None:
+            print("[MASTER ITEM PICKED] No active lookup fd — aborting.")
+            print("=" * 60)
             return
+
+        print(f"\n[ACTIVE LOOKUP FD] {fd}")
+
+        print("\n[ELEMENTS] Scanning for LINK / BATCH NO / LOOKUP elements:")
+        for e in self._elements:
+            if e.get("type") != "text":
+                continue
+            dt = (e.get("design_type") or "").upper()
+            if dt in ("LINK", "BATCH NO", "LOOKUP"):
+                print(f"  name={e.get('name')!r:20s}  design_type={dt!r:12s}"
+                      f"  design_result={e.get('design_result')!r:15s}"
+                      f"  design_link={e.get('design_link')!r:15s}"
+                      f"  design_batch_no={e.get('design_batch_no')!r}"
+                      f"  design_wh={e.get('design_wh')!r}")
+        print("=" * 60)
 
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
 
+        # ── result_map: mm* field name → resolved value ───────────────────
+        # mmcsap = sap_code  → item_code signal arg (e.g. RAF675)
+        # mmitno = pk        → part_no  signal arg  (e.g. ERM1-REP2-A-61530-V3)
         result_map: dict[str, str] = {
-            "mmcsap":    item_code,
-            "item_code": item_code,
-            "itemcode":  item_code,
-            "part_no":   part_no,
-            "partno":    part_no,
-            "qty":       qty,
-            "quantity":  qty,
-            "whs":       whs,
-            "warehouse": whs,
-            "mmitno":    item_code,
-            "mmcont":    qty,
-            "mmwho":     whs,
+            # SAP code (mmcsap / sap_code)
+            "mmcsap":           item_code,
+            "sap_code":         item_code,
+            "item_code":        item_code,
+            "itemcode":         item_code,
+            # Item / part no (mmitno / pk)
+            "mmitno":           part_no,
+            "pk":               part_no,
+            "part_no":          part_no,
+            "partno":           part_no,
+            "part_no_print":    part_no,
+            "mmbupc":           part_no,
+            "po_no":            part_no,
+            "upc":              part_no,
+            # Name / description
+            "mmitds":           name,
+            "name":             name,
+            "description":      name,
+            # Qty
+            "mmcont":           qty,
+            "qty":              qty,
+            "quantity":         qty,
+            # Warehouse
+            "mmwho":            whs,
+            "warehouse":        whs,
+            "whs":              whs,
         }
 
         updates: dict[str, str] = {}
 
-        updates[lookup_name] = part_no
+        # ── Resolve the lookup field's own display value ──────────────────
+        lookup_elem = next(
+            (e for e in self._elements if e.get("name") == lookup_name), None
+        )
+        own_result = (lookup_elem.get("design_result") or "").lower().strip() if lookup_elem else ""
+        lookup_val = result_map.get(own_result, part_no)
+        updates[lookup_name] = lookup_val
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
-            w.setText(part_no)
+            w.setText(lookup_val)
 
+        # ── Propagate to LINK and BATCH NO elements ───────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -1631,12 +1704,6 @@ class BarcodePrintPage(QWidget):
                 if ename and ename not in merged_values:
                     merged_values[ename] = str(e.get("text", ""))
 
-        # FIX: Re-resolve every SYSTEM element at print time so the ZPL always
-        # gets the live DB / clock value (LOT NO, DATETIME, USER ID …) rather
-        # than whatever static placeholder was stored in the element JSON.
-        # This covers elements with design_editor = "" (no input widget) that
-        # were previously skipped in _build_dynamic_fields, and also guards
-        # against DATETIME values drifting between page load and print time.
         for e in self._elements:
             if e.get("type") != "text":
                 continue
