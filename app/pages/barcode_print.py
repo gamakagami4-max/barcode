@@ -513,7 +513,27 @@ class _MasterItemPickerPopup(QDialog):
         "mmchby": "changed_by",
         "mmchdt": "changed_at",
         "mmchno": "changed_no",
+        # bare DB key pass-throughs
+        "sap_code":      "sap_code",
+        "pk":            "pk",
+        "description":   "description",
+        "po_no":         "po_no",
+        "brand":         "brand",
+        "warehouse":     "warehouse",
+        "qty":           "qty",
+        "uom":           "uom",
+        "upc":           "upc",
+        "part_no_print": "po_no",
+        "name":          "name",
     }
+
+    _DEFAULT_COLS: list[tuple[str, str, int]] = [
+        ("mmitno",        "ITEM CODE",     190),
+        ("mmitds",        "NAME",          160),
+        ("mmbrad",        "BRAND",         100),
+        ("mmwho",         "WHS",            80),
+        ("part_no_print", "PART NO PRINT", 150),
+    ]
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -558,6 +578,7 @@ class _MasterItemPickerPopup(QDialog):
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._list.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list.setMouseTracking(True)
         self._list.setStyleSheet(f"""
             QListWidget {{ background: {_WHITE}; border: none; font-size: 12px; color: {_TEXT}; outline: none; }}
             QListWidget::item {{ padding: 0px; border-bottom: 1px solid {_BORDER}; }}
@@ -568,6 +589,7 @@ class _MasterItemPickerPopup(QDialog):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
         self._list.itemDoubleClicked.connect(self._on_activated)
+        self._list.itemClicked.connect(self._on_item_clicked)
         self._list.itemSelectionChanged.connect(
             lambda: self._select_btn.setEnabled(len(self._list.selectedItems()) > 0))
         vbox.addWidget(self._list, 1)
@@ -603,41 +625,49 @@ class _MasterItemPickerPopup(QDialog):
         except Exception:
             self._records = []
 
+    def _get_col_specs(self) -> list[tuple[str, str, int]]:
+        return list(self._DEFAULT_COLS)
+
     def _rebuild_column_headers(self):
         while self._col_hdr_layout.count():
             item = self._col_hdr_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
-        for col in cols:
-            l = QLabel(col.upper())
-            l.setStyleSheet(
+        for _key, label, width in self._get_col_specs():
+            lbl = QLabel(label)
+            lbl.setStyleSheet(
                 f"color: {_LEGACY_BLUE}; font-size: 9px; font-weight: 700; "
-                "letter-spacing: 0.5px; background: transparent; min-width: 140px;")
-            self._col_hdr_layout.addWidget(l)
+                f"letter-spacing: 0.5px; background: transparent; "
+                f"min-width: {width}px; max-width: {width}px;")
+            self._col_hdr_layout.addWidget(lbl)
         self._col_hdr_layout.addStretch()
 
     def _rebuild_list(self, records: list[dict]):
         self._list.clear()
-        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
+        col_specs = self._get_col_specs()
+        total_w = sum(w for _, _, w in col_specs) + 48
+
         for r in records:
             item = QListWidgetItem()
             item.setData(Qt.UserRole, r)
             row_w = QWidget(); row_w.setStyleSheet("background: transparent;")
-            row_w.setMinimumWidth(len(cols) * 140)
+            row_w.setMinimumWidth(total_w)
+            row_w.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             rl = QHBoxLayout(row_w); rl.setContentsMargins(16, 9, 16, 9); rl.setSpacing(0)
-            for i, col in enumerate(cols):
-                key = self._MM_TO_KEY.get(col, col)
-                val = str(r.get(key) or "")
+            for i, (key, _label, width) in enumerate(col_specs):
+                db_key = self._MM_TO_KEY.get(key, key)
+                val = str(r.get(db_key) or r.get(key) or "")
                 lbl = QLabel(val)
                 lbl.setStyleSheet(
                     f"font-size: 12px; font-weight: {'600' if i == 0 else '400'}; "
                     f"color: {_LEGACY_BLUE if i == 0 else _TEXT}; "
-                    f"background: transparent; min-width: 140px;")
+                    f"background: transparent; "
+                    f"min-width: {width}px; max-width: {width}px;")
                 rl.addWidget(lbl)
             rl.addStretch()
-            item.setSizeHint(QSize(len(cols) * 140, 38))
+            item.setSizeHint(QSize(total_w, 38))
             self._list.addItem(item); self._list.setItemWidget(item, row_w)
+
         count = len(records)
         self._footer.setText(f"{count} record{'s' if count != 1 else ''}")
         self._select_btn.setEnabled(False)
@@ -646,44 +676,42 @@ class _MasterItemPickerPopup(QDialog):
         q = q.lower()
         if not q:
             self._rebuild_list(self._records); return
-        cols = self._dyn_columns if self._dyn_columns else ["mmcsap", "mmitno", "mmitds"]
-        filtered = [r for r in self._records
-                    if any(q in str(r.get(self._MM_TO_KEY.get(col, col), "")).lower() for col in cols)
-                    or q in str(r.get("po_no", "")).lower()
-                    or q in str(r.get("pk", "")).lower()
-                    or q in str(r.get("description", "")).lower()]
-        self._rebuild_list(filtered)
+        col_specs = self._get_col_specs()
+        def _matches(r: dict) -> bool:
+            for key, _label, _w in col_specs:
+                db_key = self._MM_TO_KEY.get(key, key)
+                if q in str(r.get(db_key) or r.get(key) or "").lower():
+                    return True
+            for fk in ("pk", "description", "part_no_print", "po_no", "sap_code"):
+                if q in str(r.get(fk) or "").lower():
+                    return True
+            return False
+        self._rebuild_list([r for r in self._records if _matches(r)])
 
     def _on_activated(self, _item): self._on_select()
 
+    def _on_item_clicked(self, item: QListWidgetItem):
+        item.setSelected(True)
+        self._select_btn.setEnabled(True)
+
     def _on_select(self):
         items = self._list.selectedItems()
-        if not items: return
+        if not items:
+            print("[_on_select] No items selected")
+            return
         r = items[0].data(Qt.UserRole)
+        print(f"[_on_select] Raw row: {r}")
         if r:
-            # ── FIXED: correct field mapping ──────────────────────────────
-            # mmcsap / sap_code → the SAP code     (e.g. RAF675)
-            # mmitno / pk       → the item/part no (e.g. ERM1-REP2-A-61530-V3)
-            # part_no  signal arg → po_no / upc (barcode/part number to print)
-            # item_code signal arg → sap_code   (SAP code = mmcsap)
-            part_no   = str(r.get("po_no")       or r.get("part_no_print") or r.get("upc") or "")
-            item_code = str(r.get("sap_code")    or r.get("pk")            or "")
-            name      = str(r.get("description") or r.get("name")          or "")
-            qty       = str(r.get("qty")         or r.get("mmcont")        or "")
-            whs       = str(r.get("warehouse")   or r.get("whs")           or "")
-
-            print("=" * 60)
-            print("[_on_select] Raw DB row keys:", list(r.keys()))
-            print("[_on_select] Raw DB row:", dict(r))
-            print(f"  → part_no   = {part_no!r}")
-            print(f"  → item_code = {item_code!r}  (sap_code / mmcsap)")
-            print(f"  → name      = {name!r}")
-            print(f"  → qty       = {qty!r}")
-            print(f"  → whs       = {whs!r}")
-            print("=" * 60)
-
+            part_no   = str(r.get("part_no_print") or r.get("po_no") or r.get("upc") or "")
+            item_code = str(r.get("pk")            or r.get("sap_code")               or "")
+            name      = str(r.get("name")          or r.get("description")            or "")
+            qty       = str(r.get("qty")           or "")
+            whs       = str(r.get("warehouse")     or r.get("whs")                    or "")
+            print(f"[_on_select] Emitting → part_no={part_no!r} item_code={item_code!r} name={name!r} qty={qty!r} whs={whs!r}")
             self.item_picked.emit(part_no, item_code, name, qty, whs)
             self.accept()
+        else:
+            print("[_on_select] Row data is None/empty")
 
     def open_modal(self, dyn_columns: list[str] | None = None):
         self._dyn_columns = dyn_columns or []
@@ -710,7 +738,9 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         sv  = (e.get("design_system_value") or "").upper().strip()
         cap = (e.get("design_caption") or "").strip()
         if not cap:
-            if dt == "SYSTEM":
+            if dt == "BATCH NO":
+                cap = "QTY"
+            elif dt == "SYSTEM":
                 sv_raw = (e.get("design_system_value") or "").strip()
                 ext_raw = (e.get("design_system_extra") or "").strip()
                 if sv_raw == "LOT NO" and ext_raw:
@@ -725,7 +755,7 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         cid  = e.get("component_id", "")
         col  = int(e.get("design_column") or 1)
 
-        if ed == "INVISIBLE":
+        if ed == "INVISIBLE" and dt != "BATCH NO":
             continue
 
         if dt == "LOOKUP":
@@ -737,8 +767,45 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
             ))
 
         elif dt == "LINK":
+            # Check if this LINK is the WH target of a BATCH NO element.
+            # It still needs a widget (so BATCH NO can write whs into it),
+            # but its caption should reflect that role (autofill style).
+            _is_wh_target = any(
+                other.get("type") == "text"
+                and (other.get("design_type") or "").upper() == "BATCH NO"
+                and other.get("design_wh", "") == name
+                for other in elements
+            )
+            # Skip LINK fields that have a BATCH NO sibling covering the same
+            # lookup source AND are not the WH target — these are canvas-only
+            # duplicates (e.g. a barcode text element) with no user input role.
+            # design_batch_no stores the LOOKUP element's *name* (e.g. 'Label2'),
+            # while design_link stores the LOOKUP element's *component_id*.
+            # Resolve the link target's name first, then compare.
+            _link_target_name = next(
+                (other.get("name", "") for other in elements
+                 if other.get("type") == "text"
+                 and other.get("component_id", "") == e.get("design_link", "")),
+                ""
+            )
+            _has_batch_no_sibling = any(
+                other.get("type") == "text"
+                and (other.get("design_type") or "").upper() == "BATCH NO"
+                and other.get("design_batch_no", "") == _link_target_name
+                for other in elements
+            )
+            _linked_to_lookup = any(
+                other.get("type") == "text"
+                and (other.get("design_type") or "").upper() == "LOOKUP"
+                and other.get("component_id", "") == e.get("design_link", "")
+                for other in elements
+            )
+            print(f"  [LINK FILTER] {name!r}  wh_target={_is_wh_target}  batch_sibling={_has_batch_no_sibling}  lookup={_linked_to_lookup}  ed={ed!r}")
+            if _has_batch_no_sibling and _linked_to_lookup and ed != "ENABLED" and not _is_wh_target:
+                print(f"  [LINK FILTER] SKIPPING {name!r}")
+                continue
             fields.append(dict(
-                type="freetext" if ed == "ENABLED" else "link_readonly",
+                type="autofill" if _is_wh_target else ("freetext" if ed == "ENABLED" else "link_readonly"),
                 caption=cap, name=name,
                 component_id=cid, link_to=e.get("design_link", ""),
                 system_value=None, column=col,
@@ -762,6 +829,7 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                 ))
 
         elif dt == "BATCH NO":
+            cap = "QTY"
             fields.append(dict(
                 type="autofill", caption=cap, name=name,
                 component_id=cid, link_to=None,
@@ -1313,6 +1381,7 @@ class BarcodePrintPage(QWidget):
 
         fields = _analyse_fields(elements)
         self._field_descriptors = fields
+        print(f"[_build_dynamic_fields] fields={[f['name'] for f in fields]}")
 
         if not fields:
             return
@@ -1450,40 +1519,42 @@ class BarcodePrintPage(QWidget):
 
         print(f"\n[ACTIVE LOOKUP FD] {fd}")
 
-        print("\n[ELEMENTS] Scanning for LINK / BATCH NO / LOOKUP elements:")
+        print("\n[ELEMENTS] Scanning ALL text elements:")
         for e in self._elements:
             if e.get("type") != "text":
                 continue
             dt = (e.get("design_type") or "").upper()
-            if dt in ("LINK", "BATCH NO", "LOOKUP"):
-                print(f"  name={e.get('name')!r:20s}  design_type={dt!r:12s}"
-                      f"  design_result={e.get('design_result')!r:15s}"
-                      f"  design_link={e.get('design_link')!r:15s}"
-                      f"  design_batch_no={e.get('design_batch_no')!r}"
-                      f"  design_wh={e.get('design_wh')!r}")
-        print("=" * 60)
-
+            print(f"  name={e.get('name')!r:20s}  design_type={dt!r:12s}"
+                  f"  design_result={e.get('design_result')!r:15s}"
+                  f"  design_link={e.get('design_link')!r:15s}"
+                  f"  design_batch_no={e.get('design_batch_no')!r}"
+                  f"  design_wh={e.get('design_wh')!r}"
+                  f"  component_id={e.get('component_id')!r}")
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
+        print(f"\n[LOOKUP] lookup_name={lookup_name!r}  lookup_cid={lookup_cid!r}")
+        print("=" * 60)
 
         # ── result_map: mm* field name → resolved value ───────────────────
         # mmcsap = sap_code  → item_code signal arg (e.g. RAF675)
         # mmitno = pk        → part_no  signal arg  (e.g. ERM1-REP2-A-61530-V3)
         result_map: dict[str, str] = {
-            # SAP code (mmcsap / sap_code)
+            # mmcsap / sap_code = item code (ERM1-REP2-A-61530-V3)
+            # po_no / part_no_print = the barcode value to print (RAF675)
             "mmcsap":           item_code,
             "sap_code":         item_code,
             "item_code":        item_code,
             "itemcode":         item_code,
-            # Item / part no (mmitno / pk)
-            "mmitno":           part_no,
-            "pk":               part_no,
-            "part_no":          part_no,
-            "partno":           part_no,
+            # Item code / pk
+            "mmitno":           item_code,
+            "pk":               item_code,
+            # Part no to print
             "part_no_print":    part_no,
             "mmbupc":           part_no,
             "po_no":            part_no,
             "upc":              part_no,
+            "part_no":          part_no,
+            "partno":           part_no,
             # Name / description
             "mmitds":           name,
             "name":             name,
@@ -1505,26 +1576,45 @@ class BarcodePrintPage(QWidget):
             (e for e in self._elements if e.get("name") == lookup_name), None
         )
         own_result = (lookup_elem.get("design_result") or "").lower().strip() if lookup_elem else ""
-        lookup_val = result_map.get(own_result, part_no)
+        lookup_val = part_no  # LOOKUP field always shows the part no to print
         updates[lookup_name] = lookup_val
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
             w.setText(lookup_val)
 
         # ── Propagate to LINK and BATCH NO elements ───────────────────────
+        # ── Collect names that BATCH NO will own (qty + whs targets) ─────
+        batch_no_owned: set[str] = set()
+        for e in self._elements:
+            if (e.get("type") == "text"
+                    and (e.get("design_type") or "").upper() == "BATCH NO"
+                    and e.get("design_batch_no", "") == lookup_name):
+                batch_no_owned.add(e.get("name", ""))          # the qty field itself
+                wh_t = e.get("design_wh", "")
+                if wh_t:
+                    batch_no_owned.add(wh_t)                   # the whs target field
+        print(f"  [BATCH NO OWNED] {batch_no_owned}")
+        print(f"  [FIELD WIDGETS]  {list(self._field_widgets.keys())}")
+
+        # ── Propagate to LINK and BATCH NO elements ───────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
-            dt       = (e.get("design_type") or "").upper()
-            ename    = e.get("name", "")
-            res_fld  = (e.get("design_result") or "").lower().strip()
+            dt      = (e.get("design_type") or "").upper()
+            ename   = e.get("name", "")
+            res_fld = (e.get("design_result") or "").lower().strip()
 
             if dt == "LINK" and e.get("design_link", "") == lookup_cid:
-                val = result_map.get(res_fld, part_no)
+                # Skip fields that BATCH NO will fill — don't overwrite them
+                if ename in batch_no_owned:
+                    print(f"  [LINK SKIP] {ename!r} — owned by BATCH NO")
+                    continue
+                val = result_map.get(res_fld, item_code)
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(val)
+                print(f"  [LINK] {ename!r} ← {res_fld!r} → {val!r}")
 
             elif dt == "BATCH NO":
                 if e.get("design_batch_no", "") == lookup_name:
@@ -1532,12 +1622,14 @@ class BarcodePrintPage(QWidget):
                     widget = self._field_widgets.get(ename)
                     if isinstance(widget, QLineEdit):
                         widget.setText(qty)
-                wh_elem = e.get("design_wh", "")
-                if wh_elem:
-                    updates[wh_elem] = whs
-                    widget2 = self._field_widgets.get(wh_elem)
-                    if isinstance(widget2, QLineEdit):
-                        widget2.setText(whs)
+                    print(f"  [BATCH NO] {ename!r} ← qty={qty!r}  (widget={widget!r})")
+                    wh_target = e.get("design_wh", "")
+                    if wh_target:
+                        updates[wh_target] = whs
+                        widget2 = self._field_widgets.get(wh_target)
+                        if isinstance(widget2, QLineEdit):
+                            widget2.setText(whs)
+                        print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}  (widget={widget2!r})")
 
         self._current_values.update(updates)
         self._preview.set_values(updates)
