@@ -4,7 +4,7 @@ import uuid
 
 import qtawesome as qta
 import shiboken6
-from PySide6.QtPrintSupport import QPrinter, QPrintDialog
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QGraphicsScene, QGraphicsView, QGraphicsItem,
@@ -787,39 +787,7 @@ class BarcodeEditorPage(QWidget):
         """)
         close_btn.clicked.connect(dlg.reject)
 
-        print_btn = QPushButton("  Print…")
-        print_btn.setIcon(qta.icon("fa5s.print", color="#FFFFFF"))
-        print_btn.setFixedHeight(34)
-        print_btn.setStyleSheet("""
-            QPushButton {
-                background: #6366F1; border: none;
-                border-radius: 6px; padding: 0 16px;
-                font-size: 12px; color: white; font-weight: 600;
-            }
-            QPushButton:hover { background: #4F46E5; }
-            QPushButton:pressed { background: #4338CA; }
-        """)
-
-        def _do_print():
-            printer = QPrinter(QPrinter.HighResolution)
-            pdlg = QPrintDialog(printer, dlg)
-            if pdlg.exec() == QPrintDialog.Accepted:
-                p = QPainter(printer)
-                page_rect = printer.pageRect(QPrinter.DevicePixel)
-                scaled = pixmap.scaled(
-                    int(page_rect.width()), int(page_rect.height()),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation,
-                )
-                x = int((page_rect.width()  - scaled.width())  / 2)
-                y = int((page_rect.height() - scaled.height()) / 2)
-                p.drawPixmap(x, y, scaled)
-                p.end()
-
-        print_btn.clicked.connect(_do_print)
-
         btn_row.addWidget(close_btn)
-        btn_row.addSpacing(8)
-        btn_row.addWidget(print_btn)
         layout.addLayout(btn_row)
 
         dlg.exec()
