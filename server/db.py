@@ -1,6 +1,5 @@
-# db.py
 import psycopg2
-from .config import POSTGRES_CONFIG
+from server.config import POSTGRES_CONFIG
 
 
 def get_connection():

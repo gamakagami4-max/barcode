@@ -507,11 +507,16 @@ class BarcodePropertyEditor(QWidget):
         layout.addRow(_lbl("ANGLE :"), self.angle_combo)
 
         # ── BARCODE TYPE ──────────────────────────────────────────────────────
-        self.barcode_type_combo = make_chevron_combo([
-            "AZTEC (2D)", "CODE 11", "CODE 128", "CODE 128-A", "CODE 128-B",
-            "CODE 128-C", "CODE 39", "CODE 93", "DATA MATRIX (2D)", "EAN 13",
-            "EAN 8", "INTERLEAVED 2 OF 5", "QR (2D)", "UPC A",
-        ])
+        try:
+            from components.barcode_editor.db_helpers import _fetch_barcode_types
+            _barcode_type_options = _fetch_barcode_types()
+        except Exception:
+            _barcode_type_options = [
+                "AZTEC (2D)", "CODE 11", "CODE 128", "CODE 128-A", "CODE 128-B",
+                "CODE 128-C", "CODE 39", "CODE 93", "DATA MATRIX (2D)", "EAN 13",
+                "EAN 8", "INTERLEAVED 2 OF 5", "QR (2D)", "UPC A",
+            ]
+        self.barcode_type_combo = make_chevron_combo(_barcode_type_options)
         _saved_design = getattr(self.item, "design", "")
         if _saved_design:
             self.barcode_type_combo.blockSignals(True)

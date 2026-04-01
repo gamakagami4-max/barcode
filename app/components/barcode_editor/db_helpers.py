@@ -172,3 +172,25 @@ def _parse_fields_from_query(query: str) -> list[str]:
         return [p for p in parts if p]
     except Exception:
         return []
+
+
+def _fetch_barcode_types() -> list[str]:
+    """
+    Return barcode type display names (BRBART) from barcodesap.mbarty,
+    ordered alphabetically. Falls back to a hardcoded list on any error.
+    """
+    _FALLBACK = [
+        "AZTEC (2D)", "CODE 11", "CODE 128", "CODE 128-A", "CODE 128-B",
+        "CODE 128-C", "CODE 39", "CODE 93", "DATA MATRIX (2D)", "EAN 13",
+        "EAN 8", "INTERLEAVED 2 OF 5", "QR (2D)", "UPC A",
+    ]
+    try:
+        from repositories.mbarty_repo import fetch_all_mbarty
+        rows = fetch_all_mbarty()
+        names = [r["name"].strip() for r in rows if r.get("name", "").strip()]
+        return names if names else _FALLBACK
+    except Exception as e:
+        import traceback
+        print(f"[_fetch_barcode_types] {e}")
+        traceback.print_exc()
+        return _FALLBACK
