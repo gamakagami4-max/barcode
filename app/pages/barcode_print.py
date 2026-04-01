@@ -390,9 +390,30 @@ class _DesignPickerPopup(QDialog):
             QListWidget::item {{ padding: 0px; border-bottom: 1px solid {_BORDER}; }}
             QListWidget::item:selected {{ background: {_ACCENT_LIGHT}; }}
             QListWidget::item:hover:!selected {{ background: #F8FAFC; }}
-            QScrollBar:vertical {{ background: transparent; width: 5px; }}
-            QScrollBar::handle:vertical {{ background: {_BORDER2}; border-radius: 2px; min-height: 20px; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+
+            QScrollBar:vertical {{
+                background: transparent; width: 6px;
+                margin: 4px 2px 4px 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #CBD5E1; border-radius: 3px; min-height: 32px;
+            }}
+            QScrollBar::handle:vertical:hover {{ background: #94A3B8; }}
+            QScrollBar::handle:vertical:pressed {{ background: #64748B; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+
+            QScrollBar:horizontal {{
+                background: transparent; height: 6px;
+                margin: 0px 0px 2px 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: #CBD5E1; border-radius: 3px; min-width: 32px;
+            }}
+            QScrollBar::handle:horizontal:hover {{ background: #94A3B8; }}
+            QScrollBar::handle:horizontal:pressed {{ background: #64748B; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; }}
         """)
         self._list.itemDoubleClicked.connect(self._on_activated)
         self._list.itemSelectionChanged.connect(
@@ -607,12 +628,31 @@ class _MasterItemPickerPopup(QDialog):
         self._search.installEventFilter(self)
         sr.addWidget(self._search); vbox.addWidget(search_row)
 
+        col_hdr_outer = QWidget()
+        col_hdr_outer.setStyleSheet(f"background: #F1F5F9; border-bottom: 1px solid {_BORDER};")
+        col_hdr_outer.setFixedHeight(28)
+        col_hdr_outer_layout = QHBoxLayout(col_hdr_outer)
+        col_hdr_outer_layout.setContentsMargins(0, 0, 0, 0)
+        col_hdr_outer_layout.setSpacing(0)
+
+        self._col_hdr_scroll = QScrollArea()
+        self._col_hdr_scroll.setFrameShape(QFrame.NoFrame)
+        self._col_hdr_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._col_hdr_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._col_hdr_scroll.setStyleSheet(
+            f"QScrollArea {{ background: #F1F5F9; border: none; }}"
+            f"QScrollArea > QWidget > QWidget {{ background: #F1F5F9; }}")
+
         col_hdr = QWidget()
-        col_hdr.setStyleSheet(f"background: #F1F5F9; border-bottom: 1px solid {_BORDER};")
-        ch = QHBoxLayout(col_hdr); ch.setContentsMargins(16, 7, 16, 7); ch.setSpacing(0)
+        col_hdr.setStyleSheet(f"background: #F1F5F9;")
+        ch = QHBoxLayout(col_hdr); ch.setContentsMargins(16, 0, 16, 0); ch.setSpacing(0)
         self._col_hdr_widget = col_hdr
         self._col_hdr_layout = ch
-        vbox.addWidget(col_hdr)
+
+        self._col_hdr_scroll.setWidget(col_hdr)
+        self._col_hdr_scroll.setWidgetResizable(False)
+        col_hdr_outer_layout.addWidget(self._col_hdr_scroll)
+        vbox.addWidget(col_hdr_outer)
 
         self._list = QListWidget(); self._list.setFrameShape(QFrame.NoFrame)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -624,14 +664,37 @@ class _MasterItemPickerPopup(QDialog):
             QListWidget::item {{ padding: 0px; border-bottom: 1px solid {_BORDER}; }}
             QListWidget::item:selected {{ background: {_ACCENT_LIGHT}; }}
             QListWidget::item:hover:!selected {{ background: #F8FAFC; }}
-            QScrollBar:vertical {{ background: transparent; width: 5px; }}
-            QScrollBar::handle:vertical {{ background: {_BORDER2}; border-radius: 2px; min-height: 20px; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+
+            QScrollBar:vertical {{
+                background: transparent; width: 6px;
+                margin: 4px 2px 4px 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #CBD5E1; border-radius: 3px; min-height: 32px;
+            }}
+            QScrollBar::handle:vertical:hover {{ background: #94A3B8; }}
+            QScrollBar::handle:vertical:pressed {{ background: #64748B; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+
+            QScrollBar:horizontal {{
+                background: transparent; height: 6px;
+                margin: 0px 0px 2px 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: #CBD5E1; border-radius: 3px; min-width: 32px;
+            }}
+            QScrollBar::handle:horizontal:hover {{ background: #94A3B8; }}
+            QScrollBar::handle:horizontal:pressed {{ background: #64748B; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; }}
         """)
         self._list.itemDoubleClicked.connect(self._on_activated)
         self._list.itemClicked.connect(self._on_item_clicked)
         self._list.itemSelectionChanged.connect(
             lambda: self._select_btn.setEnabled(len(self._list.selectedItems()) > 0))
+        self._list.horizontalScrollBar().valueChanged.connect(
+            lambda val: self._col_hdr_scroll.horizontalScrollBar().setValue(val))
         vbox.addWidget(self._list, 1)
 
         footer = QWidget()
@@ -686,14 +749,37 @@ class _MasterItemPickerPopup(QDialog):
             item = self._col_hdr_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        for _key, label, width in self._get_col_specs():
+
+        col_specs = self._get_col_specs()
+        total_w = sum(w for _, _, w in col_specs) + 48
+
+        print(f"[HEADER] col_specs={[(k, l, w) for k, l, w in col_specs]}")
+        print(f"[HEADER] total_w={total_w}")
+        print(f"[HEADER] col_hdr_widget size before={self._col_hdr_widget.size()}")
+        print(f"[HEADER] col_hdr_scroll size={self._col_hdr_scroll.size()}")
+        print(f"[HEADER] col_hdr_scroll viewport size={self._col_hdr_scroll.viewport().size()}")
+
+        for _key, label, width in col_specs:
             lbl = QLabel(label)
+            lbl.setFixedHeight(28)
             lbl.setStyleSheet(
                 f"color: {_LEGACY_BLUE}; font-size: 9px; font-weight: 700; "
-                f"letter-spacing: 0.5px; background: transparent; "
+                f"letter-spacing: 0.5px; background: #F1F5F9; "
                 f"min-width: {width}px; max-width: {width}px;")
             self._col_hdr_layout.addWidget(lbl)
+            print(f"[HEADER]   added label={label!r} width={width}")
         self._col_hdr_layout.addStretch()
+
+        fixed_w = max(total_w, 400)
+        self._col_hdr_widget.setFixedWidth(fixed_w)
+        self._col_hdr_widget.setFixedHeight(28)
+        print(f"[HEADER] set col_hdr_widget fixedWidth={fixed_w}")
+        print(f"[HEADER] col_hdr_widget size after={self._col_hdr_widget.size()}")
+
+        # Force viewport background
+        self._col_hdr_scroll.viewport().setStyleSheet("background: #F1F5F9;")
+        self._col_hdr_scroll.viewport().setAutoFillBackground(True)
+        print(f"[HEADER] viewport autoFill={self._col_hdr_scroll.viewport().autoFillBackground()}")
 
     def _rebuild_list(self, records: list[dict]):
         self._list.clear()
@@ -1558,7 +1644,7 @@ class BarcodePrintPage(QWidget):
             dyn_columns = linked_results
 
         self._master_item_picker.open_modal(dyn_columns=dyn_columns)
-        
+
     def _on_master_item_picked(self, part_no: str, item_code: str,
                                 name: str, qty: str, whs: str):
         print("=" * 60)
