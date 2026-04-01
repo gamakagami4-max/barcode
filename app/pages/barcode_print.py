@@ -1539,16 +1539,16 @@ class BarcodePrintPage(QWidget):
         # mmcsap = sap_code  → item_code signal arg (e.g. RAF675)
         # mmitno = pk        → part_no  signal arg  (e.g. ERM1-REP2-A-61530-V3)
         result_map: dict[str, str] = {
-            # mmcsap / sap_code = item code (ERM1-REP2-A-61530-V3)
-            # po_no / part_no_print = the barcode value to print (RAF675)
-            "mmcsap":           item_code,
-            "sap_code":         item_code,
-            "item_code":        item_code,
+            # All mm* field aliases → part_no (RAF675) = the value to print on barcode
+            # The LOOKUP/LINK elements use design_result='mmcsap' to mean "print this"
+            "mmcsap":           part_no,   # ← was item_code; mmcsap here = barcode print value
+            "sap_code":         part_no,   # ← same
+            "item_code":        item_code, # keep raw item code available if explicitly needed
             "itemcode":         item_code,
-            # Item code / pk
-            "mmitno":           item_code,
-            "pk":               item_code,
-            # Part no to print
+            # mmitno / pk = also the part number to print
+            "mmitno":           part_no,
+            "pk":               part_no,
+            # Other part-no aliases
             "part_no_print":    part_no,
             "mmbupc":           part_no,
             "po_no":            part_no,
@@ -1609,7 +1609,7 @@ class BarcodePrintPage(QWidget):
                 if ename in batch_no_owned:
                     print(f"  [LINK SKIP] {ename!r} — owned by BATCH NO")
                     continue
-                val = result_map.get(res_fld, item_code)
+                val = result_map.get(res_fld, part_no)
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
