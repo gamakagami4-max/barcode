@@ -535,6 +535,46 @@ class _MasterItemPickerPopup(QDialog):
         ("part_no_print", "PART NO PRINT", 150),
     ]
 
+    _MM_LABELS: dict[str, str] = {
+        "mmcsap":  "SAP CODE",
+        "mmitno":  "ITEM CODE",
+        "mmitds":  "NAME",
+        "mmpono":  "PO NO",
+        "mmbrad":  "BRAND",
+        "mmwho":   "WHS",
+        "mmtyp1":  "TYPE 1",
+        "mmtyp2":  "TYPE 2",
+        "mmweig":  "WEIGHT",
+        "mmcont":  "QTY",
+        "mmumcd":  "UOM",
+        "mmbupc":  "UPC",
+        "mmtlup":  "TLUP",
+        "mmtldw":  "TLDW",
+        "mmitc1":  "ITC 1",
+        "mmitc2":  "ITC 2",
+        "mmitc3":  "ITC 3",
+        "mmitc4":  "ITC 4",
+        "mmitc5":  "ITC 5",
+        "mmitc6":  "ITC 6",
+        "mmitc7":  "ITC 7",
+        "mmitc8":  "ITC 8",
+        "mmadby":  "ADDED BY",
+        "mmaddt":  "ADDED AT",
+        "mmchby":  "CHANGED BY",
+        "mmchdt":  "CHANGED AT",
+        "mmchno":  "CHANGED NO",
+        "part_no_print": "PART NO PRINT",
+        "sap_code":      "SAP CODE",
+        "pk":            "ITEM CODE",
+        "description":   "NAME",
+        "po_no":         "PO NO",
+        "brand":         "BRAND",
+        "warehouse":     "WHS",
+        "qty":           "QTY",
+        "uom":           "UOM",
+        "upc":           "UPC",
+    }
+
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setWindowTitle("Select Master Item")
@@ -626,7 +666,20 @@ class _MasterItemPickerPopup(QDialog):
             self._records = []
 
     def _get_col_specs(self) -> list[tuple[str, str, int]]:
-        return list(self._DEFAULT_COLS)
+        if not self._dyn_columns:
+            return list(self._DEFAULT_COLS)
+
+        specs: list[tuple[str, str, int]] = []
+        specs.append(("mmitno", "ITEM CODE", 190))
+
+        for field in self._dyn_columns:
+            field = field.strip()
+            if not field or field in ("mmitno", "pk"):
+                continue
+            label = self._MM_LABELS.get(field, field.upper().replace("_", " "))
+            specs.append((field, label, 140))
+
+        return specs
 
     def _rebuild_column_headers(self):
         while self._col_hdr_layout.count():
@@ -1473,34 +1526,39 @@ class BarcodePrintPage(QWidget):
             self._master_item_picker = _MasterItemPickerPopup(self)
             self._master_item_picker.item_picked.connect(self._on_master_item_picked)
         self._active_lookup_fd = fd
+
         lookup_elem = next(
             (e for e in self._elements
              if e.get("name") == fd["name"] and e.get("type") == "text"),
             None,
         )
-        linked_results: list[str] = []
-        lookup_cid = fd.get("component_id", "")
 
+        # Primary: use design_field (the checked fields in the editor)
+        dyn_columns: list[str] = []
         if lookup_elem:
-            own_result = (lookup_elem.get("design_result") or "").strip()
-            if own_result:
-                linked_results.append(own_result)
+            raw_field = (lookup_elem.get("design_field") or "").strip()
+            if raw_field:
+                dyn_columns = [f.strip() for f in raw_field.split(",") if f.strip()]
 
-        for e in self._elements:
-            if (e.get("type") == "text"
-                    and (e.get("design_type") or "").upper() == "LINK"
-                    and e.get("design_link", "") == lookup_cid):
-                res = (e.get("design_result") or "").strip()
-                if res and res not in linked_results:
-                    linked_results.append(res)
+        # Fallback: derive from design_result of linked LINK elements
+        if not dyn_columns:
+            lookup_cid = fd.get("component_id", "")
+            linked_results: list[str] = []
+            if lookup_elem:
+                own_result = (lookup_elem.get("design_result") or "").strip()
+                if own_result:
+                    linked_results.append(own_result)
+            for e in self._elements:
+                if (e.get("type") == "text"
+                        and (e.get("design_type") or "").upper() == "LINK"
+                        and e.get("design_link", "") == lookup_cid):
+                    res = (e.get("design_result") or "").strip()
+                    if res and res not in linked_results:
+                        linked_results.append(res)
+            dyn_columns = linked_results
 
-        if not linked_results and lookup_elem:
-            raw = (lookup_elem.get("design_field") or "").strip()
-            if raw:
-                linked_results = [f.strip() for f in raw.split(",") if f.strip()]
-
-        self._master_item_picker.open_modal(dyn_columns=linked_results)
-
+        self._master_item_picker.open_modal(dyn_columns=dyn_columns)
+        
     def _on_master_item_picked(self, part_no: str, item_code: str,
                                 name: str, qty: str, whs: str):
         print("=" * 60)
