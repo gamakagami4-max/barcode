@@ -218,11 +218,12 @@ class InlineChecklistWidget(QWidget):
             self._apply_disabled_appearance()
         self._refresh_row_styles()
 
-    def set_items(self, items: list[str]):
+    def set_items(self, items: list[str], preserve_selection: bool = False):
         # Store raw items as-is — no newline splitting, single line only
+        prev_selected = set(self._selected) if preserve_selection else set()
         self._items = list(items)
         self._raw_items = list(items)
-        self._selected.clear()
+        self._selected = {s for s in prev_selected if s in self._items}
         self._rebuild_rows()
 
     def clear_selection(self):

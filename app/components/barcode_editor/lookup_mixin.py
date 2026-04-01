@@ -241,7 +241,6 @@ class LookupMixin:
         self._field_list = display_fields
 
         self.field_edit.set_items(display_fields)
-        self.field_edit.clear_selection()
         self.field_edit.setEnabled(bool(display_fields))
 
         self.result_combo._items   = display_fields if display_fields else [""]
