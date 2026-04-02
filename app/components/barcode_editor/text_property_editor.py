@@ -1120,9 +1120,13 @@ class TextPropertyEditor(
         scene_rect = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         new_top  = int(round(scene_rect.top()))
         new_left = int(round(scene_rect.left()))
-        self.top_spin.blockSignals(True)
-        self.left_spin.blockSignals(True)
-        self.top_spin.setValue(new_top)
-        self.left_spin.setValue(new_left)
-        self.top_spin.blockSignals(False)
-        self.left_spin.blockSignals(False)
+
+        if not self.top_spin.hasFocus():
+            self.top_spin.blockSignals(True)
+            self.top_spin.setValue(new_top)
+            self.top_spin.blockSignals(False)
+
+        if not self.left_spin.hasFocus():
+            self.left_spin.blockSignals(True)
+            self.left_spin.setValue(new_left)
+            self.left_spin.blockSignals(False)
