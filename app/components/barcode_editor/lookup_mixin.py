@@ -279,7 +279,7 @@ class LookupMixin:
         return conn_names
 
     def restore_lookup_values(self, stored_group, stored_table, stored_field,
-                              stored_result, stored_query):
+                          stored_result, stored_query):
         if stored_group and stored_group in self._conn_map:
             self.group_combo.setCurrentText(stored_group)
             self._on_group_changed(stored_group)
@@ -287,10 +287,20 @@ class LookupMixin:
                 self.table_combo.setCurrentText(stored_table)
                 self._on_table_changed(stored_table)
                 if stored_field:
-                    self.field_edit.set_selected(stored_field)
+                    # stored_field may be a comma-separated string or a list
+                    if isinstance(stored_field, str):
+                        fields_to_restore = [f.strip() for f in stored_field.split(",") if f.strip()]
+                    else:
+                        fields_to_restore = list(stored_field)
+                    # set_selected after the field list is populated
+                    self.field_edit.set_selected(fields_to_restore)
+                    # Also write back to the item so saving without touching picks it up
+                    setattr(self.item, "design_field", stored_field)
                 if stored_result:
                     self.result_combo.setCurrentText(stored_result)
+                    setattr(self.item, "design_result", stored_result)
         if stored_query:
             self.table_extra.setPlainText(stored_query)
+            setattr(self.item, "design_query", stored_query)
 
 # field not checked when saved without modifying it
