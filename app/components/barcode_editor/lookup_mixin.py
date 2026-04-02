@@ -27,13 +27,10 @@ class LookupMixin:
         """Enable/disable the LOOKUP cascade depending on current type."""
         self.group_combo.setEnabled(enabled)
 
-        # Re-fetch immediately on enable so stale values are cleared right away
-        # (not only when the user clicks the dropdown).
         if enabled:
             self.build_connection_combo()
             current_group = getattr(self.item, "design_group", "")
             if current_group and current_group not in self.group_combo._items:
-                # Connection was deleted — wipe everything
                 setattr(self.item, "design_group", "")
                 setattr(self.item, "design_table", "")
                 setattr(self.item, "design_field", "")
@@ -46,14 +43,12 @@ class LookupMixin:
                 self.table_combo.setEnabled(False)
                 self._clear_field_combos()
             elif current_group:
-                # Connection still exists — restore and check table too
                 self.group_combo.setCurrentText(current_group)
                 from components.barcode_editor.db_helpers import _fetch_tables_for_connection
                 tables = _fetch_tables_for_connection(self._conn_map[current_group])
                 self._table_map = {t["name"]: t["pk"] for t in tables}
                 current_table = getattr(self.item, "design_table", "")
                 if current_table and current_table not in self._table_map:
-                    # Table was deleted — wipe table + fields
                     setattr(self.item, "design_table", "")
                     setattr(self.item, "design_field", "")
                     setattr(self.item, "design_result", "")
@@ -63,8 +58,6 @@ class LookupMixin:
                     self.table_combo.setCurrentIndex(-1)
                     self._clear_field_combos()
 
-        # Re-fetch connections live each time the dropdown opens so that
-        # deletions in Source Data Group are reflected immediately.
         if enabled:
             _original_open = self.group_combo._open
 
@@ -72,10 +65,8 @@ class LookupMixin:
                 self.build_connection_combo()
                 current = getattr(self.item, "design_group", "")
                 if current and current in self.group_combo._items:
-                    # Value still exists — restore it
                     self.group_combo.setCurrentText(current)
                 elif current:
-                    # Value was deleted — clear it from item and widget
                     setattr(self.item, "design_group", "")
                     self.group_combo.setCurrentIndex(-1)
                     self.table_combo._items = [""]
@@ -136,8 +127,6 @@ class LookupMixin:
         setattr(self.item, "design_group", conn_name)
         self._clear_field_combos()
 
-        # Re-fetch tables live each time the dropdown opens so that
-        # deletions in Source Data Group are reflected immediately.
         _original_open = self.table_combo._open
 
         def _live_table_open():
@@ -150,7 +139,6 @@ class LookupMixin:
                     btn.deleteLater()
                 self.table_combo._dropdown._buttons = []
                 self.table_combo._dropdown._build(self.table_combo.width())
-            # If the currently selected table was deleted, clear it
             current_table = getattr(self.item, "design_table", "")
             if current_table and current_table not in self._table_map:
                 setattr(self.item, "design_table", "")
@@ -182,7 +170,6 @@ class LookupMixin:
         self._clear_field_combos()
         self._table_map = {}
 
-        # Re-populate connections so switching back to LOOKUP still works
         self.build_connection_combo()
 
     def _on_table_changed(self, table_name: str):
@@ -196,14 +183,16 @@ class LookupMixin:
             conn_name = self.group_combo.currentText() or getattr(self.item, "design_group", "")
             conn_pk   = self._conn_map.get(conn_name)
 
-            # Resolve table PK from the already-populated _table_map
-            table_pk  = self._table_map.get(table_name)
+            if not self._table_map and conn_pk is not None:
+                tables = _fetch_tables_for_connection(conn_pk)
+                self._table_map = {t["name"]: t["pk"] for t in tables}
+
+            table_pk = self._table_map.get(table_name)
 
             if conn_pk is not None and table_pk is not None:
                 from repositories.mmsdgr_repo import fetch_all_mmsdgr, fetch_mmsdgr_by_pk
                 from repositories.field_repo import fetch_field_names_by_ids, fetch_fields
 
-                # Match by connection_id + table_id (NOT table_name)
                 all_records = fetch_all_mmsdgr()
                 matched = next(
                     (r for r in all_records
@@ -212,31 +201,39 @@ class LookupMixin:
                 )
 
                 if matched:
-                    detail    = fetch_mmsdgr_by_pk(matched["pk"])
-                    field_ids = detail.get("fields", []) if detail else []
+                    detail     = fetch_mmsdgr_by_pk(matched["pk"])
+                    raw_fields = detail.get("fields", []) if detail else []
 
-                    if field_ids:
-                        # Deduplicate field_ids while preserving order
-                        seen = set()
-                        field_ids = [f for f in field_ids if not (f in seen or seen.add(f))]
-
-                        field_names = fetch_field_names_by_ids(field_ids)
-
-                        # Deduplicate field_names while preserving order
+                    if isinstance(raw_fields, str):
+                        # Stored as comma-separated field names
+                        field_names = [f.strip() for f in raw_fields.split(",") if f.strip()]
                         seen = set()
                         field_names = [f for f in field_names if not (f in seen or seen.add(f))]
+                    else:
+                        # Stored as list of integer IDs
+                        field_ids = list(raw_fields)
+                        if field_ids:
+                            seen = set()
+                            field_ids = [f for f in field_ids if not (f in seen or seen.add(f))]
+                            field_names = fetch_field_names_by_ids(field_ids)
+                            seen = set()
+                            field_names = [f for f in field_names if not (f in seen or seen.add(f))]
+                        else:
+                            field_names = []
 
-                        cols        = fetch_fields(conn_pk, table_name)
-                        comment_map = {
-                            col["name"]: col.get("comment", "")
-                            for col in cols if col.get("name")
-                        }
-                        for name in field_names:
-                            comment = comment_map.get(name, "")
-                            display_fields.append(f"{name} AS {comment}" if comment else name)
+                    cols = fetch_fields(conn_pk, table_name)
+                    comment_map = {
+                        col["name"]: col.get("comment", "")
+                        for col in cols if col.get("name")
+                    }
+                    for name in field_names:
+                        comment = comment_map.get(name, "")
+                        display_fields.append(f"{name} AS {comment}" if comment else name)
 
         except Exception as e:
+            import traceback
             print(f"Error loading source group fields: {e}")
+            traceback.print_exc()
 
         self._field_list = display_fields
 
@@ -252,12 +249,10 @@ class LookupMixin:
     def _clear_field_combos(self):
         self._field_list = []
 
-        # field_edit is InlineChecklistWidget
         self.field_edit.set_items([])
         self.field_edit.clear_selection()
         self.field_edit.setEnabled(False)
 
-        # result_combo is a chevron combo
         self.result_combo._items   = [""]
         self.result_combo._current = ""
         self.result_combo._label.setText("")
@@ -279,28 +274,37 @@ class LookupMixin:
         return conn_names
 
     def restore_lookup_values(self, stored_group, stored_table, stored_field,
-                          stored_result, stored_query):
+                      stored_result, stored_query):
+        from PySide6.QtCore import QTimer
+
         if stored_group and stored_group in self._conn_map:
             self.group_combo.setCurrentText(stored_group)
             self._on_group_changed(stored_group)
+
             if stored_table:
                 self.table_combo.setCurrentText(stored_table)
                 self._on_table_changed(stored_table)
+
                 if stored_field:
-                    # stored_field may be a comma-separated string or a list
                     if isinstance(stored_field, str):
                         fields_to_restore = [f.strip() for f in stored_field.split(",") if f.strip()]
                     else:
                         fields_to_restore = list(stored_field)
-                    # set_selected after the field list is populated
-                    self.field_edit.set_selected(fields_to_restore)
-                    # Also write back to the item so saving without touching picks it up
+
                     setattr(self.item, "design_field", stored_field)
+
+                    if not self._field_list:
+                        self.field_edit.set_items(fields_to_restore)
+                        self._field_list = fields_to_restore
+
+                    # Delay set_selected by one event loop tick so the
+                    # checklist widget finishes rendering before we check boxes
+                    QTimer.singleShot(0, lambda f=fields_to_restore: self.field_edit.set_selected(f))
+
                 if stored_result:
                     self.result_combo.setCurrentText(stored_result)
                     setattr(self.item, "design_result", stored_result)
+
         if stored_query:
             self.table_extra.setPlainText(stored_query)
             setattr(self.item, "design_query", stored_query)
-
-# field not checked when saved without modifying it
