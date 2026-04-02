@@ -701,6 +701,11 @@ class BarcodeEditorPage(QWidget):
         from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 
         # ── Temporarily hide invisible items ──────────────────────────────────
+        # ── Temporarily clear selection (removes red highlight from render) ──
+        previously_selected = self.scene.selectedItems()
+        self.scene.clearSelection()
+
+        # ── Temporarily hide invisible items ──────────────────────────────────
         hidden_items = []
         for item in self.scene.items():
             if not getattr(item, "design_visible", True):
@@ -721,8 +726,13 @@ class BarcodeEditorPage(QWidget):
         painter.end()
 
         # ── Restore hidden items ───────────────────────────────────────────────
+        # ── Restore hidden items ───────────────────────────────────────────────
         for item in hidden_items:
             item.setVisible(True)
+
+        # ── Restore previous selection ─────────────────────────────────────────
+        for item in previously_selected:
+            item.setSelected(True)
 
         # ── Build preview dialog ───────────────────────────────────────────────
         dlg = QDialog(self)

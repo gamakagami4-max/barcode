@@ -292,3 +292,5 @@ class LookupMixin:
                     self.result_combo.setCurrentText(stored_result)
         if stored_query:
             self.table_extra.setPlainText(stored_query)
+
+# field not checked when saved without modifying it
