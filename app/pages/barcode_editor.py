@@ -1425,8 +1425,8 @@ class BarcodeEditorPage(QWidget):
         li.graphics_item = item
         self.component_list.addItem(li)
         self.comp_count_badge.setText(str(self.component_list.count()))
-        item.setSelected(True)
         item.setPos(50, 50)
+        item.setSelected(True)
         self.sync_z_order_from_list()
 
     def _copy_selected(self):
