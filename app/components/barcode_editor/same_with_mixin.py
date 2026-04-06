@@ -119,9 +119,10 @@ class SameWithMixin:
         new_color = source_item.defaultTextColor()
         self.item.setDefaultTextColor(new_color)
         self.item._original_color = new_color
-        self.item.design_inverse = getattr(source_item, "design_inverse", False)
-        self.item.design_visible = getattr(source_item, "design_visible", True)
-        self.item.design_same_with = source_id  # store ID, not name
+        for attr in ("design_inverse", "design_visible", "design_alignment",
+                     "design_editor", "design_wrap_text", "design_wrap_width"):
+            setattr(self.item, attr, getattr(source_item, attr, ""))
+        self.item.design_same_with = source_id
         self._refresh_ui_from_item()
         self._lock_all_fields(True)
         self.update_callback()
@@ -200,6 +201,27 @@ class SameWithMixin:
         self.angle_combo.setCurrentText(angle_map_inv.get(int(self.item.rotation()), "0"))
         self.inverse_combo.setCurrentText("YES" if getattr(self.item, "design_inverse", False) else "NO")
         self.visible_combo.setCurrentText("TRUE" if getattr(self.item, "design_visible", True) else "FALSE")
+
+        align = getattr(self.item, "design_alignment", "LEFT JUSTIFY") or "LEFT JUSTIFY"
+        self.align_combo.blockSignals(True)
+        self.align_combo.setCurrentText(align)
+        self.align_combo.blockSignals(False)
+
+        # Map Qt font family back to combo display name
+        _family_to_display = {v: k for k, v in {
+            "STANDARD": "Arial", "ARIAL": "Arial", "ARIAL BLACK": "Arial Black",
+            "ARIAL BOLD": "Arial", "TAHOMA": "Tahoma", "OCR-B": "OCR B",
+        }.items()}
+        font_family = self.item.font().family()
+        display_font = _family_to_display.get(font_family, "STANDARD")
+        self.font_combo.blockSignals(True)
+        self.font_combo.setCurrentText(display_font)
+        self.font_combo.blockSignals(False)
+
+        self.wrap_combo.blockSignals(True)
+        self.wrap_combo.setCurrentText("YES" if getattr(self.item, "design_wrap_text", False) else "NO")
+        self.wrap_combo.blockSignals(False)
+
         self.text_input.blockSignals(False)
         self.size_spin.blockSignals(False)
 
