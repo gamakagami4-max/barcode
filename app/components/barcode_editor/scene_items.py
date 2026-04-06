@@ -21,15 +21,20 @@ class SelectableTextItem(QGraphicsTextItem):
     def setDefaultTextColor(self, color: QColor):
         if color != QColor("#EF4444"):
             self._original_color = QColor(color)
+            if self.isSelected():
+                return  # save to _original_color but don't visually overwrite red
         super().setDefaultTextColor(color)
+
+    def _set_color_while_selected(self, color: QColor):
+        """Apply red without touching _original_color."""
+        super(SelectableTextItem, self).setDefaultTextColor(color)
 
     def itemChange(self, change, value):
         if change == QGraphicsTextItem.ItemSelectedChange:
             if value:
-                self._original_color = self.defaultTextColor()
-                self.setDefaultTextColor(QColor("#EF4444"))
+                self._set_color_while_selected(QColor("#EF4444"))
             else:
-                self.setDefaultTextColor(self._original_color)
+                self._set_color_while_selected(self._original_color)
         return super().itemChange(change, value)
 
     def paint(self, painter, option, widget=None):

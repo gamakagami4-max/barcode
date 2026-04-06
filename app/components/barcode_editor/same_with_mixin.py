@@ -116,7 +116,9 @@ class SameWithMixin:
         SameWithRegistry.register(self.item, source_item)
         self.item.setPlainText(source_item.toPlainText())
         self.item.setFont(QFont(source_item.font().family(), source_item.font().pointSize()))
-        self.item.setDefaultTextColor(source_item.defaultTextColor())
+        new_color = source_item.defaultTextColor()
+        self.item.setDefaultTextColor(new_color)
+        self.item._original_color = new_color
         self.item.design_inverse = getattr(source_item, "design_inverse", False)
         self.item.design_visible = getattr(source_item, "design_visible", True)
         self.item.design_same_with = source_id  # store ID, not name
@@ -137,7 +139,9 @@ class SameWithMixin:
                 continue
             target.setPlainText(self.item.toPlainText())
             target.setFont(QFont(self.item.font().family(), self.item.font().pointSize()))
-            target.setDefaultTextColor(self.item.defaultTextColor())
+            new_color = self.item.defaultTextColor()
+            target.setDefaultTextColor(new_color)
+            target._original_color = new_color
             target.design_inverse = getattr(self.item, "design_inverse", False)
             target.design_visible = getattr(self.item, "design_visible", True)
         self.update_callback()
@@ -158,10 +162,14 @@ class SameWithMixin:
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else _LINE_DISABLED)
 
-        for w in (self.size_spin, self.top_spin, self.left_spin,
-                  self.wrap_width_spin, self.column_spin):
+        for w in (self.size_spin, self.wrap_width_spin, self.column_spin):
             w.setEnabled(not locked)
             w.setStyleSheet(MODERN_INPUT_STYLE if not locked else DISABLED_STYLE_FULL)
+
+        self.top_spin.setEnabled(True)
+        self.left_spin.setEnabled(True)
+        self.top_spin.setStyleSheet(MODERN_INPUT_STYLE)
+        self.left_spin.setStyleSheet(MODERN_INPUT_STYLE)
 
         for w in (self.align_combo, self.font_combo, self.angle_combo,
                   self.inverse_combo, self.editor_combo, self.wrap_combo,
