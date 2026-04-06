@@ -111,15 +111,25 @@ class LinkMixin:
             "padding:5px; font-size:11px; color:#94A3B8; }"
         )
 
-        # RESULT — editable for LINK type
-        self.result_combo.blockSignals(True)
-        self.result_combo.setEnabled(True)
-        val = getattr(self.item, "design_result", "")
-        self._set_combo_value(self.result_combo, val)
-        if val and val in getattr(self.result_combo, "_items", []):
-            self.result_combo._current = val
-            self.result_combo._label.setText(val)
-        self.result_combo.blockSignals(False)
+        # Populate result_combo items by replaying the table-load from LookupMixin
+        table = getattr(self.item, "design_table", "")
+        if table:
+            saved_result = getattr(self.item, "design_result", "")
+            self._on_table_changed(table)  # fills _items on field_edit and result_combo
+            # _on_table_changed resets result to "" so restore it
+            self.item.design_result = saved_result
+            self.result_combo.blockSignals(True)
+            self.result_combo.setEnabled(True)
+            if saved_result and saved_result in getattr(self.result_combo, "_items", []):
+                self.result_combo._current = saved_result
+                self.result_combo._label.setText(saved_result)
+            self.result_combo.blockSignals(False)
+        else:
+            self.result_combo.blockSignals(True)
+            self.result_combo.setEnabled(True)
+            val = getattr(self.item, "design_result", "")
+            self._set_combo_value(self.result_combo, val)
+            self.result_combo.blockSignals(False)
 
         # FIELD — always disabled for LINK type (value mirrored, not editable).
         # This must be the LAST operation so result_combo.setEnabled(True) above
