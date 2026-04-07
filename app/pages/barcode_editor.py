@@ -1647,3 +1647,4 @@ class BarcodeEditorPage(QWidget):
         self.zoom_label.setText(f"{int(self._zoom_level * 100)}%")
 
     def _update_design_subtitle(self): pass
+    
