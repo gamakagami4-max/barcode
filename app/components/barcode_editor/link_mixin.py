@@ -87,11 +87,14 @@ class LinkMixin:
         if not source_item:
             return
 
-        self.item.design_group  = getattr(source_item, "design_group",  "")
-        self.item.design_table  = getattr(source_item, "design_table",  "")
-        self.item.design_query  = getattr(source_item, "design_query",  "")
-        self.item.design_field  = getattr(source_item, "design_field",  "")
-        self.item.design_result = getattr(source_item, "design_result", "")
+        # Preserve this item's own result BEFORE copying anything from source
+        saved_result = getattr(self.item, "design_result", "")
+
+        self.item.design_group = getattr(source_item, "design_group", "")
+        self.item.design_table = getattr(source_item, "design_table", "")
+        self.item.design_query = getattr(source_item, "design_query", "")
+        self.item.design_field = getattr(source_item, "design_field", "")
+        # Do NOT copy design_result from source — each LINK item picks its own result column
 
         # GROUP and TABLE — read-only, mirrored from source
         for combo, attr in (
@@ -114,7 +117,6 @@ class LinkMixin:
         # Populate result_combo items by replaying the table-load from LookupMixin
         table = getattr(self.item, "design_table", "")
         if table:
-            saved_result = getattr(self.item, "design_result", "")
             self._on_table_changed(table)  # fills _items on field_edit and result_combo
             # _on_table_changed resets result to "" so restore it
             self.item.design_result = saved_result
