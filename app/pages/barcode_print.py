@@ -838,15 +838,22 @@ class _MasterItemPickerPopup(QDialog):
         if not items:
             print("[_on_select] No items selected")
             return
+
         r = items[0].data(Qt.UserRole)
         print(f"[_on_select] Raw row: {r}")
+
         if r:
+            # ✅ CRITICAL FIX — store raw record for later use
+            self._last_raw_record = r
+
             part_no   = str(r.get("part_no_print") or r.get("po_no") or r.get("upc") or "")
-            item_code = str(r.get("pk")            or r.get("sap_code")               or "")
-            name      = str(r.get("name")          or r.get("description")            or "")
-            qty       = str(r.get("qty")           or "")
-            whs       = str(r.get("warehouse")     or r.get("whs")                    or "")
+            item_code = str(r.get("pk") or r.get("sap_code") or "")
+            name      = str(r.get("name") or r.get("description") or "")
+            qty       = str(r.get("qty") or "")
+            whs       = str(r.get("warehouse") or r.get("whs") or "")
+
             print(f"[_on_select] Emitting → part_no={part_no!r} item_code={item_code!r} name={name!r} qty={qty!r} whs={whs!r}")
+
             self.item_picked.emit(part_no, item_code, name, qty, whs)
             self.accept()
         else:
@@ -867,15 +874,18 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
     panel, ordered by design_column.
     """
     fields: list[dict] = []
+    seen_batch_keys: set[str] = set()
 
     for e in elements:
         if e.get("type") != "text":
             continue
 
-        dt  = (e.get("design_type")     or "").upper().strip()
-        ed  = (e.get("design_editor")   or "").upper().strip()
+        dt  = (e.get("design_type") or "").upper().strip()
+        ed  = (e.get("design_editor") or "").upper().strip()
         sv  = (e.get("design_system_value") or "").upper().strip()
         cap = (e.get("design_caption") or "").strip()
+
+        # ---- Caption fallback ----
         if not cap:
             if dt == "BATCH NO":
                 cap = "QTY"
@@ -890,13 +900,18 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                     cap = e.get("name", "")
             else:
                 cap = e.get("name", "")
+
         name = e.get("name", "")
         cid  = e.get("component_id", "")
         col  = int(e.get("design_column") or 1)
 
+        # ---- Skip invisible (except batch no) ----
         if ed == "INVISIBLE" and dt != "BATCH NO":
             continue
 
+        # =========================
+        # LOOKUP
+        # =========================
         if dt == "LOOKUP":
             fields.append(dict(
                 type="lookup", caption=cap, name=name,
@@ -905,52 +920,70 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                 batch_ref="", wh_ref="",
             ))
 
+        # =========================
+        # LINK (FIXED)
+        # =========================
         elif dt == "LINK":
-            # Check if this LINK is the WH target of a BATCH NO element.
-            # It still needs a widget (so BATCH NO can write whs into it),
-            # but its caption should reflect that role (autofill style).
+
+            # Is WH target of batch?
             _is_wh_target = any(
                 other.get("type") == "text"
                 and (other.get("design_type") or "").upper() == "BATCH NO"
                 and other.get("design_wh", "") == name
                 for other in elements
             )
-            # Skip LINK fields that have a BATCH NO sibling covering the same
-            # lookup source AND are not the WH target — these are canvas-only
-            # duplicates (e.g. a barcode text element) with no user input role.
-            # design_batch_no stores the LOOKUP element's *name* (e.g. 'Label2'),
-            # while design_link stores the LOOKUP element's *component_id*.
-            # Resolve the link target's name first, then compare.
+
+            # Resolve link target name
             _link_target_name = next(
                 (other.get("name", "") for other in elements
                  if other.get("type") == "text"
                  and other.get("component_id", "") == e.get("design_link", "")),
                 ""
             )
+
+            # Has batch sibling
             _has_batch_no_sibling = any(
                 other.get("type") == "text"
                 and (other.get("design_type") or "").upper() == "BATCH NO"
                 and other.get("design_batch_no", "") == _link_target_name
                 for other in elements
             )
+
+            # Linked to lookup
             _linked_to_lookup = any(
                 other.get("type") == "text"
                 and (other.get("design_type") or "").upper() == "LOOKUP"
                 and other.get("component_id", "") == e.get("design_link", "")
                 for other in elements
             )
-            print(f"  [LINK FILTER] {name!r}  wh_target={_is_wh_target}  batch_sibling={_has_batch_no_sibling}  lookup={_linked_to_lookup}  ed={ed!r}")
-            if _has_batch_no_sibling and _linked_to_lookup and ed != "ENABLED" and not _is_wh_target:
-                print(f"  [LINK FILTER] SKIPPING {name!r}")
+
+            # Skip canvas-only duplicates
+            if _has_batch_no_sibling and _linked_to_lookup and not _is_wh_target:
                 continue
+
+            # ---- FIX: DISABLED = silent autofill ----
+            link_ftype = "autofill" if _is_wh_target else (
+                "freetext" if ed == "ENABLED" else "skip_silent"
+            )
+
+            if link_ftype == "skip_silent":
+                continue
+
             fields.append(dict(
-                type="autofill" if _is_wh_target else ("freetext" if ed == "ENABLED" else "link_readonly"),
-                caption=cap, name=name,
-                component_id=cid, link_to=e.get("design_link", ""),
-                system_value=None, column=col,
-                batch_ref="", wh_ref="",
+                type=link_ftype,
+                caption=cap,
+                name=name,
+                component_id=cid,
+                link_to=e.get("design_link", ""),
+                system_value=None,
+                column=col,
+                batch_ref="",
+                wh_ref="",
             ))
 
+        # =========================
+        # SYSTEM
+        # =========================
         elif dt == "SYSTEM":
             if sv == "LOT NO":
                 fields.append(dict(
@@ -967,8 +1000,18 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                     batch_ref="", wh_ref="",
                 ))
 
+        # =========================
+        # BATCH NO (FIXED)
+        # =========================
         elif dt == "BATCH NO":
             cap = "QTY"
+
+            batch_key = f"{e.get('design_batch_no','')}|{e.get('design_wh','')}"
+            if batch_key in seen_batch_keys:
+                continue  # ✅ deduplicated
+
+            seen_batch_keys.add(batch_key)
+
             fields.append(dict(
                 type="autofill", caption=cap, name=name,
                 component_id=cid, link_to=None,
@@ -1646,11 +1689,12 @@ class BarcodePrintPage(QWidget):
         self._master_item_picker.open_modal(dyn_columns=dyn_columns)
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
-                                name: str, qty: str, whs: str):
+                          name: str, qty: str, whs: str):
+
         print("=" * 60)
         print("[MASTER ITEM PICKED] Raw signal values:")
         print(f"  part_no   = {part_no!r}")
-        print(f"  item_code = {item_code!r}  (sap_code / mmcsap)")
+        print(f"  item_code = {item_code!r}")
         print(f"  name      = {name!r}")
         print(f"  qty       = {qty!r}")
         print(f"  whs       = {whs!r}")
@@ -1661,120 +1705,90 @@ class BarcodePrintPage(QWidget):
             print("=" * 60)
             return
 
-        print(f"\n[ACTIVE LOOKUP FD] {fd}")
-
-        print("\n[ELEMENTS] Scanning ALL text elements:")
-        for e in self._elements:
-            if e.get("type") != "text":
-                continue
-            dt = (e.get("design_type") or "").upper()
-            print(f"  name={e.get('name')!r:20s}  design_type={dt!r:12s}"
-                  f"  design_result={e.get('design_result')!r:15s}"
-                  f"  design_link={e.get('design_link')!r:15s}"
-                  f"  design_batch_no={e.get('design_batch_no')!r}"
-                  f"  design_wh={e.get('design_wh')!r}"
-                  f"  component_id={e.get('component_id')!r}")
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
-        print(f"\n[LOOKUP] lookup_name={lookup_name!r}  lookup_cid={lookup_cid!r}")
-        print("=" * 60)
 
-        # ── result_map: mm* field name → resolved value ───────────────────
-        # mmcsap = sap_code  → item_code signal arg (e.g. RAF675)
-        # mmitno = pk        → part_no  signal arg  (e.g. ERM1-REP2-A-61530-V3)
-        result_map: dict[str, str] = {
-            # All mm* field aliases → part_no (RAF675) = the value to print on barcode
-            # The LOOKUP/LINK elements use design_result='mmcsap' to mean "print this"
-            "mmcsap":           part_no,   # ← was item_code; mmcsap here = barcode print value
-            "sap_code":         part_no,   # ← same
-            "item_code":        item_code, # keep raw item code available if explicitly needed
-            "itemcode":         item_code,
-            # mmitno / pk = also the part number to print
-            "mmitno":           part_no,
-            "pk":               part_no,
-            # Other part-no aliases
-            "part_no_print":    part_no,
-            "mmbupc":           part_no,
-            "po_no":            part_no,
-            "upc":              part_no,
-            "part_no":          part_no,
-            "partno":           part_no,
-            # Name / description
-            "mmitds":           name,
-            "name":             name,
-            "description":      name,
-            # Qty
-            "mmcont":           qty,
-            "qty":              qty,
-            "quantity":         qty,
-            # Warehouse
-            "mmwho":            whs,
-            "warehouse":        whs,
-            "whs":              whs,
-        }
+        # ✅ NEW: get raw DB record
+        raw = getattr(self._master_item_picker, "_last_raw_record", {})
+
+        print(f"\n[LOOKUP] lookup_name={lookup_name!r}  lookup_cid={lookup_cid!r}")
+        print(f"[RAW RECORD KEYS] {list(raw.keys())}")
+        print("=" * 60)
 
         updates: dict[str, str] = {}
 
-        # ── Resolve the lookup field's own display value ──────────────────
-        lookup_elem = next(
-            (e for e in self._elements if e.get("name") == lookup_name), None
-        )
-        own_result = (lookup_elem.get("design_result") or "").lower().strip() if lookup_elem else ""
-        lookup_val = part_no  # LOOKUP field always shows the part no to print
-        updates[lookup_name] = lookup_val
+        # ── LOOKUP field itself ─────────────────────────
+        updates[lookup_name] = part_no
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
-            w.setText(lookup_val)
+            w.setText(part_no)
 
-        # ── Propagate to LINK and BATCH NO elements ───────────────────────
-        # ── Collect names that BATCH NO will own (qty + whs targets) ─────
+        # ── Collect BATCH NO owned fields ───────────────
         batch_no_owned: set[str] = set()
         for e in self._elements:
             if (e.get("type") == "text"
                     and (e.get("design_type") or "").upper() == "BATCH NO"
                     and e.get("design_batch_no", "") == lookup_name):
-                batch_no_owned.add(e.get("name", ""))          # the qty field itself
+                batch_no_owned.add(e.get("name", ""))
                 wh_t = e.get("design_wh", "")
                 if wh_t:
-                    batch_no_owned.add(wh_t)                   # the whs target field
-        print(f"  [BATCH NO OWNED] {batch_no_owned}")
-        print(f"  [FIELD WIDGETS]  {list(self._field_widgets.keys())}")
+                    batch_no_owned.add(wh_t)
 
-        # ── Propagate to LINK and BATCH NO elements ───────────────────────
+        print(f"  [BATCH NO OWNED] {batch_no_owned}")
+
+        # ── MAIN PROPAGATION LOOP ───────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
+
             dt      = (e.get("design_type") or "").upper()
             ename   = e.get("name", "")
             res_fld = (e.get("design_result") or "").lower().strip()
 
+            # =========================
+            # LINK (FIXED)
+            # =========================
             if dt == "LINK" and e.get("design_link", "") == lookup_cid:
-                # Skip fields that BATCH NO will fill — don't overwrite them
+
                 if ename in batch_no_owned:
                     print(f"  [LINK SKIP] {ename!r} — owned by BATCH NO")
                     continue
-                val = result_map.get(res_fld, part_no)
+
+                # ✅ CORE FIX: resolve from raw record
+                db_key = _MasterItemPickerPopup._MM_TO_KEY.get(res_fld, res_fld)
+                val = str(raw.get(db_key) or raw.get(res_fld) or "")
+
                 updates[ename] = val
+
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(val)
+
                 print(f"  [LINK] {ename!r} ← {res_fld!r} → {val!r}")
 
+            # =========================
+            # BATCH NO (unchanged)
+            # =========================
             elif dt == "BATCH NO":
                 if e.get("design_batch_no", "") == lookup_name:
+
                     updates[ename] = qty
                     widget = self._field_widgets.get(ename)
                     if isinstance(widget, QLineEdit):
                         widget.setText(qty)
-                    print(f"  [BATCH NO] {ename!r} ← qty={qty!r}  (widget={widget!r})")
+
+                    print(f"  [BATCH NO] {ename!r} ← qty={qty!r}")
+
                     wh_target = e.get("design_wh", "")
                     if wh_target:
                         updates[wh_target] = whs
                         widget2 = self._field_widgets.get(wh_target)
                         if isinstance(widget2, QLineEdit):
                             widget2.setText(whs)
-                        print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}  (widget={widget2!r})")
 
+                        print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}")
+
+        # ── Finalize ───────────────────────────────────
         self._current_values.update(updates)
         self._preview.set_values(updates)
         self._lbl_item_code.setText(part_no)
