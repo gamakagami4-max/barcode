@@ -1216,6 +1216,10 @@ class _CanvasPreview(QWidget):
         for d in sorted(self._elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
 
+        # After all elements are added, run an initial merge pass
+        # so visible MERGE elements show computed values immediately
+        self._recompute_merges()
+
         # Build SAME WITH map: target_name → source_name
         self._same_with_map = {}
         cid_to_name = {
@@ -1269,10 +1273,24 @@ class _CanvasPreview(QWidget):
         return re.sub(r"\{(\w+)\}", replacer, template).replace("+", "")
 
     def _add_element(self, d: dict):
-        if not d.get("visible", True):
-            return  # Skip elements where visible is False
-    
         kind = d.get("type")
+        visible = d.get("visible", True)
+
+        # For invisible text elements, still register in _text_items
+        # so MERGE/SAME WITH can read their values — just don't add to scene
+        if not visible:
+            if kind == "text":
+                name = d.get("name", "")
+                if name:
+                    ti = QGraphicsTextItem(d.get("text", ""))
+                    font = QFont(d.get("font_family", "Arial"), int(d.get("font_size", 10)))
+                    font.setBold(d.get("bold", False))
+                    font.setItalic(d.get("italic", False))
+                    ti.setFont(font)
+                    ti.document().setDocumentMargin(0)
+                    self._text_items[name] = ti  # register but don't add to scene
+            return
+        
         x    = d.get("aabb_x", d.get("x", 0))
         y    = d.get("aabb_y", d.get("y", 0))
         z    = d.get("z", 0)
