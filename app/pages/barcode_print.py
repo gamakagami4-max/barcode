@@ -1762,8 +1762,8 @@ class BarcodePrintPage(QWidget):
         self._master_item_picker.open_modal(dyn_columns=dyn_columns)
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
-                      name: str, qty: str, whs: str):
- 
+                  name: str, qty: str, whs: str):
+
         print("=" * 60)
         print("[MASTER ITEM PICKED] Raw signal values:")
         print(f"  part_no   = {part_no!r}")
@@ -1771,64 +1771,58 @@ class BarcodePrintPage(QWidget):
         print(f"  name      = {name!r}")
         print(f"  qty       = {qty!r}")
         print(f"  whs       = {whs!r}")
-    
+
         fd = getattr(self, "_active_lookup_fd", None)
         if fd is None:
             print("[MASTER ITEM PICKED] No active lookup fd — aborting.")
             return
-    
+
         lookup_name = fd["name"]
         lookup_cid  = fd["component_id"]
         raw = getattr(self._master_item_picker, "_last_raw_record", {})
-    
+
         print(f"\n[LOOKUP] lookup_name={lookup_name!r}  lookup_cid={lookup_cid!r}")
         print(f"[RAW RECORD KEYS] {list(raw.keys())}")
         print("=" * 60)
-    
+
         updates: dict[str, str] = {}
-    
+
         # ── LOOKUP field itself ──────────────────────────────────────────────
         updates[lookup_name] = part_no
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
             w.setText(part_no)
-    
-        # ── LINK fields that point at this lookup ────────────────────────────
-        # Process ALL link fields — no longer skip WH-target fields.
-        # BATCH NO handler below covers qty/wh on the canvas; LINK fields that
-        # happen to share the same name as a wh_ref are separate form widgets
-        # and must be populated from the raw DB record.
+
+        # ── LINK and BATCH NO fields ─────────────────────────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
-    
+
             dt    = (e.get("design_type") or "").upper()
             ename = e.get("name", "")
-    
-            # ── LINK → fill from raw record ──────────────────────────────────
+
             if dt == "LINK" and e.get("design_link", "") == lookup_cid:
                 res_fld = (e.get("design_result") or "").lower().strip()
                 if not res_fld:
                     continue
-    
+
                 db_key = _MasterItemPickerPopup._MM_TO_KEY.get(res_fld, res_fld)
                 val = str(raw.get(db_key) or raw.get(res_fld) or "")
-    
+
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(val)
-    
+
                 print(f"  [LINK] {ename!r} ← {res_fld!r} (db_key={db_key!r}) → {val!r}")
-    
-            # ── BATCH NO → fill qty and wh targets ──────────────────────────
+
             elif dt == "BATCH NO" and e.get("design_batch_no", "") == lookup_name:
                 updates[ename] = qty
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(qty)
                 print(f"  [BATCH NO] {ename!r} ← qty={qty!r}")
-    
+
                 wh_target = e.get("design_wh", "")
                 if wh_target:
                     updates[wh_target] = whs
@@ -1836,7 +1830,28 @@ class BarcodePrintPage(QWidget):
                     if isinstance(widget2, QLineEdit):
                         widget2.setText(whs)
                     print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}")
-    
+
+        # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
+        # Build component_id → element name map
+        cid_to_name: dict[str, str] = {
+            e.get("component_id", ""): e.get("name", "")
+            for e in self._elements
+            if e.get("component_id")
+        }
+        for e in self._elements:
+            if (e.get("type") != "text"
+                    or (e.get("design_type") or "").upper() != "SAME WITH"):
+                continue
+            target_name = e.get("name", "")
+            source_cid  = (e.get("design_same_with") or "").strip()
+            source_name = cid_to_name.get(source_cid, "")
+            if source_name and source_name in updates:
+                updates[target_name] = updates[source_name]
+                widget = self._field_widgets.get(target_name)
+                if isinstance(widget, QLineEdit):
+                    widget.setText(updates[source_name])
+                print(f"  [SAME WITH] {target_name!r} ← {source_name!r} = {updates[source_name]!r}")
+
         # ── Finalise ─────────────────────────────────────────────────────────
         self._current_values.update(updates)
         self._preview.set_values(updates)
@@ -1985,24 +2000,32 @@ class BarcodePrintPage(QWidget):
             QMessageBox.warning(self, "No Canvas", "Design canvas is empty — nothing to print.")
             return
 
-        merged_values: dict[str, str] = dict(self._current_values)
-        all_text_vals: dict[str, str] = {
+        # ── 1. Live canvas text items — single source of truth ───────────────
+        merged_values: dict[str, str] = {
             name: item.toPlainText()
             for name, item in self._preview._text_items.items()
         }
-        for e in self._elements:
-            if (e.get("type") == "text"
-                    and (e.get("design_type") or "").upper() == "MERGE"):
-                ename = e.get("name", "")
-                if ename in all_text_vals:
-                    merged_values[ename] = all_text_vals[ename]
 
-        for e in self._elements:
-            if e.get("type") == "text":
-                ename = e.get("name", "")
-                if ename and ename not in merged_values:
-                    merged_values[ename] = str(e.get("text", ""))
+        # ── 2. _current_values: explicit field-widget state ───────────────────
+        merged_values.update(self._current_values)
 
+        # ── 3. SAME WITH: re-resolve at print time to catch any gaps ─────────
+        cid_to_name: dict[str, str] = {
+            e.get("component_id", ""): e.get("name", "")
+            for e in self._elements
+            if e.get("component_id")
+        }
+        for e in self._elements:
+            if (e.get("type") != "text"
+                    or (e.get("design_type") or "").upper() != "SAME WITH"):
+                continue
+            target_name = e.get("name", "")
+            source_cid  = (e.get("design_same_with") or "").strip()
+            source_name = cid_to_name.get(source_cid, "")
+            if source_name and source_name in merged_values:
+                merged_values[target_name] = merged_values[source_name]
+
+        # ── 4. SYSTEM values: always re-resolve fresh at print time ──────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2075,6 +2098,9 @@ class BarcodePrintPage(QWidget):
         print("=" * 60)
         print(f"[ZPL DEBUG] Design: {code}  DPI: {dpi}  Copies: {copies}")
         print(f"[ZPL DEBUG] Canvas: {self._preview.canvas_w}x{self._preview.canvas_h} dots")
+        print("[ZPL DEBUG] --- merged_values ---")
+        for k, v in sorted(merged_values.items()):
+            print(f"  {k!r:20s} → {v!r}")
         print("[ZPL DEBUG] --- ELEMENT COORDINATES ---")
         try:
             import json as _dbg_json
@@ -2120,7 +2146,7 @@ class BarcodePrintPage(QWidget):
             btn_close = QPushButton("Close"); btn_close.clicked.connect(dlg.accept)
             v.addWidget(btn_close)
             dlg.exec()
-
+            
     # ── Public API ────────────────────────────────────────────────────────────
 
     def load_design_by_code(self, code: str, name: str = "", row_dict: dict | None = None):
