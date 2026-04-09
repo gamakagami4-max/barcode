@@ -1563,9 +1563,8 @@ class BarcodePrintPage(QWidget):
         _form_row("COM TIMBANGAN :", self._lbl_timbangan, layout)
         _form_row("COM GATE :",      self._lbl_gate,      layout)
 
-        self._combo_speed = make_chevron_combo(["1","2","3","4","5","6","7","8","9","10"])
-        try: self._combo_speed.setCurrentText("3")
-        except AttributeError: pass
+        self._combo_speed = make_spin(1, 10, 3)
+        self._combo_speed.setFixedWidth(80)
         speed_w = QWidget(); speed_w.setStyleSheet("background: transparent; border: none;")
         sl = QHBoxLayout(speed_w); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
         sl.addWidget(self._combo_speed); sl.addStretch()
@@ -2007,7 +2006,7 @@ class BarcodePrintPage(QWidget):
         margin_top  = self._spin_mt.value()
 
         try:
-            speed = self._combo_speed.currentText()
+            speed = str(self._combo_speed.value())
         except AttributeError:
             speed = "3"
 
