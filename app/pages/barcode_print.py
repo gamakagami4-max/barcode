@@ -998,6 +998,26 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
                     wh_ref="",
                 ))
 
+        elif dt == "INPUT":
+            if ed == "INVISIBLE":
+                continue
+
+            if cap.upper() in seen_captions:
+                continue
+
+            fields.append(dict(
+                type="freetext",
+                caption=cap,
+                name=name,
+                component_id=cid,
+                link_to=None,
+                system_value=None,
+                column=col,
+                batch_ref="",
+                wh_ref="",
+            ))
+            seen_captions.add(cap.upper())
+            
         # ══════════════════════════════════════════════════════════════════
         # BATCH NO
         # ══════════════════════════════════════════════════════════════════
