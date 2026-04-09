@@ -1125,6 +1125,7 @@ class _CanvasPreview(QWidget):
         super().__init__(parent)
         self._elements: list[dict] = []
         self._text_items: dict[str, QGraphicsTextItem] = {}
+        self._same_with_map: dict[str, str] = {}   # target_name → source_name
         self._canvas_w = 600; self._canvas_h = 400
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_ui()
@@ -1195,6 +1196,21 @@ class _CanvasPreview(QWidget):
         for d in sorted(self._elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
 
+        # Build SAME WITH map: target_name → source_name
+        self._same_with_map = {}
+        cid_to_name = {
+            e.get("component_id", ""): e.get("name", "")
+            for e in self._elements if e.get("component_id")
+        }
+        for e in self._elements:
+            if (e.get("type") == "text"
+                    and (e.get("design_type") or "").upper() == "SAME WITH"):
+                target_name = e.get("name", "")
+                source_cid  = (e.get("design_same_with") or "").strip()
+                source_name = cid_to_name.get(source_cid, "")
+                if target_name and source_name:
+                    self._same_with_map[target_name] = source_name
+
         self._view.setVisible(True); self._placeholder.setVisible(False)
         self._view.resetTransform()
 
@@ -1203,6 +1219,14 @@ class _CanvasPreview(QWidget):
             item = self._text_items.get(name)
             if item is not None:
                 item.setPlainText(str(text))
+
+        # Propagate to SAME WITH targets whose source was just updated
+        for target_name, source_name in self._same_with_map.items():
+            if source_name in name_to_text:
+                target_item = self._text_items.get(target_name)
+                if target_item is not None:
+                    target_item.setPlainText(str(name_to_text[source_name]))
+
         self._recompute_merges()
 
     def _recompute_merges(self):
@@ -1276,7 +1300,8 @@ class _CanvasPreview(QWidget):
         super().resizeEvent(event)
 
     def clear(self):
-        self._scene.clear(); self._text_items.clear(); self._elements = []
+        self._scene.clear(); self._text_items.clear()
+        self._same_with_map.clear(); self._elements = []
         self._view.setVisible(False); self._placeholder.setVisible(True)
 
     @property
