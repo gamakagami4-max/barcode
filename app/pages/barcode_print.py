@@ -1269,6 +1269,9 @@ class _CanvasPreview(QWidget):
         return re.sub(r"\{(\w+)\}", replacer, template).replace("+", "")
 
     def _add_element(self, d: dict):
+        if not d.get("visible", True):
+            return  # Skip elements where visible is False
+    
         kind = d.get("type")
         x    = d.get("aabb_x", d.get("x", 0))
         y    = d.get("aabb_y", d.get("y", 0))
