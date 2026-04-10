@@ -996,6 +996,7 @@ class BarcodeEditorPage(QWidget):
                 "design_wrap_width":   getattr(item, "design_wrap_width",    0),
                 "design_batch_no":     getattr(item, "design_batch_no",      ""),
                 "design_wh":           getattr(item, "design_wh",            ""),
+                "design_tampil":       getattr(item, "design_tampil",        True),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -1046,6 +1047,7 @@ class BarcodeEditorPage(QWidget):
                 item.design_wrap_width  = int(d.get("design_wrap_width", 0) or 0)
                 item.design_batch_no    = d.get("design_batch_no", "")
                 item.design_wh          = d.get("design_wh", "")
+                item.design_tampil      = bool(d.get("design_tampil", True))
                 item.component_name = d.get("name", "Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -1392,6 +1394,7 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_width   = 0
             item.design_batch_no     = ""
             item.design_wh           = ""
+            item.design_tampil       = True
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             rect_count = sum(
@@ -1496,6 +1499,7 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_width = int(data.get("design_wrap_width", 0) or 0)
             item.design_batch_no   = data.get("design_batch_no", "")
             item.design_wh         = data.get("design_wh", "")
+            item.design_tampil     = bool(data.get("design_tampil", True))
 
             item.component_name = data.get('name', 'Text')
             setup_item_logic(item, self.update_pos_label)

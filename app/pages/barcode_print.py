@@ -1273,12 +1273,15 @@ class _CanvasPreview(QWidget):
         return re.sub(r"\{(\w+)\}", replacer, template).replace("+", "")
 
     def _add_element(self, d: dict):
-        kind = d.get("type")
+        kind    = d.get("type")
         visible = d.get("visible", True)
+        tampil  = d.get("design_tampil", True)   # True by default for old designs
 
-        # For invisible text elements, still register in _text_items
-        # so MERGE/SAME WITH can read their values — just don't add to scene
-        if not visible:
+        # Show if EITHER visible OR tampil is True.
+        # Still register invisible text items so MERGE/SAME WITH can read them.
+        should_show = visible or tampil
+
+        if not should_show:
             if kind == "text":
                 name = d.get("name", "")
                 if name:
