@@ -983,6 +983,7 @@ class BarcodeEditorPage(QWidget):
                 "design_weight":       getattr(item, "design_weight",        ""),
                 "design_um":           getattr(item, "design_um",            ""),
                 "design_alignment":    getattr(item, "design_alignment",     "LEFT JUSTIFY"),
+                "design_font_name":    getattr(item, "design_font_name",     "STANDARD"),
                 "design_editor":       getattr(item, "design_editor",        "ENABLED"),
                 "design_data_type":    getattr(item, "design_data_type",     "STRING"),
                 "design_max_length":   getattr(item, "design_max_length",    1),
@@ -1048,6 +1049,8 @@ class BarcodeEditorPage(QWidget):
                 item.design_batch_no    = d.get("design_batch_no", "")
                 item.design_wh          = d.get("design_wh", "")
                 item.design_tampil      = bool(d.get("design_tampil", True))
+                item.design_alignment   = d.get("design_alignment", "LEFT JUSTIFY")
+                item.design_font_name   = d.get("design_font_name", "STANDARD")
                 item.component_name = d.get("name", "Text")
                 setup_item_logic(item, self.update_pos_label); item.setFlags(flags)
             elif kind == "line":
@@ -1395,6 +1398,7 @@ class BarcodeEditorPage(QWidget):
             item.design_batch_no     = ""
             item.design_wh           = ""
             item.design_tampil       = True
+            item.design_font_name    = "STANDARD"
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
             rect_count = sum(

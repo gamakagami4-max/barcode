@@ -437,6 +437,12 @@ class TextPropertyEditor(
             "UNIVERS CONDENSED",
         ])
         layout.addRow(_lbl("FONT NAME :"), self.font_combo)
+        _stored_font = getattr(self.item, "design_font_name", "STANDARD")
+        if _stored_font in self.font_combo._items:
+            self.font_combo.blockSignals(True)
+            self.font_combo._current = _stored_font
+            self.font_combo._label.setText(_stored_font)
+            self.font_combo.blockSignals(False)
 
         # ── SIZE / POSITION ───────────────────────────────────────────────────
         self.size_spin = make_spin(1, 100, int(self.item.font().pointSize()))
@@ -1021,6 +1027,7 @@ class TextPropertyEditor(
         self.update_callback()
 
     def _apply_font_family(self, value: str):
+        self.item.design_font_name = value
         font_map = {
             "STANDARD":             "Arial",
             "ARIAL":                "Arial",
