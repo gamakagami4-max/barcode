@@ -12,16 +12,29 @@ Convert: zpl_angle = (360 - ccw_angle) % 360
   Canvas CCW 180° → ZPL CW 180° → ^A0I
   Canvas CCW   0° → ZPL CW   0° → ^A0N
 
-Delphi position formulae applied after angle conversion:
-  Angle 0  : ^FT round(Left*2.1)+MX    , round(Top*2.1)+AX-1      ^A0N
-  Angle 90 : ^FT round(Left*2.1)+AX    , round(Top*2.1)+H*2.1-MX  ^A0B
-  Angle 180: ^FT round(Left*2.1)+W*2.1 , round(Top*2.1)+MY*2      ^A0I
-  Angle 270: ^FT round(Left*2.1)+MY*2  , round(Top*2.1)+MY        ^A0R
+KEY FIX 3: _resolve_same_with now searches by component_id (design_same_with
+stores a UUID) AND by name as a fallback. The old code only searched by name
+so all SAME WITH references were silently missed.
+
+KEY FIX 4: _apply_overrides runs BEFORE _resolve_same_with so that overridden
+values from barcode_print.py (LINK / BATCH NO / freetext fields) propagate
+correctly into SAME WITH targets.
+
+KEY FIX 5: Invisible elements are still included in the SAME WITH lookup maps
+so that hidden source elements can still feed their value to visible targets.
+
+KEY FIX 6: MERGE type elements now evaluate their design_merge template using
+actual sibling element values, matching the canvas preview behaviour.
+
+KEY FIX 7: The value used for ZPL is determined by a priority chain:
+  value_overrides → design_merge evaluation → element["text"]
+  This ensures FIX/INPUT/LINK/BATCH_NO all emit the right text.
 """
 
 from __future__ import annotations
 import json
 import math
+import re
 
 # ── Scale factor ──────────────────────────────────────────────────────────────
 _SCALE = 2.1
@@ -150,9 +163,6 @@ def _aabb_pos(d: dict) -> tuple[float, float]:
     Priority:
       1. aabb_x / aabb_y  — set by the editor for ALL elements (rotated or not)
       2. x / y            — fallback for axis-aligned elements where aabb == origin
-
-    This is the critical fix: Delphi's Left/Top == AABB top-left, NOT the
-    raw rotation-pivot stored in x/y.
     """
     aabb_x = d.get("aabb_x")
     aabb_y = d.get("aabb_y")
@@ -164,30 +174,16 @@ def _aabb_pos(d: dict) -> tuple[float, float]:
 def _natural_size(d: dict) -> tuple[float, float]:
     """
     Return the element's NATURAL (unrotated) width and height.
-
-    For rotated text elements the editor stores font-derived w/h in the raw
-    x/y frame.  We need the natural dimensions so the Delphi angle formulae
-    work correctly (they assume Width/Height are in the element's own frame).
-
-    For 90°/270° rotated elements the AABB has swapped dimensions, so we
-    swap them back.  For 0°/180° the AABB dimensions equal the natural ones.
     """
-    # Use CW angle for swap decision (90/270 CW have swapped AABB dims)
     rotation = _ccw_to_cw(float(d.get("rotation", 0)))
     w = float(d.get("width",  d.get("w", 50)))
     h = float(d.get("height", d.get("h", 20)))
 
     if rotation in (90, 270):
-        # AABB is swapped → swap back to get natural frame dimensions
-        # But only swap if the stored w/h look like AABB dimensions.
-        # The safest heuristic: if aabb_x/aabb_y are present the editor
-        # may have stored natural dims already in w/h — check both sources.
         aabb_w = float(d.get("aabb_w", 0) or 0)
         aabb_h = float(d.get("aabb_h", 0) or 0)
         if aabb_w > 0 and aabb_h > 0:
-            # aabb_w/h are the swapped AABB dims → natural = swap back
             return aabb_h, aabb_w
-        # Fallback: treat stored w/h as AABB and swap
         return h, w
 
     return w, h
@@ -197,7 +193,7 @@ def _natural_size(d: dict) -> tuple[float, float]:
 
 def _convert_text(d: dict) -> str:
     r"""
-    Delphi formulae — Left/Top are now sourced from aabb_x/aabb_y (the fix).
+    Delphi formulae — Left/Top are sourced from aabb_x/aabb_y.
 
     Angle 0:
       ^FT{round(Left*2.1)+MX},{round(Top*2.1)+AX-1}^A0N,AX,AY^FH\^FD{Caption}^FS
@@ -210,14 +206,10 @@ def _convert_text(d: dict) -> str:
 
     Angle 270:
       ^FT{round(Left*2.1)+MY*2},{round(Top*2.1)+MY}^A0R,AX,AY^FH\^FD{Caption}^FS
-
-    Width/Height in the formulae are the NATURAL (unrotated) dimensions.
     """  # noqa: W605
-    # ── FIXED: use AABB top-left, not raw rotation pivot ────────────────────
-    Left, Top    = _aabb_pos(d)
+    Left, Top     = _aabb_pos(d)
     Width, Height = _natural_size(d)
 
-    # Canvas stores CCW; ZPL uses CW — convert before applying Delphi formulae
     rotation = _ccw_to_cw(float(d.get("rotation", 0)))
     pt       = float(d.get("font_size", 10))
     caption  = str(d.get("text", ""))
@@ -274,19 +266,10 @@ def _convert_text(d: dict) -> str:
 
 def _convert_barcode(d: dict) -> str:
     """
-    FIXED: use aabb_x/aabb_y as Left/Top (same reasoning as text elements).
-
-    For barcodes the height-in-dots comes from the container dimension that
-    runs ALONG the bars:
-      • rotation 0/180  → bars are vertical → height = container_height
-      • rotation 90/270 → bars are vertical in rotated frame → height = container_width
-    Both container_width and container_height are natural (unrotated) dimensions
-    stored by the editor.
+    Use aabb_x/aabb_y as Left/Top (same reasoning as text elements).
     """
-    # ── FIXED: use AABB top-left ─────────────────────────────────────────────
     Left, Top = _aabb_pos(d)
 
-    # Barcode rotation is already clockwise (unlike text which is CCW)
     rotation = int(round(float(d.get("rotation", 0)))) % 360
     orient   = _ORIENT.get(rotation, "N")
     design   = (d.get("design") or "CODE 128").upper()
@@ -402,6 +385,11 @@ def _convert_rect(d: dict) -> str:
 # ── Override helper ───────────────────────────────────────────────────────────
 
 def _apply_overrides(elements: list[dict], overrides: dict) -> list[dict]:
+    """
+    Apply value_overrides (from barcode_print.py merged_values) onto elements
+    BEFORE SAME WITH resolution runs, so that overridden values propagate
+    correctly to SAME WITH targets.
+    """
     result = []
     for elem in elements:
         name = elem.get("name", "")
@@ -409,7 +397,7 @@ def _apply_overrides(elements: list[dict], overrides: dict) -> list[dict]:
         if kind == "text" and name in overrides:
             elem = dict(elem)
             elem["text"] = str(overrides[name])
-            print(f"  [OVERRIDE text] {name!r} → {overrides[name]!r}")
+            print(f"  [OVERRIDE text]    {name!r} → {overrides[name]!r}")
         elif kind == "barcode" and name in overrides:
             elem = dict(elem)
             elem["design_text"] = str(overrides[name])
@@ -418,53 +406,132 @@ def _apply_overrides(elements: list[dict], overrides: dict) -> list[dict]:
     return result
 
 
-def _resolve_same_with(elements: list[dict]) -> list[dict]:
-    name_to_text: dict[str, str] = {}
-    first_lookup_text: str = ""
-    first_lookup_found: bool = False
+# ── MERGE evaluator ───────────────────────────────────────────────────────────
 
+def _eval_merge(template: str, name_to_val: dict[str, str]) -> str:
+    """
+    Evaluate a MERGE template like "{Label1}{Label2}-{Label3}" using the
+    current resolved name→value map.  Matches the canvas preview behaviour in
+    _CanvasPreview._eval_merge (barcode_print.py).
+    """
+    def replacer(m: re.Match) -> str:
+        return name_to_val.get(m.group(1), "")
+    result = re.sub(r"\{(\w+)\}", replacer, template)
+    # strip bare "+" separators that remain when a slot was empty
+    result = result.replace("+", "")
+    return result
+
+
+def _resolve_merge(elements: list[dict]) -> list[dict]:
+    """
+    Evaluate all MERGE type elements using the current text values of sibling
+    elements.  Must run AFTER _apply_overrides and AFTER _resolve_same_with so
+    it sees the final resolved values.
+    """
+    # Build name → current text map (include invisible elements as value sources)
+    name_to_val: dict[str, str] = {}
     for e in elements:
         n = e.get("name", "")
         if not n:
             continue
         if e.get("type") == "text":
+            name_to_val[n] = str(e.get("text", ""))
+        elif e.get("type") == "barcode":
+            name_to_val[n] = str(e.get("design_text", ""))
+
+    result = []
+    for elem in elements:
+        if (elem.get("type") == "text"
+                and (elem.get("design_type") or "").upper() == "MERGE"):
+            template = (elem.get("design_merge") or "").strip()
+            if template:
+                resolved = _eval_merge(template, name_to_val)
+                elem = dict(elem)
+                elem["text"] = resolved
+                print(f"  [MERGE] {elem.get('name')!r} template={template!r} → {resolved!r}")
+        result.append(elem)
+    return result
+
+
+def _resolve_same_with(elements: list[dict]) -> list[dict]:
+    """
+    Resolve SAME WITH references for both text and barcode elements.
+
+    Searches by component_id first (canonical UUID stored in design_same_with),
+    then falls back to searching by name.  Invisible source elements ARE
+    included in the lookup maps so hidden sources can still feed visible targets.
+    """
+    # Build name→value and component_id→value lookup maps.
+    # Include ALL elements regardless of visibility.
+    name_to_text: dict[str, str] = {}
+    cid_to_text:  dict[str, str] = {}
+    first_lookup_text:  str  = ""
+    first_lookup_found: bool = False
+
+    for e in elements:
+        n   = e.get("name", "")
+        cid = e.get("component_id", "")
+        if e.get("type") == "text":
             val = str(e.get("text", ""))
-            name_to_text[n] = val
+            if n:
+                name_to_text[n] = val
+            if cid:
+                cid_to_text[cid] = val
             if (not first_lookup_found
                     and (e.get("design_type") or "").upper() == "LOOKUP"):
                 first_lookup_text  = val
                 first_lookup_found = True
         elif e.get("type") == "barcode":
-            name_to_text[n] = str(e.get("design_text", ""))
+            val = str(e.get("design_text", ""))
+            if n:
+                name_to_text[n] = val
+            if cid:
+                cid_to_text[cid] = val
+
+    def _lookup(ref: str) -> tuple[bool, str]:
+        """Search by component_id first (canonical), then by name (fallback)."""
+        if ref in cid_to_text:
+            return True, cid_to_text[ref]
+        if ref in name_to_text:
+            return True, name_to_text[ref]
+        return False, ""
 
     result = []
     for elem in elements:
-        if (elem.get("type") == "barcode"
-                and (elem.get("design_type") or "").upper() == "SAME WITH"):
-            src = (elem.get("design_same_with") or "").strip()
-            if src and src in name_to_text:
-                elem = dict(elem)
-                resolved = name_to_text[src]
+        dt   = (elem.get("design_type") or "").upper()
+        kind = elem.get("type", "")
+
+        if dt != "SAME WITH":
+            result.append(elem)
+            continue
+
+        src = (elem.get("design_same_with") or "").strip()
+        found, resolved = _lookup(src) if src else (False, "")
+
+        # No explicit source but there is a LOOKUP element → use its value
+        if not found and not src and first_lookup_found:
+            found, resolved = True, first_lookup_text
+
+        if found:
+            elem = dict(elem)
+            if kind == "barcode":
                 print(f"  [SAME WITH] barcode {elem.get('name')!r} ← {src!r} = {resolved!r}")
                 elem["design_text"] = resolved
-            elif src:
+            else:
+                print(f"  [SAME WITH] text    {elem.get('name')!r} ← {src!r} = {resolved!r}")
+                elem["text"] = resolved
+        else:
+            if src:
                 print(
-                    f"  [SAME WITH] barcode {elem.get('name')!r} ← {src!r} "
-                    f"NOT FOUND in element map — keeping original design_text"
+                    f"  [SAME WITH] {kind} {elem.get('name')!r} ← {src!r} "
+                    f"NOT FOUND in cid/name maps — keeping original value"
                 )
             else:
-                if first_lookup_found:
-                    elem = dict(elem)
-                    print(
-                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
-                        f"(first LOOKUP fallback) = {first_lookup_text!r}"
-                    )
-                    elem["design_text"] = first_lookup_text
-                else:
-                    print(
-                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
-                        f"(no LOOKUP element found) — keeping original design_text"
-                    )
+                print(
+                    f"  [SAME WITH] {kind} {elem.get('name')!r} ← "
+                    f"(no source ref, no LOOKUP fallback) — keeping original value"
+                )
+
         result.append(elem)
     return result
 
@@ -484,11 +551,13 @@ def canvas_to_zpl(
     """
     Convert a serialized canvas → ZPL II.
 
-    The key behavioural change vs the original:
-      • _convert_text   uses aabb_x/aabb_y as Left/Top
-      • _convert_barcode uses aabb_x/aabb_y as Left/Top
-      This makes the ZPL positions match the on-screen canvas preview, which
-      also renders elements at their AABB origin.
+    Pipeline order (important):
+      1. Parse JSON
+      2. _apply_overrides   ← inject barcode_print.py merged_values FIRST
+      3. _resolve_same_with ← now sees already-overridden values for sources
+      4. _resolve_merge     ← evaluate MERGE templates with final resolved values
+      5. Sort by z-value
+      6. Emit ZPL per element (skip invisible, but they were already used above)
     """
     print("=" * 60)
     print(
@@ -496,7 +565,7 @@ def canvas_to_zpl(
         f"dpi={dpi} (scale fixed at 2.1)  qty={print_qty}"
     )
     if value_overrides:
-        print(f"  overrides: {list(value_overrides.keys())}")
+        print(f"  overrides ({len(value_overrides)}): {list(value_overrides.keys())}")
     print("=" * 60)
 
     if isinstance(canvas_json, str):
@@ -504,11 +573,21 @@ def canvas_to_zpl(
     else:
         elements = list(canvas_json)
 
+    # ── Step 1: apply field-widget values onto element texts ──────────────────
+    # Must happen BEFORE _resolve_same_with so SAME WITH targets see the
+    # correct source values (e.g. after a master-item lookup).
     if value_overrides:
         elements = _apply_overrides(elements, value_overrides)
 
+    # ── Step 2: propagate SAME WITH references ────────────────────────────────
     elements = _resolve_same_with(elements)
 
+    # ── Step 3: evaluate MERGE templates ──────────────────────────────────────
+    # Runs after SAME WITH so merge slots that reference SAME WITH targets
+    # also get the correct resolved values.
+    elements = _resolve_merge(elements)
+
+    # ── Step 4: sort by z (paint order) ──────────────────────────────────────
     elements_sorted = sorted(elements, key=lambda e: float(e.get("z", 0)))
 
     pw = _r(canvas_w)
@@ -528,7 +607,7 @@ def canvas_to_zpl(
         print(f"\n  #{idx + 1} {kind!r:8s} {d.get('name', '?')!r:14s}  visible={visible}")
 
         if not visible:
-            print("    SKIPPED (not visible — value already resolved for SAME WITH if needed)")
+            print("    SKIPPED (not visible)")
             continue
 
         try:
@@ -586,7 +665,6 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # ── Built-in self-test (BC0002 sample) ────────────────────────────────────
-    # Note: elements now carry aabb_x/aabb_y which the fixed code uses.
     print("Self-test with BC0002 sample data:")
     sample = json.loads(
         '[{"x":-6.0,"y":87.0,"z":12.0,"visible":true,"rotation":270.0,'

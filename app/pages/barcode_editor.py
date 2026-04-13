@@ -34,7 +34,7 @@ from components.barcode_editor.general_tab import GeneralTab
 
 
 
-_DEFAULT_TAMPIL = True  # True = show all in preview, False = respect design_visible
+_DEFAULT_TAMPIL = False # True = show all in preview, False = respect design_visible
 
 COMPONENT_META = {
     'text':    ('fa5s.font',    '#6366F1', '#FFFFFF', '#4338CA'),
