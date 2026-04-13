@@ -34,6 +34,8 @@ from components.barcode_editor.general_tab import GeneralTab
 
 
 
+_DEFAULT_TAMPIL = True  # True = show all in preview, False = respect design_visible
+
 COMPONENT_META = {
     'text':    ('fa5s.font',    '#6366F1', '#FFFFFF', '#4338CA'),
     'barcode': ('fa5s.barcode', '#0EA5E9', '#FFFFFF', '#0369A1'),
@@ -314,6 +316,7 @@ class BarcodeEditorPage(QWidget):
         self._design_name  = ""
         self._sticker_name = ""
         self._h_in = self._w_in = 0.0
+        self._tampil = _DEFAULT_TAMPIL
         self.init_ui()
 
     def init_ui(self):
@@ -707,10 +710,11 @@ class BarcodeEditorPage(QWidget):
 
         # ── Temporarily hide invisible items ──────────────────────────────────
         hidden_items = []
-        for item in self.scene.items():
-            if not getattr(item, "design_visible", True):
-                item.setVisible(False)
-                hidden_items.append(item)
+        if not self._tampil:
+            for item in self.scene.items():
+                if not getattr(item, "design_visible", True):
+                    item.setVisible(False)
+                    hidden_items.append(item)
 
         # ── Render scene to pixmap ─────────────────────────────────────────────
         scene_rect = self.scene.sceneRect()
@@ -846,6 +850,7 @@ class BarcodeEditorPage(QWidget):
             self.general_tab.status_combo._current = "DISPLAY"
             self.general_tab.status_combo._label.setText("DISPLAY")
 
+        self._tampil = _DEFAULT_TAMPIL
         self._canvas_w, self._canvas_h = w, h
         self.scene.setSceneRect(QRectF(0, 0, w, h))
         self._update_design_subtitle()
@@ -895,6 +900,7 @@ class BarcodeEditorPage(QWidget):
                     if cw != w or ch != h:
                         self._canvas_w, self._canvas_h = cw, ch
                         self.scene.setSceneRect(QRectF(0, 0, cw, ch))
+                    self._tampil = bool(meta.get("tampil", _DEFAULT_TAMPIL))
                 except Exception as e:
                     print(f"[load_design] itrm meta error: {e}")
         else:
@@ -997,7 +1003,6 @@ class BarcodeEditorPage(QWidget):
                 "design_wrap_width":   getattr(item, "design_wrap_width",    0),
                 "design_batch_no":     getattr(item, "design_batch_no",      ""),
                 "design_wh":           getattr(item, "design_wh",            ""),
-                "design_tampil":       getattr(item, "design_tampil",        True),
             })
             return base
         if isinstance(item, QGraphicsLineItem):
@@ -1048,7 +1053,6 @@ class BarcodeEditorPage(QWidget):
                 item.design_wrap_width  = int(d.get("design_wrap_width", 0) or 0)
                 item.design_batch_no    = d.get("design_batch_no", "")
                 item.design_wh          = d.get("design_wh", "")
-                item.design_tampil      = bool(d.get("design_tampil", True))
                 item.design_alignment   = d.get("design_alignment", "LEFT JUSTIFY")
                 item.design_font_name   = d.get("design_font_name", "STANDARD")
                 item.component_name = d.get("name", "Text")
@@ -1100,8 +1104,11 @@ class BarcodeEditorPage(QWidget):
     def get_design_payload(self) -> dict:
         return {
             "usrm": _json.dumps(self.serialize_canvas(), separators=(",", ":")),
-            "itrm": _json.dumps({"canvas_w": self._canvas_w, "canvas_h": self._canvas_h},
-                                 separators=(",", ":")),
+            "itrm": _json.dumps({
+                "canvas_w": self._canvas_w,
+                "canvas_h": self._canvas_h,
+                "tampil":   self._tampil,
+            }, separators=(",", ":")),
         }
 
     def _on_save_clicked(self):
@@ -1397,7 +1404,6 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_width   = 0
             item.design_batch_no     = ""
             item.design_wh           = ""
-            item.design_tampil       = True
             item.design_font_name    = "STANDARD"
             setup_item_logic(item, self.update_pos_label)
         elif kind == "rect":
@@ -1503,7 +1509,6 @@ class BarcodeEditorPage(QWidget):
             item.design_wrap_width = int(data.get("design_wrap_width", 0) or 0)
             item.design_batch_no   = data.get("design_batch_no", "")
             item.design_wh         = data.get("design_wh", "")
-            item.design_tampil     = bool(data.get("design_tampil", True))
 
             item.component_name = data.get('name', 'Text')
             setup_item_logic(item, self.update_pos_label)

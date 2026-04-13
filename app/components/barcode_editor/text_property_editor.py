@@ -685,13 +685,6 @@ class TextPropertyEditor(
         self.visible_combo.currentTextChanged.connect(self._apply_visible)
         layout.addRow(_lbl("VISIBLE :"), self.visible_combo)
 
-        # ── TAMPIL ────────────────────────────────────────────────────────────────  ← ADD THIS BLOCK
-        self.tampil_combo = make_chevron_combo(["TRUE", "FALSE"])
-        current_tampil = getattr(self.item, "design_tampil", True)
-        self.tampil_combo.setCurrentText("TRUE" if current_tampil in (True, None) else "FALSE")
-        self.tampil_combo.currentTextChanged.connect(self._apply_tampil)
-        layout.addRow(_lbl("TAMPIL :"), self.tampil_combo)
-
         # ── Remaining fields ──────────────────────────────────────────────────
         self.save_field_combo = make_chevron_combo(["-- NOT SAVE --", "PRPMNO"] + [f"PRPM{i:02d}" for i in range(1, 31)])
         self.column_spin      = make_spin(1, 999, 1)
@@ -1077,10 +1070,6 @@ class TextPropertyEditor(
         self.item.design_visible = (value == "TRUE")
         if SameWithRegistry.is_source(self.item):
             self._sync_same_with_targets()
-        self.update_callback()
-
-    def _apply_tampil(self, value: str):          # ← ADD THIS METHOD
-        self.item.design_tampil = (value == "TRUE")
         self.update_callback()
 
     def _set_trim_style(self, checked: bool):

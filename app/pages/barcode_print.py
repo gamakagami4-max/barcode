@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem, QGraphicsLineItem, QGraphicsRectItem,
     QCalendarWidget, QMessageBox,
 )
-
+from pages.barcode_editor import _DEFAULT_TAMPIL
 
 # ── Standard button ───────────────────────────────────────────────────────────
 
@@ -1197,6 +1197,13 @@ class _CanvasPreview(QWidget):
             self._view.setVisible(False); self._placeholder.setVisible(True); return
 
         self._canvas_w = canvas_w; self._canvas_h = canvas_h
+        self._tampil = _DEFAULT_TAMPIL
+        if itrm_json:
+            try:
+                _meta = _json.loads(itrm_json)
+                self._tampil = bool(_meta.get("tampil", _DEFAULT_TAMPIL))
+            except Exception:
+                pass
         self._scene.setSceneRect(QRectF(0, 0, canvas_w, canvas_h))
         bg = self._scene.addRect(
             QRectF(0, 0, canvas_w, canvas_h),
@@ -1275,11 +1282,10 @@ class _CanvasPreview(QWidget):
     def _add_element(self, d: dict):
         kind    = d.get("type")
         visible = d.get("visible", True)
-        tampil  = d.get("design_tampil", True)   # True by default for old designs
 
-        # Show if EITHER visible OR tampil is True.
-        # Still register invisible text items so MERGE/SAME WITH can read them.
-        should_show = visible or tampil
+        # If tampil=True (design-level): show all regardless of visible.
+        # If tampil=False: only show items where visible=True.
+        should_show = self._tampil or visible
 
         if not should_show:
             if kind == "text":
