@@ -703,12 +703,9 @@ class BarcodeEditorPage(QWidget):
         from PySide6.QtCore import QRectF, Qt
         from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 
-        # ── Temporarily hide invisible items ──────────────────────────────────
-        # ── Temporarily clear selection (removes red highlight from render) ──
         previously_selected = self.scene.selectedItems()
         self.scene.clearSelection()
 
-        # ── Temporarily hide invisible items ──────────────────────────────────
         hidden_items = []
         if not self._tampil:
             for item in self.scene.items():
@@ -716,7 +713,6 @@ class BarcodeEditorPage(QWidget):
                     item.setVisible(False)
                     hidden_items.append(item)
 
-        # ── Render scene to pixmap ─────────────────────────────────────────────
         scene_rect = self.scene.sceneRect()
         scale = min(780 / scene_rect.width(), 520 / scene_rect.height(), 2.0)
         px_w = int(scene_rect.width()  * scale)
@@ -729,16 +725,12 @@ class BarcodeEditorPage(QWidget):
         self.scene.render(painter, QRectF(0, 0, px_w, px_h), scene_rect)
         painter.end()
 
-        # ── Restore hidden items ───────────────────────────────────────────────
-        # ── Restore hidden items ───────────────────────────────────────────────
         for item in hidden_items:
             item.setVisible(True)
 
-        # ── Restore previous selection ─────────────────────────────────────────
         for item in previously_selected:
             item.setSelected(True)
 
-        # ── Build preview dialog ───────────────────────────────────────────────
         dlg = QDialog(self)
         dlg.setWindowTitle("Print Preview")
         dlg.setMinimumSize(860, 640)
@@ -755,7 +747,6 @@ class BarcodeEditorPage(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
-        # header row
         header = QHBoxLayout()
         title = QLabel(f"Preview  —  {self._design_name or self._design_code}")
         title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1E293B;")
@@ -766,7 +757,6 @@ class BarcodeEditorPage(QWidget):
         header.addWidget(size_lbl)
         layout.addLayout(header)
 
-        # note about hidden items
         if hidden_items:
             note = QLabel(
                 f"ⓘ  {len(hidden_items)} item(s) with Visible = False are hidden in this preview."
@@ -777,7 +767,6 @@ class BarcodeEditorPage(QWidget):
             )
             layout.addWidget(note)
 
-        # canvas
         canvas = QLabel()
         canvas.setObjectName("canvas_label")
         canvas.setPixmap(pixmap)
@@ -785,7 +774,6 @@ class BarcodeEditorPage(QWidget):
         canvas.setScaledContents(False)
         layout.addWidget(canvas, stretch=1)
 
-        # bottom buttons
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
@@ -805,7 +793,7 @@ class BarcodeEditorPage(QWidget):
         layout.addLayout(btn_row)
 
         dlg.exec()
-        
+
     def reset_for_new(self, form_data: dict | None = None):
         SameWithRegistry.clear()
         self.scene.clearSelection()
@@ -1006,14 +994,30 @@ class BarcodeEditorPage(QWidget):
             })
             return base
         if isinstance(item, QGraphicsLineItem):
-            line = item.line(); pen = item.pen()
-            base.update({"type": "line", "x2": round(line.x2(), 2),
-                          "y2": round(line.y2(), 2), "thickness": pen.width()})
+            line = item.line()
+            pen  = item.pen()
+            aabb = item.mapToScene(item.boundingRect()).boundingRect()
+            base.update({
+                "type":      "line",
+                "x2":        round(line.x2(), 2),
+                "y2":        round(line.y2(), 2),
+                "thickness": pen.width(),
+                "aabb_w":    round(aabb.width(),  2),   # ← scene bounding-box width
+                "aabb_h":    round(aabb.height(), 2),   # ← scene bounding-box height
+            })
             return base
         if isinstance(item, QGraphicsRectItem):
-            rect = item.rect(); pen = item.pen()
-            base.update({"type": "rect", "width": round(rect.width(), 2),
-                          "height": round(rect.height(), 2), "border_width": pen.width()})
+            rect = item.rect()
+            pen  = item.pen()
+            aabb = item.mapToScene(item.boundingRect()).boundingRect()
+            base.update({
+                "type":         "rect",
+                "width":        round(rect.width(),  2),
+                "height":       round(rect.height(), 2),
+                "border_width": pen.width(),
+                "aabb_w":       round(aabb.width(),  2),   # ← scene bounding-box width
+                "aabb_h":       round(aabb.height(), 2),   # ← scene bounding-box height
+            })
             return base
         return None
 
@@ -1277,7 +1281,6 @@ class BarcodeEditorPage(QWidget):
         if editor is None or not isinstance(editor, TextPropertyEditor):
             return
 
-        # ── Update timbangan / weight / um combos ─────────────────────────────
         for combo in (editor.timbangan_combo, editor.weight_combo, editor.um_combo):
             combo._items = [new_name if x == old_name else x for x in combo._items]
             if getattr(combo, "_id_map", None):
@@ -1290,7 +1293,6 @@ class BarcodeEditorPage(QWidget):
                 combo._current = new_name
                 combo._set_label_text(new_name)
 
-        # ── Update MERGE WITH widget ───────────────────────────────────────────
         mc = editor.merge_combo
         if isinstance(mc, MergeInputWidget):
             mc._items = [new_name if x == old_name else x for x in mc._items]
@@ -1660,4 +1662,3 @@ class BarcodeEditorPage(QWidget):
         self.zoom_label.setText(f"{int(self._zoom_level * 100)}%")
 
     def _update_design_subtitle(self): pass
-    

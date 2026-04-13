@@ -350,36 +350,103 @@ def _convert_barcode(d: dict) -> str:
 # ── Line ──────────────────────────────────────────────────────────────────────
 
 def _convert_line(d: dict) -> str:
-    x  = float(d.get("x",  0))
-    y  = float(d.get("y",  0))
-    x2 = float(d.get("x2", x + 100))
-    y2 = float(d.get("y2", y))
+    """
+    Position from aabb_x/aabb_y (visual top-left of rotated bounding box).
+    Dimensions derived from the SCENE bounding box so rotation is accounted for:
+      - If aabb_w/aabb_h are stored, use them directly.
+      - Otherwise rotate the local endpoint (x2, y2) by the canvas CCW angle
+        and take the extent of the resulting bounding box.
+    A line is always rendered as a ^GB filled rectangle whose thin dimension
+    equals the stroke thickness.
+    """
+    fx, fy = _aabb_pos(d)
     th_raw = float(d.get("thickness", 2))
     th = max(1, _r(th_raw))
-    dx = abs(x2 - x)
-    dy = abs(y2 - y)
-    if dy <= th_raw:
-        w, h = max(th, _r(dx)), th
-    elif dx <= th_raw:
-        w, h = th, max(th, _r(dy))
+
+    # Local (unrotated) endpoints relative to item origin
+    lx2 = float(d.get("x2", 100))
+    ly2 = float(d.get("y2", 0))
+    rot_ccw = float(d.get("rotation", 0))
+
+    # Try stored scene bounding-box dimensions first
+    aabb_w = float(d.get("aabb_w") or 0)
+    aabb_h = float(d.get("aabb_h") or 0)
+
+    if aabb_w > 0 and aabb_h > 0:
+        # Use stored scene extents directly
+        scene_dx = aabb_w
+        scene_dy = aabb_h
+    elif rot_ccw == 0:
+        scene_dx = abs(lx2)
+        scene_dy = abs(ly2)
     else:
-        w, h = _r(math.hypot(dx, dy)), th
-    fx, fy = _r(x), _r(y)
-    print(f"    [LINE]    {d.get('name', '?')!r:14s}  ^FT{fx},{fy} ^GB{w},{h},{th}")
-    return f"^FT{fx},{fy}^GB{w},{h},{th},B,0^FS"
+        # Rotate the endpoint by the CCW angle to get scene-space delta
+        rad = math.radians(rot_ccw)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+        sx2 = lx2 * cos_a - ly2 * sin_a
+        sy2 = lx2 * sin_a + ly2 * cos_a
+        scene_dx = abs(sx2)
+        scene_dy = abs(sy2)
+
+    # Determine if line is predominantly horizontal or vertical in scene space
+    if scene_dy <= th_raw:
+        # Horizontal line
+        w = max(th, _r(scene_dx))
+        h = th
+    elif scene_dx <= th_raw:
+        # Vertical line
+        w = th
+        h = max(th, _r(scene_dy))
+    else:
+        # Diagonal — approximate as the longer axis
+        if scene_dx >= scene_dy:
+            w = max(th, _r(scene_dx))
+            h = th
+        else:
+            w = th
+            h = max(th, _r(scene_dy))
+
+    pfx, pfy = _r(fx), _r(fy)
+    print(f"    [LINE]    {d.get('name', '?')!r:14s}  rot={rot_ccw}°  "
+          f"aabb({fx},{fy}) scene_dx={scene_dx:.1f} scene_dy={scene_dy:.1f}  "
+          f"^FT{pfx},{pfy} ^GB{w},{h},{th}")
+    return f"^FT{pfx},{pfy}^GB{w},{h},{th},B,0^FS"
 
 
 # ── Rect ──────────────────────────────────────────────────────────────────────
 
 def _convert_rect(d: dict) -> str:
-    x  = float(d.get("x", 0))
-    y  = float(d.get("y", 0))
-    w  = max(1, _r(float(d.get("width",  100))))
-    h  = max(1, _r(float(d.get("height",  50))))
-    bw = max(1, _r(float(d.get("border_width", 2))))
-    fx, fy = _r(x), _r(y)
-    print(f"    [RECT]    {d.get('name', '?')!r:14s}  ^FT{fx},{fy} ^GB{w},{h},{bw}")
-    return f"^FT{fx},{fy}^GB{w},{h},{bw},B,0^FS"
+    """
+    Position from aabb_x/aabb_y. For rects, rotation just swaps w/h
+    (a rotated rect's bounding box has swapped dimensions), so we use
+    aabb_w/aabb_h when available, otherwise apply the same swap logic.
+    """
+    fx, fy   = _aabb_pos(d)
+    rot_ccw  = float(d.get("rotation", 0))
+    nat_w    = float(d.get("width",  100))
+    nat_h    = float(d.get("height",  50))
+    bw       = max(1, _r(float(d.get("border_width", 2))))
+
+    # aabb dimensions if stored
+    aabb_w = float(d.get("aabb_w") or 0)
+    aabb_h = float(d.get("aabb_h") or 0)
+
+    if aabb_w > 0 and aabb_h > 0:
+        w = max(1, _r(aabb_w))
+        h = max(1, _r(aabb_h))
+    else:
+        snapped = int(round(rot_ccw / 90.0)) * 90 % 360
+        if snapped in (90, 270):
+            w = max(1, _r(nat_h))
+            h = max(1, _r(nat_w))
+        else:
+            w = max(1, _r(nat_w))
+            h = max(1, _r(nat_h))
+
+    pfx, pfy = _r(fx), _r(fy)
+    print(f"    [RECT]    {d.get('name', '?')!r:14s}  rot={rot_ccw}°  "
+          f"aabb({fx},{fy})  ^FT{pfx},{pfy} ^GB{w},{h},{bw}")
+    return f"^FT{pfx},{pfy}^GB{w},{h},{bw},B,0^FS"
 
 
 # ── Override helper ───────────────────────────────────────────────────────────
