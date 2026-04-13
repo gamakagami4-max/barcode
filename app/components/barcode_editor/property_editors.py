@@ -338,8 +338,8 @@ class LinePropertyEditor(QWidget):
 
         self.top_spin  = make_spin(0, 5000, int(self.item.pos().y()))
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x()))
-        self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
-        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
+        self.top_spin.editingFinished.connect(lambda: self.item.setY(self.top_spin.value()))
+        self.left_spin.editingFinished.connect(lambda: self.item.setX(self.left_spin.value()))
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
@@ -400,8 +400,8 @@ class RectanglePropertyEditor(QWidget):
 
         self.top_spin  = make_spin(0, 5000, int(self.item.pos().y()))
         self.left_spin = make_spin(0, 5000, int(self.item.pos().x()))
-        self.top_spin.valueChanged.connect(lambda v: self.item.setY(v))
-        self.left_spin.valueChanged.connect(lambda v: self.item.setX(v))
+        self.top_spin.editingFinished.connect(lambda: self.item.setY(self.top_spin.value()))
+        self.left_spin.editingFinished.connect(lambda: self.item.setX(self.left_spin.value()))
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
@@ -470,8 +470,8 @@ class BarcodePropertyEditor(QWidget):
             self.height_cm_spin.setValue(float(_hcm))
         except Exception:
             pass
-        self.height_cm_spin.valueChanged.connect(
-            lambda v: setattr(self.item, "design_height_cm", v)
+        self.height_cm_spin.editingFinished.connect(
+            lambda: setattr(self.item, "design_height_cm", self.height_cm_spin.value())
         )
         layout.addRow(_lbl("HEIGHT(CM) :"), self.height_cm_spin)
 
@@ -479,8 +479,8 @@ class BarcodePropertyEditor(QWidget):
         _aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         self.top_spin  = make_spin(-5000, 5000, int(round(_aabb.top())))
         self.left_spin = make_spin(-5000, 5000, int(round(_aabb.left())))
-        self.top_spin.valueChanged.connect(lambda v: self._move_to_visual(target_y=v))
-        self.left_spin.valueChanged.connect(lambda v: self._move_to_visual(target_x=v))
+        self.top_spin.editingFinished.connect(lambda: self._move_to_visual(target_y=self.top_spin.value()))
+        self.left_spin.editingFinished.connect(lambda: self._move_to_visual(target_x=self.left_spin.value()))
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
