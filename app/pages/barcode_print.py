@@ -880,8 +880,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
             continue
         if (e.get("design_type") or "").upper().strip() != "BATCH NO":
             continue
-        batch_no_results.add("mmcont")
-        batch_no_results.add("qty")
         wh_ref = e.get("design_wh", "")
         if wh_ref:
             batch_no_results.add(wh_ref)
@@ -897,7 +895,7 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         cap = (e.get("design_caption")   or "").strip()
 
         # ── Skip truly invisible (except BATCH NO which has no editor) ────
-        if ed == "INVISIBLE" and dt != "BATCH NO":
+        if ed == "INVISIBLE":
             continue
 
         # ── Caption fallback ──────────────────────────────────────────────
@@ -1022,7 +1020,8 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         # BATCH NO
         # ══════════════════════════════════════════════════════════════════
         elif dt == "BATCH NO":
-            cap = "QTY"
+            if not cap:
+                cap = "QTY"
             batch_key = (
                 e.get("design_batch_no", ""),
                 e.get("design_wh", ""),
