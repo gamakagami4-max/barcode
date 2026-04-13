@@ -360,6 +360,8 @@ class LinePropertyEditor(QWidget):
         self.update_callback()
 
     def update_position_fields(self, pos):
+        if self.top_spin.hasFocus() or self.left_spin.hasFocus():
+            return
         self.top_spin.blockSignals(True)
         self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y()))
@@ -429,6 +431,8 @@ class RectanglePropertyEditor(QWidget):
         self.update_callback()
 
     def update_position_fields(self, pos):
+        if self.top_spin.hasFocus() or self.left_spin.hasFocus():
+            return
         self.top_spin.blockSignals(True)
         self.left_spin.blockSignals(True)
         self.top_spin.setValue(int(pos.y()))
@@ -479,8 +483,8 @@ class BarcodePropertyEditor(QWidget):
         _aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         self.top_spin  = make_spin(-5000, 5000, int(round(_aabb.top())))
         self.left_spin = make_spin(-5000, 5000, int(round(_aabb.left())))
-        self.top_spin.editingFinished.connect(lambda: self._move_to_visual(target_y=self.top_spin.value()))
-        self.left_spin.editingFinished.connect(lambda: self._move_to_visual(target_x=self.left_spin.value()))
+        self.top_spin.editingFinished.connect(self._on_top_editing_finished)
+        self.left_spin.editingFinished.connect(self._on_left_editing_finished)
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
@@ -818,6 +822,24 @@ class BarcodePropertyEditor(QWidget):
         aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         pos  = self.item.pos()
         return aabb.left() - pos.x(), aabb.top() - pos.y()
+
+    def _on_top_editing_finished(self):
+        self._move_to_visual_locked(target_y=self.top_spin.value())
+
+    def _on_left_editing_finished(self):
+        self._move_to_visual_locked(target_x=self.left_spin.value())
+
+    def _move_to_visual_locked(self, target_x=None, target_y=None):
+        """Move item then sync spin boxes, fully blocking feedback loops."""
+        self.top_spin.blockSignals(True)
+        self.left_spin.blockSignals(True)
+        self._move_to_visual(target_x=target_x, target_y=target_y)
+        # Re-read the actual visual position and commit it to the spins
+        aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
+        self.top_spin.setValue(int(round(aabb.top())))
+        self.left_spin.setValue(int(round(aabb.left())))
+        self.top_spin.blockSignals(False)
+        self.left_spin.blockSignals(False)
 
     def _move_to_visual(self, target_x=None, target_y=None, block=False):
         off_x, off_y = self._get_aabb_offset()
@@ -1319,6 +1341,9 @@ class BarcodePropertyEditor(QWidget):
         self.update_callback()
 
     def update_position_fields(self, pos=None):
+        # Don't overwrite while the user is actively typing in either spin
+        if self.top_spin.hasFocus() or self.left_spin.hasFocus():
+            return
         aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         new_top  = int(round(aabb.top()))
         new_left = int(round(aabb.left()))
