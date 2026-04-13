@@ -1826,11 +1826,12 @@ class BarcodePrintPage(QWidget):
                 print(f"  [LINK] {ename!r} ← {res_fld!r} (db_key={db_key!r}) → {val!r}")
 
             elif dt == "BATCH NO" and e.get("design_batch_no", "") == lookup_name:
-                updates[ename] = qty
+                own_text = e.get("text", "") or qty
+                updates[ename] = own_text
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
-                    widget.setText(qty)
-                print(f"  [BATCH NO] {ename!r} ← qty={qty!r}")
+                    widget.setText(own_text)
+                print(f"  [BATCH NO] {ename!r} ← own_text={own_text!r}")
 
                 wh_target = e.get("design_wh", "")
                 if wh_target:

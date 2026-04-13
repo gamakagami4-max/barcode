@@ -42,8 +42,22 @@ class BatchNoMixin:
         self.result_combo.currentTextChanged.connect(self._save_batch_result)
 
     def _save_batch_result(self, val: str):
-        if self.item:
-            self.item.design_result = val
+        if not self.item:
+            return
+        self.item.design_result = val
+
+        # Update the barcode display text to the selected component's current text
+        scene = getattr(self.item, "scene", lambda: None)()
+        if not scene:
+            return
+        for it in scene.items():
+            if getattr(it, "component_name", None) == val:
+                text = getattr(it, "toPlainText", lambda: val)()
+                if hasattr(self.item, "set_value"):
+                    self.item.set_value(text)
+                elif hasattr(self.item, "design_text"):
+                    self.item.design_text = text
+                break
 
     def _clear_batch_no_fields(self):
         self.result_combo.blockSignals(True)
