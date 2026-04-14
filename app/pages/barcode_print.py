@@ -1945,7 +1945,7 @@ class BarcodePrintPage(QWidget):
                 (part_no, wh_val, "user", "")
             )
             row = cur.fetchone()
-            conn.commit()   # ← ADD THIS LINE — flushes the counter update to disk
+            conn.commit()
             cur.close()
             raw = str(row[0]) if row and row[0] is not None else ""
             result = self._parse_batch_no_result(raw)
