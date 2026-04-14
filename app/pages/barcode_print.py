@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QCalendarWidget, QMessageBox,
 )
 from pages.barcode_editor import _DEFAULT_TAMPIL
+from components.barcode_editor.scene_items import BarcodeItem as _EditorBarcodeItem
 
 # ── Standard button ───────────────────────────────────────────────────────────
 
@@ -1327,8 +1328,19 @@ class _CanvasPreview(QWidget):
             item.setBrush(Qt.NoBrush)
 
         elif kind == "barcode":
-            w = d.get("container_width", 80); h = d.get("container_height", 80)
-            item = _BarcodePreviewItem(w, h, d.get("design", "CODE128"))
+            w = d.get("container_width", 80)
+            h = d.get("container_height", 80)
+            try:
+                item = _EditorBarcodeItem(None, design=d.get("design", "CODE128"))
+                item.container_width = w
+                item.container_height = h
+                item.setRect(w, h)
+                # copy all design attributes
+                from pages.barcode_editor import _BARCODE_DEFAULTS
+                for attr, default in _BARCODE_DEFAULTS.items():
+                    setattr(item, attr, d.get(attr, default))
+            except Exception:
+                item = _BarcodePreviewItem(w, h, d.get("design", "CODE128"))
 
         if item is None:
             return
@@ -1363,31 +1375,138 @@ class _CanvasPreview(QWidget):
 
 
 class _BarcodePreviewItem(QGraphicsRectItem):
+    _2D = {"QR", "QRCODE", "QR_CODE", "DATAMATRIX", "DATA_MATRIX",
+           "PDF417", "AZTEC", "MAXICODE"}
+
     def __init__(self, w: float, h: float, design: str = "CODE128"):
         super().__init__(0, 0, w, h)
-        self._design = design; self.setPen(QPen(Qt.NoPen)); self.setBrush(Qt.NoBrush)
+        self._design = design.upper().replace("-", "_").replace(" ", "_")
+        self.setPen(QPen(Qt.NoPen))
+        self.setBrush(Qt.NoBrush)
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-        r = self.rect(); w, h = r.width(), r.height()
+        r = self.rect()
         painter.fillRect(r, QColor("#FFFFFF"))
-        bar_h = h * 0.72; bar_top = r.top()
+        if self._design in self._2D:
+            if "PDF" in self._design:
+                self._draw_pdf417(painter, r)
+            elif "DATA" in self._design:
+                self._draw_datamatrix(painter, r)
+            else:
+                self._draw_qr(painter, r)
+        else:
+            self._draw_linear(painter, r)
+        painter.setPen(QPen(QColor("#CBD5E1"), 0.5))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(r)
+
+    def _draw_linear(self, painter, r):
+        import hashlib
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:8], 16)
-        painter.setPen(Qt.NoPen); painter.setBrush(QBrush(Qt.black))
-        x = r.left() + 2; i = 0
+        bar_h = r.height() * 0.72
+        bar_top = r.top()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(Qt.black))
+        x = r.left() + 2
+        i = 0
         while x < r.right() - 2:
             bar_w = max(1.0, float(((seed >> (i % 24)) & 3) + 1))
             if i % 2 == 0:
                 painter.drawRect(int(x), int(bar_top), max(1, int(bar_w)), int(bar_h))
-            x += bar_w + 0.8; i += 1
-        label_top = bar_top + bar_h + 2; label_h = h - bar_h - 2
+            x += bar_w + 0.8
+            i += 1
+        label_top = bar_top + bar_h + 2
+        label_h = r.height() - bar_h - 2
         if label_h > 4:
             font = QFont("Courier New", max(5, int(label_h * 0.55)))
-            painter.setFont(font); painter.setPen(QPen(QColor("#1E293B")))
-            painter.drawText(int(r.left()), int(label_top), int(w), int(label_h),
-                             Qt.AlignHCenter | Qt.AlignVCenter, self._design)
-        painter.setPen(QPen(QColor("#CBD5E1"), 0.5)); painter.setBrush(Qt.NoBrush)
-        painter.drawRect(r)
+            painter.setFont(font)
+            painter.setPen(QPen(QColor("#1E293B")))
+            painter.drawText(int(r.left()), int(label_top), int(r.width()), int(label_h),
+                             Qt.AlignHCenter | Qt.AlignVCenter, self._design[:10])
+
+    def _draw_qr(self, painter, r):
+        import hashlib
+        seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
+        pad = max(2.0, r.width() * 0.05)
+        inner_x = r.left() + pad
+        inner_y = r.top() + pad
+        inner_w = r.width() - 2 * pad
+        inner_h = r.height() - 2 * pad
+        cells = 13
+        cell_w = inner_w / cells
+        cell_h = inner_h / cells
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(Qt.black))
+        for row in range(cells):
+            for col in range(cells):
+                if (seed >> ((row * cells + col) % 128)) & 1:
+                    painter.drawRect(int(inner_x + col * cell_w) + 1,
+                                     int(inner_y + row * cell_h) + 1,
+                                     max(1, int(cell_w) - 1),
+                                     max(1, int(cell_h) - 1))
+        for (fc, fr) in [(0, 0), (cells - 7, 0), (0, cells - 7)]:
+            fx = inner_x + fc * cell_w
+            fy = inner_y + fr * cell_h
+            fw = 7 * cell_w
+            fh = 7 * cell_h
+            painter.setBrush(QBrush(Qt.black))
+            painter.drawRect(int(fx), int(fy), int(fw), int(fh))
+            painter.setBrush(QBrush(Qt.white))
+            painter.drawRect(int(fx + cell_w), int(fy + cell_h),
+                             int(5 * cell_w), int(5 * cell_h))
+            painter.setBrush(QBrush(Qt.black))
+            painter.drawRect(int(fx + 2 * cell_w), int(fy + 2 * cell_h),
+                             int(3 * cell_w), int(3 * cell_h))
+
+    def _draw_datamatrix(self, painter, r):
+        import hashlib
+        seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
+        pad = max(2.0, r.width() * 0.05)
+        side = min(r.width(), r.height()) - 2 * pad
+        ox = r.left() + (r.width() - side) / 2
+        oy = r.top() + (r.height() - side) / 2
+        cells = 10
+        cell = side / cells
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(Qt.black))
+        for row in range(cells):
+            for col in range(cells):
+                if row == cells - 1 or col == 0:
+                    filled = True
+                elif row == 0 or col == cells - 1:
+                    filled = (col % 2 == 0) if row == 0 else (row % 2 == 0)
+                else:
+                    filled = bool((seed >> ((row * cells + col) % 128)) & 1)
+                if filled:
+                    painter.drawRect(int(ox + col * cell) + 1,
+                                     int(oy + row * cell) + 1,
+                                     max(1, int(cell) - 1),
+                                     max(1, int(cell) - 1))
+
+    def _draw_pdf417(self, painter, r):
+        import hashlib
+        seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
+        pad = 2.0
+        rows = 6
+        row_h = (r.height() - 2 * pad) / rows
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(Qt.black))
+        for row in range(rows):
+            y = r.top() + pad + row * row_h
+            x = r.left() + pad
+            i = 0
+            while x < r.right() - pad:
+                bar_w = max(1.0, float(((seed >> ((row * 17 + i) % 48)) & 3) + 1))
+                if i % 2 == 0:
+                    painter.drawRect(int(x), int(y), max(1, int(bar_w)),
+                                     max(1, int(row_h) - 1))
+                x += bar_w + 0.5
+                i += 1
+        painter.drawRect(int(r.left() + pad), int(r.top() + pad),
+                         2, int(r.height() - 2 * pad))
+        painter.drawRect(int(r.right() - pad - 2), int(r.top() + pad),
+                         2, int(r.height() - 2 * pad))
 
 
 # ── ZPL send helper ───────────────────────────────────────────────────────────
