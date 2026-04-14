@@ -485,6 +485,8 @@ class BarcodePropertyEditor(QWidget):
         self.left_spin = make_spin(-5000, 5000, int(round(_aabb.left())))
         self.top_spin.editingFinished.connect(self._on_top_editing_finished)
         self.left_spin.editingFinished.connect(self._on_left_editing_finished)
+        self.top_spin.valueChanged.connect(self._on_top_value_changed)
+        self.left_spin.valueChanged.connect(self._on_left_value_changed)
         layout.addRow(_lbl("TOP :"),  self.top_spin)
         layout.addRow(_lbl("LEFT :"), self.left_spin)
 
@@ -818,6 +820,16 @@ class BarcodePropertyEditor(QWidget):
 
     # ── Visual position helpers ───────────────────────────────────────────────
 
+    def _on_top_value_changed(self, value: int):
+        if not self.top_spin.hasFocus():
+            return  # ignore programmatic updates
+        self._move_to_visual_locked(target_y=value)
+
+    def _on_left_value_changed(self, value: int):
+        if not self.left_spin.hasFocus():
+            return  # ignore programmatic updates
+        self._move_to_visual_locked(target_x=value)
+        
     def _get_aabb_offset(self):
         aabb = self.item.mapToScene(self.item.boundingRect()).boundingRect()
         pos  = self.item.pos()
