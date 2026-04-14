@@ -1962,14 +1962,36 @@ class BarcodePrintPage(QWidget):
                 print(f"  [LINK] {ename!r} ← {res_fld!r} (db_key={db_key!r}) → {val!r}")
 
             elif dt == "BATCH NO" and e.get("design_batch_no", "") == lookup_name:
-                own_text = e.get("text", "") or qty
-                updates[ename] = own_text
+                wh_target = e.get("design_wh", "")
+                wh_val = updates.get(wh_target, whs) if wh_target else whs
+
+                # ── Call new_batch_no(batchno, whs, 'user', '') ───────────────
+                batch_result = ""
+                try:
+                    try:
+                        from server.db import get_connection
+                    except ImportError:
+                        from server.connection import get_connection
+                    conn = get_connection()
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT barcodesap.new_batch_no(%s, %s, %s, %s)",
+                        (part_no, wh_val, "user", "")
+                    )
+                    row = cur.fetchone()
+                    cur.close()
+                    batch_result = str(row[0]) if row and row[0] is not None else ""
+                    print(f"  [BATCH NO DB] new_batch_no({part_no!r}, {wh_val!r}, 'user', '') → {batch_result!r}")
+                except Exception as exc:
+                    print(f"  [BATCH NO DB ERROR] {exc}")
+                    batch_result = e.get("text", "") or qty
+
+                updates[ename] = batch_result
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
-                    widget.setText(own_text)
-                print(f"  [BATCH NO] {ename!r} ← own_text={own_text!r}")
+                    widget.setText(batch_result)
+                print(f"  [BATCH NO] {ename!r} ← {batch_result!r}")
 
-                wh_target = e.get("design_wh", "")
                 if wh_target:
                     updates[wh_target] = whs
                     widget2 = self._field_widgets.get(wh_target)
