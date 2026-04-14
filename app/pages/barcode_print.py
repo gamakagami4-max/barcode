@@ -1918,6 +1918,43 @@ class BarcodePrintPage(QWidget):
 
         self._master_item_picker.open_modal(dyn_columns=dyn_columns)
 
+    @staticmethod
+    def _parse_batch_no_result(raw: str) -> str:
+        """Extract batch number from DB result like '(AAAABAZ,0)' → 'AAAABAZ'."""
+        raw = raw.strip()
+        # Handle tuple-like string: (AAAABAZ,0) or (AAAABAZ, 0)
+        m = re.match(r"^\(?\s*([^,)]+?)\s*,", raw)
+        if m:
+            return m.group(1).strip()
+        # Strip surrounding parens if no comma found
+        if raw.startswith("(") and raw.endswith(")"):
+            return raw[1:-1].strip()
+        return raw
+
+    def _fetch_batch_no(self, part_no: str, wh_val: str, qty: str, element: dict) -> str:
+        """Call new_batch_no every time so the DB counter increments on each call."""
+        try:
+            try:
+                from server.db import get_connection
+            except ImportError:
+                from server.connection import get_connection
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT barcodesap.new_batch_no(%s, %s, %s, %s)",
+                (part_no, wh_val, "user", "")
+            )
+            row = cur.fetchone()
+            conn.commit()   # ← ADD THIS LINE — flushes the counter update to disk
+            cur.close()
+            raw = str(row[0]) if row and row[0] is not None else ""
+            result = self._parse_batch_no_result(raw)
+            print(f"  [BATCH NO DB] new_batch_no({part_no!r}, {wh_val!r}) raw={raw!r} → {result!r}")
+            return result
+        except Exception as exc:
+            print(f"  [BATCH NO DB ERROR] {exc}")
+            return element.get("text", "") or qty
+    
     def _on_master_item_picked(self, part_no: str, item_code: str,
                   name: str, qty: str, whs: str):
 
@@ -1977,39 +2014,13 @@ class BarcodePrintPage(QWidget):
                 wh_target = e.get("design_wh", "")
                 wh_val = updates.get(wh_target, whs) if wh_target else whs
 
-                # ── Call new_batch_no(batchno, whs, 'user', '') ───────────────
-                batch_result = ""
-                try:
-                    try:
-                        from server.db import get_connection
-                    except ImportError:
-                        from server.connection import get_connection
-                    conn = get_connection()
-                    cur = conn.cursor()
-                    cur.execute(
-                        "SELECT barcodesap.new_batch_no(%s, %s, %s, %s)",
-                        (part_no, wh_val, "user", "")
-                    )
-                    row = cur.fetchone()
-                    cur.close()
-                    batch_result = str(row[0]) if row and row[0] is not None else ""
-                    print(f"  [BATCH NO DB] new_batch_no({part_no!r}, {wh_val!r}, 'user', '') → {batch_result!r}")
-                except Exception as exc:
-                    print(f"  [BATCH NO DB ERROR] {exc}")
-                    batch_result = e.get("text", "") or qty
+                batch_result = self._fetch_batch_no(part_no, wh_val, qty, e)
 
                 updates[ename] = batch_result
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(batch_result)
                 print(f"  [BATCH NO] {ename!r} ← {batch_result!r}")
-
-                if wh_target:
-                    updates[wh_target] = whs
-                    widget2 = self._field_widgets.get(wh_target)
-                    if isinstance(widget2, QLineEdit):
-                        widget2.setText(whs)
-                    print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}")
 
         # ── Barcode field fallback: if mmbaro (BARCODE SPEC) is empty,
         # use mmbupc or item code so the barcode still scans ──────────────────
@@ -2251,6 +2262,28 @@ class BarcodePrintPage(QWidget):
             resolved = _resolve_system_value(sv, ext)
             if resolved:
                 merged_values[ename] = resolved
+
+        # ── 5. BATCH NO: re-call DB on every print so the counter increments ────
+        _lookup_part_no: dict[str, str] = {}
+        for _fd in self._field_descriptors:
+            if _fd["type"] == "lookup":
+                _lookup_part_no[_fd["name"]] = merged_values.get(_fd["name"], "")
+
+        for e in self._elements:
+            if e.get("type") != "text":
+                continue
+            if (e.get("design_type") or "").upper() != "BATCH NO":
+                continue
+            ename     = e.get("name", "")
+            batch_ref = e.get("design_batch_no", "")
+            wh_ref    = e.get("design_wh", "")
+            part_no_v = _lookup_part_no.get(batch_ref, merged_values.get(batch_ref, ""))
+            wh_val_v  = merged_values.get(wh_ref, "")
+            if not part_no_v:
+                continue
+            fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", e)
+            if fresh:
+                merged_values[ename] = fresh
 
         dpi   = 300 if self._chk_dpi.isChecked() else 203
         try:
