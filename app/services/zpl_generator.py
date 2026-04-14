@@ -748,7 +748,7 @@ def canvas_to_zpl(
     pw = _r(canvas_w)
 
     lines: list[str] = [
-        f"^XA^PR{print_speed}^FS",
+        "^XA",
         f"^PW{pw}",
         "^LH0,0",
     ]

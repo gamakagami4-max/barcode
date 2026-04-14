@@ -1754,7 +1754,7 @@ class BarcodePrintPage(QWidget):
         mll.addWidget(self._spin_ml); mll.addStretch()
         _form_row("MARGIN LEFT :", ml_w, layout)
 
-        self._spin_mt = make_spin(-999, 999, 0); self._spin_mt.setFixedWidth(80)
+        self._spin_mt = make_spin(-999, 999, 20); self._spin_mt.setFixedWidth(80)
         self._chk_dpi = _CheckBox("300 dpi")
         mt_w = QWidget(); mt_w.setStyleSheet("background: transparent; border: none;")
         mtl = QHBoxLayout(mt_w); mtl.setContentsMargins(0, 0, 0, 0); mtl.setSpacing(14)
