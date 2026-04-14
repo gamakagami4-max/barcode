@@ -1223,11 +1223,7 @@ class _CanvasPreview(QWidget):
         for d in sorted(self._elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
 
-        # After all elements are added, run an initial merge pass
-        # so visible MERGE elements show computed values immediately
-        self._recompute_merges()
-
-        # Build SAME WITH map: target_name → source_name
+        # Build SAME WITH map FIRST before merge pass
         self._same_with_map = {}
         cid_to_name = {
             e.get("component_id", ""): e.get("name", "")
@@ -1241,6 +1237,14 @@ class _CanvasPreview(QWidget):
                 source_name = cid_to_name.get(source_cid, "")
                 if target_name and source_name:
                     self._same_with_map[target_name] = source_name
+                    # Seed target with source's current text before merge pass
+                    source_item = self._text_items.get(source_name)
+                    target_item = self._text_items.get(target_name)
+                    if source_item and target_item:
+                        target_item.setPlainText(source_item.toPlainText())
+
+        # Now recompute merges — SAME WITH targets already have correct values
+        self._recompute_merges()
 
         self._view.setVisible(True); self._placeholder.setVisible(False)
         self._view.resetTransform()
@@ -1268,10 +1272,24 @@ class _CanvasPreview(QWidget):
         for d in self._elements:
             if (d.get("type") == "text"
                     and (d.get("design_type") or "").upper() == "MERGE"):
-                result = self._eval_merge(d.get("design_merge", ""), all_vals)
+                template = (d.get("design_merge") or "").strip()
+                if not template:
+                    continue
+                result = self._eval_merge(template, all_vals)
                 item = self._text_items.get(d.get("name", ""))
                 if item is not None:
                     item.setPlainText(result)
+                    # Update all_vals so downstream MERGEs and SAME WITH targets
+                    # see the freshly computed value in the same pass
+                    all_vals[d.get("name", "")] = result
+
+        # Propagate updated MERGE results to their SAME WITH targets
+        for target_name, source_name in self._same_with_map.items():
+            source_val = all_vals.get(source_name, "")
+            if source_val:
+                target_item = self._text_items.get(target_name)
+                if target_item is not None:
+                    target_item.setPlainText(source_val)
 
     @staticmethod
     def _eval_merge(template: str, values: dict[str, str]) -> str:
@@ -1981,8 +1999,10 @@ class BarcodePrintPage(QWidget):
                 print(f"  [SAME WITH] {target_name!r} ← {source_name!r} = {updates[source_name]!r}")
 
         # ── Finalise ─────────────────────────────────────────────────────────
+        # ── Finalise ─────────────────────────────────────────────────────────
         self._current_values.update(updates)
         self._preview.set_values(updates)
+        self._preview._recompute_merges()
         self._lbl_item_code.setText(part_no)
 
     # ── Right panel ───────────────────────────────────────────────────────────
