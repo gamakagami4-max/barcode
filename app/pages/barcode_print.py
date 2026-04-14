@@ -1563,7 +1563,12 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
                 win32print.ClosePrinter(hprinter)
             return True, f"Sent to printer: {printer_name}"
         except ImportError:
-            pass
+            # win32print not installed — install it with: pip install pywin32
+            return False, (
+                "win32print is not installed.\n"
+                "Please run:  pip install pywin32\n"
+                "Then restart the application."
+            )
         except Exception as exc:
             return False, f"win32print error: {exc}"
 
