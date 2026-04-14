@@ -1977,6 +1977,36 @@ class BarcodePrintPage(QWidget):
                         widget2.setText(whs)
                     print(f"  [BATCH NO WH] {wh_target!r} ← whs={whs!r}")
 
+        # ── Barcode field fallback: if mmbaro (BARCODE SPEC) is empty,
+        # use mmbupc or item code so the barcode still scans ──────────────────
+        for e in self._elements:
+            if e.get("type") != "text":
+                continue
+            if (e.get("design_type") or "").upper() != "LINK":
+                continue
+            if e.get("design_link", "") != lookup_cid:
+                continue
+            res = (e.get("design_result") or "").lower().strip()
+            if res != "mmbaro":
+                continue
+            ename = e.get("name", "")
+            if updates.get(ename, "").strip():
+                break  # already has a value, no fallback needed
+            # mmbaro is empty — try fallback fields in order
+            fallback = str(
+                raw.get("mmbaro") or
+                raw.get("upc")    or raw.get("mmbupc") or
+                raw.get("barcode") or
+                raw.get("pk")     or raw.get("mmitno") or ""
+            )
+            if fallback:
+                updates[ename] = fallback
+                w = self._field_widgets.get(ename)
+                if isinstance(w, QLineEdit):
+                    w.setText(fallback)
+                print(f"  [MMBARO FALLBACK] {ename!r} ← {fallback!r}")
+            break
+
         # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
         # Build component_id → element name map
         cid_to_name: dict[str, str] = {
