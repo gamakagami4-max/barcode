@@ -1544,7 +1544,14 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
     if sys.platform == "win32":
         try:
             import win32print
-            printer_name = win32print.GetDefaultPrinter()
+            # ── Try to find the ZDesigner printer by name first ───────────
+            _target = "ZDesigner"
+            _all_printers = [p[2] for p in win32print.EnumPrinters(
+                win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+            _zdesigner = next(
+                (p for p in _all_printers if _target.lower() in p.lower()), None)
+            printer_name = _zdesigner or win32print.GetDefaultPrinter()
+            print(f"[PRINTER] Using: {printer_name!r}")
             hprinter = win32print.OpenPrinter(printer_name)
             try:
                 hjob = win32print.StartDocPrinter(hprinter, 1, ("ZPL Label", None, "RAW"))
