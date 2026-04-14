@@ -511,11 +511,10 @@ def _resolve_merge(elements: list[dict]) -> list[dict]:
         if (elem.get("type") == "text"
                 and (elem.get("design_type") or "").upper() == "MERGE"):
             template = (elem.get("design_merge") or "").strip()
-            if template:
-                resolved = _eval_merge(template, name_to_val)
-                elem = dict(elem)
-                elem["text"] = resolved
-                print(f"  [MERGE] {elem.get('name')!r} template={template!r} → {resolved!r}")
+            resolved = _eval_merge(template, name_to_val) if template else ""
+            elem = dict(elem)
+            elem["text"] = resolved
+            print(f"  [MERGE] {elem.get('name')!r} template={template!r} → {resolved!r}")
         result.append(elem)
     return result
 
