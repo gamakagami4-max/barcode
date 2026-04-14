@@ -29,6 +29,25 @@ actual sibling element values, matching the canvas preview behaviour.
 KEY FIX 7: The value used for ZPL is determined by a priority chain:
   value_overrides → design_merge evaluation → element["text"]
   This ensures FIX/INPUT/LINK/BATCH_NO all emit the right text.
+
+KEY FIX 8 (NEW): Pipeline order corrected to handle MERGE → SAME WITH chains:
+  overrides → merge (first pass) → same_with → merge (second pass, for
+  SAME WITH targets that point to MERGE sources whose values just resolved).
+  This fixes elements like Label20 (SAME WITH → Label18 MERGE) showing stale
+  placeholder text ("Label16") instead of the evaluated merge result.
+
+KEY FIX 9 (NEW): Barcode elements with design_type="SAME WITH" are now properly
+resolved. Barcodes don't carry a design_same_with UUID field; instead their
+text is resolved via one of two fallback strategies:
+  a) If the barcode has a non-empty design_caption, find the text element whose
+     design_caption matches and copy its resolved value.
+  b) Otherwise use the first LOOKUP element's value as the barcode data
+     (the canonical "scanned item" barcode).
+
+KEY FIX 10 (NEW): Rotated barcode height_dots now uses the correct container
+dimension. For barcodes rotated 90° or 270° (canvas CCW), the *width* of the
+barcode in the printed ZPL corresponds to container_width (the long axis in
+canvas space), not container_height.
 """
 
 from __future__ import annotations
@@ -267,11 +286,25 @@ def _convert_text(d: dict) -> str:
 def _convert_barcode(d: dict) -> str:
     """
     Use aabb_x/aabb_y as Left/Top (same reasoning as text elements).
+
+    FIX 10: When the barcode is rotated 90° or 270° in canvas space (CCW),
+    the *height* of the printed bars corresponds to the container's WIDTH
+    dimension (the long axis in canvas), not container_height.
+
+    FIX 11: Barcode orient now uses _ccw_to_cw() — identical to text elements —
+    so that a barcode and a text label at the same canvas CCW rotation face the
+    same direction in the printed output.  The old code passed the raw canvas
+    CCW angle directly to _ORIENT, which is correct only for 0° and 180° and
+    produces the mirror-opposite orient for 90° and 270°.
     """
     Left, Top = _aabb_pos(d)
 
-    rotation = int(round(float(d.get("rotation", 0)))) % 360
-    orient   = _ORIENT.get(rotation, "N")
+    # Convert CCW canvas angle → CW ZPL angle, then look up orient letter.
+    # This is the same transform used by _convert_text so barcodes and text
+    # always face the same direction for the same canvas rotation value.
+    ccw_rotation = float(d.get("rotation", 0))
+    rotation     = _ccw_to_cw(ccw_rotation)   # now CW angle: 0/90/180/270
+    orient       = _ORIENT.get(rotation, "N")
     design   = (d.get("design") or "CODE 128").upper()
     text     = str(d.get("design_text") or "")
 
@@ -290,8 +323,9 @@ def _convert_barcode(d: dict) -> str:
     if height_dots_raw is not None:
         height_dots = max(10, int(height_dots_raw))
     elif rotation in (90, 270):
-        cw = d.get("container_width")
-        height_dots = max(10, _r(float(cw))) if cw is not None else 50
+        # FIX 10: rotated barcode — long axis is container_WIDTH
+        cw_px = d.get("container_width")
+        height_dots = max(10, _r(float(cw_px))) if cw_px is not None else 50
     else:
         ch = d.get("container_height")
         if ch is not None:
@@ -373,14 +407,12 @@ def _convert_line(d: dict) -> str:
     aabb_h = float(d.get("aabb_h") or 0)
 
     if aabb_w > 0 and aabb_h > 0:
-        # Use stored scene extents directly
         scene_dx = aabb_w
         scene_dy = aabb_h
     elif rot_ccw == 0:
         scene_dx = abs(lx2)
         scene_dy = abs(ly2)
     else:
-        # Rotate the endpoint by the CCW angle to get scene-space delta
         rad = math.radians(rot_ccw)
         cos_a, sin_a = math.cos(rad), math.sin(rad)
         sx2 = lx2 * cos_a - ly2 * sin_a
@@ -388,17 +420,13 @@ def _convert_line(d: dict) -> str:
         scene_dx = abs(sx2)
         scene_dy = abs(sy2)
 
-    # Determine if line is predominantly horizontal or vertical in scene space
     if scene_dy <= th_raw:
-        # Horizontal line
         w = max(th, _r(scene_dx))
         h = th
     elif scene_dx <= th_raw:
-        # Vertical line
         w = th
         h = max(th, _r(scene_dy))
     else:
-        # Diagonal — approximate as the longer axis
         if scene_dx >= scene_dy:
             w = max(th, _r(scene_dx))
             h = th
@@ -427,7 +455,6 @@ def _convert_rect(d: dict) -> str:
     nat_h    = float(d.get("height",  50))
     bw       = max(1, _r(float(d.get("border_width", 2))))
 
-    # aabb dimensions if stored
     aabb_w = float(d.get("aabb_w") or 0)
     aabb_h = float(d.get("aabb_h") or 0)
 
@@ -492,8 +519,8 @@ def _eval_merge(template: str, name_to_val: dict[str, str]) -> str:
 def _resolve_merge(elements: list[dict]) -> list[dict]:
     """
     Evaluate all MERGE type elements using the current text values of sibling
-    elements.  Must run AFTER _apply_overrides and AFTER _resolve_same_with so
-    it sees the final resolved values.
+    elements.  Includes ALL elements (visible or not) as value sources so that
+    invisible helper elements (FIX, BATCH NO, SYSTEM, etc.) feed MERGE slots.
     """
     # Build name → current text map (include invisible elements as value sources)
     name_to_val: dict[str, str] = {}
@@ -523,26 +550,42 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
     """
     Resolve SAME WITH references for both text and barcode elements.
 
-    Searches by component_id first (canonical UUID stored in design_same_with),
-    then falls back to searching by name.  Invisible source elements ARE
-    included in the lookup maps so hidden sources can still feed visible targets.
+    For TEXT elements: searches by component_id first (canonical UUID stored
+    in design_same_with), then falls back to searching by name.
+
+    For BARCODE elements (FIX 9): barcodes with design_type="SAME WITH" do not
+    carry a design_same_with UUID field.  They are resolved via two strategies:
+      a) If the barcode has a non-empty design_caption, find the text element
+         whose *name* or *design_caption* matches and use that element's value.
+      b) Otherwise, fall back to the first LOOKUP element's value (the master
+         "scanned item" identifier).
+
+    Invisible source elements ARE included in the lookup maps so that hidden
+    source elements can still feed their value to visible targets.
     """
     # Build name→value and component_id→value lookup maps.
     # Include ALL elements regardless of visibility.
     name_to_text: dict[str, str] = {}
     cid_to_text:  dict[str, str] = {}
+    # Also map design_caption → text for barcode fallback strategy (a)
+    caption_to_text: dict[str, str] = {}
+
     first_lookup_text:  str  = ""
     first_lookup_found: bool = False
 
     for e in elements:
         n   = e.get("name", "")
         cid = e.get("component_id", "")
+        cap = (e.get("design_caption") or "").strip()
+
         if e.get("type") == "text":
             val = str(e.get("text", ""))
             if n:
                 name_to_text[n] = val
             if cid:
                 cid_to_text[cid] = val
+            if cap:
+                caption_to_text[cap] = val
             if (not first_lookup_found
                     and (e.get("design_type") or "").upper() == "LOOKUP"):
                 first_lookup_text  = val
@@ -554,7 +597,7 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
             if cid:
                 cid_to_text[cid] = val
 
-    def _lookup(ref: str) -> tuple[bool, str]:
+    def _lookup_text(ref: str) -> tuple[bool, str]:
         """Search by component_id first (canonical), then by name (fallback)."""
         if ref in cid_to_text:
             return True, cid_to_text[ref]
@@ -571,32 +614,72 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
             result.append(elem)
             continue
 
-        src = (elem.get("design_same_with") or "").strip()
-        found, resolved = _lookup(src) if src else (False, "")
+        # ── TEXT element SAME WITH ────────────────────────────────────────────
+        if kind == "text":
+            src = (elem.get("design_same_with") or "").strip()
+            found, resolved = _lookup_text(src) if src else (False, "")
 
-        # No explicit source but there is a LOOKUP element → use its value
-        if not found and not src and first_lookup_found:
-            found, resolved = True, first_lookup_text
+            # No explicit source but there is a LOOKUP element → use its value
+            if not found and not src and first_lookup_found:
+                found, resolved = True, first_lookup_text
 
-        if found:
-            elem = dict(elem)
-            if kind == "barcode":
-                print(f"  [SAME WITH] barcode {elem.get('name')!r} ← {src!r} = {resolved!r}")
-                elem["design_text"] = resolved
-            else:
-                print(f"  [SAME WITH] text    {elem.get('name')!r} ← {src!r} = {resolved!r}")
+            if found:
+                elem = dict(elem)
                 elem["text"] = resolved
-        else:
-            if src:
-                print(
-                    f"  [SAME WITH] {kind} {elem.get('name')!r} ← {src!r} "
-                    f"NOT FOUND in cid/name maps — keeping original value"
-                )
+                print(f"  [SAME WITH] text    {elem.get('name')!r} ← {src!r} = {resolved!r}")
             else:
-                print(
-                    f"  [SAME WITH] {kind} {elem.get('name')!r} ← "
-                    f"(no source ref, no LOOKUP fallback) — keeping original value"
-                )
+                if src:
+                    print(
+                        f"  [SAME WITH] text {elem.get('name')!r} ← {src!r} "
+                        f"NOT FOUND in cid/name maps — keeping original value"
+                    )
+                else:
+                    print(
+                        f"  [SAME WITH] text {elem.get('name')!r} ← "
+                        f"(no source ref, no LOOKUP fallback) — keeping original value"
+                    )
+
+        # ── BARCODE element SAME WITH (FIX 9) ────────────────────────────────
+        elif kind == "barcode":
+            barcode_caption = (elem.get("design_caption") or "").strip()
+            found = False
+            resolved = ""
+
+            if barcode_caption:
+                # Strategy (a): match by design_caption on text elements
+                if barcode_caption in caption_to_text:
+                    found = True
+                    resolved = caption_to_text[barcode_caption]
+                    print(
+                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
+                        f"caption={barcode_caption!r} = {resolved!r}"
+                    )
+                elif barcode_caption in name_to_text:
+                    found = True
+                    resolved = name_to_text[barcode_caption]
+                    print(
+                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
+                        f"name={barcode_caption!r} = {resolved!r}"
+                    )
+
+            if not found:
+                # Strategy (b): use LOOKUP element value as fallback
+                if first_lookup_found:
+                    found = True
+                    resolved = first_lookup_text
+                    print(
+                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
+                        f"LOOKUP fallback = {resolved!r}"
+                    )
+                else:
+                    print(
+                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
+                        f"no caption match and no LOOKUP — keeping design_text"
+                    )
+
+            if found:
+                elem = dict(elem)
+                elem["design_text"] = resolved
 
         result.append(elem)
     return result
@@ -617,13 +700,17 @@ def canvas_to_zpl(
     """
     Convert a serialized canvas → ZPL II.
 
-    Pipeline order (important):
+    Pipeline order (FIX 8 — handles MERGE → SAME WITH chains):
       1. Parse JSON
       2. _apply_overrides   ← inject barcode_print.py merged_values FIRST
-      3. _resolve_same_with ← now sees already-overridden values for sources
-      4. _resolve_merge     ← evaluate MERGE templates with final resolved values
-      5. Sort by z-value
-      6. Emit ZPL per element (skip invisible, but they were already used above)
+      3. _resolve_merge     ← first pass: evaluate MERGE templates so that
+                               SAME WITH targets pointing to MERGE sources
+                               see the already-computed merge values
+      4. _resolve_same_with ← now sees both overridden AND merged values
+      5. _resolve_merge     ← second pass: re-evaluate any MERGE that references
+                               elements whose values were just set by SAME WITH
+      6. Sort by z-value
+      7. Emit ZPL per element (skip invisible, but they were already used above)
     """
     print("=" * 60)
     print(
@@ -640,20 +727,26 @@ def canvas_to_zpl(
         elements = list(canvas_json)
 
     # ── Step 1: apply field-widget values onto element texts ──────────────────
-    # Must happen BEFORE _resolve_same_with so SAME WITH targets see the
-    # correct source values (e.g. after a master-item lookup).
     if value_overrides:
         elements = _apply_overrides(elements, value_overrides)
 
-    # ── Step 2: propagate SAME WITH references ────────────────────────────────
-    elements = _resolve_same_with(elements)
-
-    # ── Step 3: evaluate MERGE templates ──────────────────────────────────────
-    # Runs after SAME WITH so merge slots that reference SAME WITH targets
-    # also get the correct resolved values.
+    # ── Step 2: first MERGE pass ──────────────────────────────────────────────
+    # Run BEFORE same_with so that SAME WITH targets pointing to MERGE sources
+    # (e.g. Label20 → Label18(MERGE)) get the already-evaluated merge value.
+    print("\n  [PIPELINE] MERGE pass 1 (pre same-with)")
     elements = _resolve_merge(elements)
 
-    # ── Step 4: sort by z (paint order) ──────────────────────────────────────
+    # ── Step 3: propagate SAME WITH references ────────────────────────────────
+    print("\n  [PIPELINE] SAME WITH pass")
+    elements = _resolve_same_with(elements)
+
+    # ── Step 4: second MERGE pass ─────────────────────────────────────────────
+    # Re-evaluate MERGE elements whose referenced slots were SAME WITH targets
+    # that just got their values set in step 3.
+    print("\n  [PIPELINE] MERGE pass 2 (post same-with)")
+    elements = _resolve_merge(elements)
+
+    # ── Step 5: sort by z (paint order) ──────────────────────────────────────
     elements_sorted = sorted(elements, key=lambda e: float(e.get("z", 0)))
 
     pw = _r(canvas_w)
