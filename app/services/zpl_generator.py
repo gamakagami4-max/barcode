@@ -322,10 +322,6 @@ def _convert_barcode(d: dict) -> str:
     height_dots_raw = d.get("design_height_dots")
     if height_dots_raw is not None:
         height_dots = max(10, int(height_dots_raw))
-    elif rotation in (90, 270):
-        # FIX 10: rotated barcode — long axis is container_WIDTH
-        cw_px = d.get("container_width")
-        height_dots = max(10, _r(float(cw_px))) if cw_px is not None else 50
     else:
         ch = d.get("container_height")
         if ch is not None:
