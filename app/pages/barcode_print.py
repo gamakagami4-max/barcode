@@ -1544,7 +1544,36 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
     if sys.platform == "win32":
         try:
             import win32print
-            # ── Try to find the ZDesigner printer by name first ───────────
+
+            # ── Printer status constants (raw hex — no win32con dependency) ──
+            _PS_OFFLINE        = 0x00000080
+            _PS_ERROR          = 0x00000002
+            _PS_NOT_AVAILABLE  = 0x00001000
+            _PS_NO_TONER       = 0x00040000
+            _PS_PAPER_JAM      = 0x00000008
+            _PS_PAPER_OUT      = 0x00000010
+            _PS_PAPER_PROBLEM  = 0x00000040
+            _PS_BIN_FULL       = 0x00000800
+            _PS_DOOR_OPEN      = 0x00400000
+            _PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x00000080
+
+            _BAD_STATUS = (
+                _PS_OFFLINE | _PS_ERROR | _PS_NOT_AVAILABLE | _PS_NO_TONER
+                | _PS_PAPER_JAM | _PS_PAPER_OUT | _PS_PAPER_PROBLEM
+                | _PS_BIN_FULL | _PS_DOOR_OPEN
+            )
+
+            # ── Job status constants ──────────────────────────────────────────
+            _JS_ERROR        = 0x00000002
+            _JS_OFFLINE      = 0x00000020
+            _JS_PAPEROUT     = 0x00000040
+            _JS_BLOCKED      = 0x00000200
+            _JS_INTERVENTION = 0x00000400
+            _JOB_ERROR_FLAGS = (
+                _JS_ERROR | _JS_OFFLINE | _JS_PAPEROUT | _JS_BLOCKED | _JS_INTERVENTION
+            )
+
+            # ── Find the ZDesigner printer, fall back to default ──────────────
             _target = "ZDesigner"
             _all_printers = [p[2] for p in win32print.EnumPrinters(
                 win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
@@ -1552,18 +1581,92 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
                 (p for p in _all_printers if _target.lower() in p.lower()), None)
             printer_name = _zdesigner or win32print.GetDefaultPrinter()
             print(f"[PRINTER] Using: {printer_name!r}")
+
+            # ── Check printer status BEFORE sending ───────────────────────────
+            hprinter = win32print.OpenPrinter(printer_name)
+            try:
+                info = win32print.GetPrinter(hprinter, 2)
+            finally:
+                win32print.ClosePrinter(hprinter)
+
+            status  = info.get("Status", 0)
+            attribs = info.get("Attributes", 0)
+
+            if attribs & _PRINTER_ATTRIBUTE_WORK_OFFLINE:
+                return False, (
+                    f"Printer \"{printer_name}\" is set to Work Offline.\n"
+                    "Please bring it online and try again."
+                )
+            if status & _PS_OFFLINE:
+                return False, (
+                    f"Printer \"{printer_name}\" is offline.\n"
+                    "Check the USB/network cable and power, then try again."
+                )
+            if status & _BAD_STATUS:
+                reasons = []
+                flag_names = {
+                    _PS_ERROR:         "hardware error",
+                    _PS_NOT_AVAILABLE: "not available",
+                    _PS_NO_TONER:      "no toner/ribbon",
+                    _PS_PAPER_JAM:     "paper jam",
+                    _PS_PAPER_OUT:     "paper out",
+                    _PS_PAPER_PROBLEM: "paper problem",
+                    _PS_BIN_FULL:      "output bin full",
+                    _PS_DOOR_OPEN:     "door open",
+                }
+                for flag, label in flag_names.items():
+                    if status & flag:
+                        reasons.append(label)
+                reason_str = ", ".join(reasons) or f"status code 0x{status:08X}"
+                return False, (
+                    f"Printer \"{printer_name}\" is not ready: {reason_str}.\n"
+                    "Resolve the issue and try again."
+                )
+
+            # ── Send the job ──────────────────────────────────────────────────
             hprinter = win32print.OpenPrinter(printer_name)
             try:
                 hjob = win32print.StartDocPrinter(hprinter, 1, ("ZPL Label", None, "RAW"))
-                win32print.StartPagePrinter(hprinter)
-                win32print.WritePrinter(hprinter, zpl_bytes)
-                win32print.EndPagePrinter(hprinter)
-                win32print.EndDocPrinter(hprinter)
+                try:
+                    win32print.StartPagePrinter(hprinter)
+                    win32print.WritePrinter(hprinter, zpl_bytes)
+                    win32print.EndPagePrinter(hprinter)
+                finally:
+                    win32print.EndDocPrinter(hprinter)
             finally:
                 win32print.ClosePrinter(hprinter)
+
+            # ── Brief pause then verify the job didn't immediately error ──────
+            import time
+            time.sleep(0.6)
+            hprinter2 = win32print.OpenPrinter(printer_name)
+            try:
+                jobs = win32print.EnumJobs(hprinter2, 0, 10, 1)
+                for job in jobs:
+                    job_status = job.get("Status", 0)
+                    if job_status & _JOB_ERROR_FLAGS:
+                        job_reasons = []
+                        job_flag_names = {
+                            _JS_ERROR:        "job error",
+                            _JS_OFFLINE:      "printer offline",
+                            _JS_PAPEROUT:     "paper out",
+                            _JS_BLOCKED:      "driver blocked",
+                            _JS_INTERVENTION: "user intervention required",
+                        }
+                        for flag, label in job_flag_names.items():
+                            if job_status & flag:
+                                job_reasons.append(label)
+                        reason_str = ", ".join(job_reasons) or f"0x{job_status:08X}"
+                        return False, (
+                            f"Print job queued but printer reported an error: "
+                            f"{reason_str}.\nPrinter: \"{printer_name}\""
+                        )
+            finally:
+                win32print.ClosePrinter(hprinter2)
+
             return True, f"Sent to printer: {printer_name}"
+
         except ImportError:
-            # win32print not installed — install it with: pip install pywin32
             return False, (
                 "win32print is not installed.\n"
                 "Please run:  pip install pywin32\n"
@@ -1572,33 +1675,7 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
         except Exception as exc:
             return False, f"win32print error: {exc}"
 
-        try:
-            import winreg
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows NT\CurrentVersion\Windows"
-            ) as key:
-                printer_name, _ = winreg.QueryValueEx(key, "Device")
-                printer_name = printer_name.split(",")[0].strip()
-        except Exception:
-            printer_name = ""
-
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".zpl", delete=False) as tf:
-                tf.write(zpl_bytes)
-                tmp_path = tf.name
-            if printer_name:
-                cmd = f'copy /b "{tmp_path}" "{printer_name}"'
-            else:
-                cmd = f'copy /b "{tmp_path}" PRN'
-            result = subprocess.run(["cmd", "/c", cmd], capture_output=True, text=True, timeout=15)
-            os.unlink(tmp_path)
-            if result.returncode == 0:
-                return True, f"Sent via copy /b to: {printer_name or 'PRN'}"
-            return False, f"copy /b failed: {result.stderr.strip() or result.stdout.strip()}"
-        except Exception as exc:
-            return False, f"Fallback copy error: {exc}"
-
+    # ── Non-Windows fallback (Linux / macOS) ──────────────────────────────────
     try:
         with tempfile.NamedTemporaryFile(suffix=".zpl", delete=False) as tf:
             tf.write(zpl_bytes)
@@ -1632,6 +1709,9 @@ class BarcodePrintPage(QWidget):
         self._cid_to_name: dict[str, str] = {}
         self._usrm_json: str = ""
         self._itrm_json: str = ""
+        # ── Stores pending batch-no params set when an item is picked.
+        #    Keyed by element name.  The DB is NOT called here — only at print.
+        self._pending_batch_params: dict[str, dict] = {}
         self._build_ui()
         self._btn_print.setEnabled(False)
 
@@ -1780,6 +1860,7 @@ class BarcodePrintPage(QWidget):
         self._field_descriptors.clear()
         self._current_values.clear()
         self._cid_to_name.clear()
+        self._pending_batch_params.clear()
         self._sep_fields.setVisible(False)
         self._fields_container.setVisible(False)
 
@@ -1932,7 +2013,15 @@ class BarcodePrintPage(QWidget):
         return raw
 
     def _fetch_batch_no(self, part_no: str, wh_val: str, qty: str, element: dict) -> str:
-        """Call new_batch_no every time so the DB counter increments on each call."""
+        """
+        Call new_batch_no and commit. Each call increments the DB counter by 1.
+        Only called from _on_print — never from item-selection handlers.
+        """
+        import traceback
+        print(f"  [BATCH NO DB] CALLED for part_no={part_no!r} wh={wh_val!r}")
+        print(f"  [BATCH NO DB] Call stack:")
+        for line in traceback.format_stack()[:-1]:
+            print("   ", line.strip())
         try:
             try:
                 from server.db import get_connection
@@ -1954,7 +2043,7 @@ class BarcodePrintPage(QWidget):
         except Exception as exc:
             print(f"  [BATCH NO DB ERROR] {exc}")
             return element.get("text", "") or qty
-    
+
     def _on_master_item_picked(self, part_no: str, item_code: str,
                   name: str, qty: str, whs: str):
 
@@ -1987,7 +2076,7 @@ class BarcodePrintPage(QWidget):
         if isinstance(w, QLineEdit):
             w.setText(part_no)
 
-        # ── LINK and BATCH NO fields ─────────────────────────────────────────
+        # ── LINK fields ──────────────────────────────────────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2011,16 +2100,24 @@ class BarcodePrintPage(QWidget):
                 print(f"  [LINK] {ename!r} ← {res_fld!r} (db_key={db_key!r}) → {val!r}")
 
             elif dt == "BATCH NO" and e.get("design_batch_no", "") == lookup_name:
+                # ── Store parameters for deferred DB call at print time ────
+                #    Do NOT call the DB here — that would waste a counter slot.
                 wh_target = e.get("design_wh", "")
                 wh_val = updates.get(wh_target, whs) if wh_target else whs
 
-                batch_result = self._fetch_batch_no(part_no, wh_val, qty, e)
+                self._pending_batch_params[ename] = {
+                    "part_no":  part_no,
+                    "wh_val":   wh_val,
+                    "element":  e,
+                }
 
-                updates[ename] = batch_result
+                # Show a placeholder in the UI so the user sees it will be filled
+                placeholder = "— assigned at print —"
+                updates[ename] = placeholder
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
-                    widget.setText(batch_result)
-                print(f"  [BATCH NO] {ename!r} ← {batch_result!r}")
+                    widget.setText(placeholder)
+                print(f"  [BATCH NO] {ename!r} → deferred (part_no={part_no!r}, wh={wh_val!r})")
 
         # ── Barcode field fallback: if mmbaro (BARCODE SPEC) is empty,
         # use mmbupc or item code so the barcode still scans ──────────────────
@@ -2073,7 +2170,6 @@ class BarcodePrintPage(QWidget):
                     widget.setText(updates[source_name])
                 print(f"  [SAME WITH] {target_name!r} ← {source_name!r} = {updates[source_name]!r}")
 
-        # ── Finalise ─────────────────────────────────────────────────────────
         # ── Finalise ─────────────────────────────────────────────────────────
         self._current_values.update(updates)
         self._preview.set_values(updates)
@@ -2263,27 +2359,42 @@ class BarcodePrintPage(QWidget):
             if resolved:
                 merged_values[ename] = resolved
 
-        # ── 5. BATCH NO: re-call DB on every print so the counter increments ────
-        _lookup_part_no: dict[str, str] = {}
-        for _fd in self._field_descriptors:
-            if _fd["type"] == "lookup":
-                _lookup_part_no[_fd["name"]] = merged_values.get(_fd["name"], "")
-
+      # ── 5. BATCH NO: call DB once per element — each needs its own
+        #    sequential value (A, B, C…), so no caching across elements.
         for e in self._elements:
             if e.get("type") != "text":
                 continue
             if (e.get("design_type") or "").upper() != "BATCH NO":
                 continue
-            ename     = e.get("name", "")
-            batch_ref = e.get("design_batch_no", "")
-            wh_ref    = e.get("design_wh", "")
-            part_no_v = _lookup_part_no.get(batch_ref, merged_values.get(batch_ref, ""))
-            wh_val_v  = merged_values.get(wh_ref, "")
-            if not part_no_v:
+            ename = e.get("name", "")
+            if not ename:
                 continue
-            fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", e)
+
+            params = self._pending_batch_params.get(ename)
+            if params:
+                part_no_v = params["part_no"]
+                wh_val_v  = params["wh_val"]
+                element   = params["element"]
+            else:
+                batch_ref = e.get("design_batch_no", "")
+                wh_ref    = e.get("design_wh", "")
+                part_no_v = merged_values.get(batch_ref, "")
+                wh_val_v  = merged_values.get(wh_ref, "")
+                element   = e
+
+            if not part_no_v:
+                print(f"  [BATCH NO] skipping {ename!r} — no part_no")
+                continue
+
+            fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", element)
+            print(f"  [BATCH NO PRINT] {ename!r} ← {fresh!r}")
+
             if fresh:
                 merged_values[ename] = fresh
+                widget = self._field_widgets.get(ename)
+                if isinstance(widget, QLineEdit):
+                    widget.setText(fresh)
+                self._preview.set_values({ename: fresh})
 
         dpi   = 300 if self._chk_dpi.isChecked() else 203
         try:
