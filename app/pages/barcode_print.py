@@ -2112,7 +2112,7 @@ class BarcodePrintPage(QWidget):
                 }
 
                 # Show a placeholder in the UI so the user sees it will be filled
-                placeholder = "— assigned at print —"
+                placeholder = "BatchNo"
                 updates[ename] = placeholder
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
