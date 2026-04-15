@@ -632,7 +632,12 @@ class BarcodePropertyEditor(QWidget):
         self.same_with_combo = self._build_scene_name_combo()
         _sw = getattr(self.item, "design_same_with", "")
         if _sw and _sw in self.same_with_combo._items:
-            self.same_with_combo.setCurrentText(_sw)
+            self.same_with_combo.blockSignals(True)
+            self.same_with_combo._current = _sw
+            self.same_with_combo._label.setText(_sw)
+            self.same_with_combo.blockSignals(False)
+        elif _sw:
+            self.item.design_same_with = ""   # stale reference, clear it
         self.same_with_combo.currentTextChanged.connect(
             lambda v: setattr(self.item, "design_same_with", v)
         )

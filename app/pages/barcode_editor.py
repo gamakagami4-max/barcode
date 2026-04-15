@@ -74,6 +74,7 @@ _BARCODE_DEFAULTS = {
     "design_format":         "",
     "design_save_field":     "-- NOT SAVE --",
     "design_column":         1,
+    "design_same_with":      "",
 }
 
 
@@ -951,6 +952,7 @@ class BarcodeEditorPage(QWidget):
                 "design_format":         getattr(item, "design_format",         ""),
                 "design_save_field":     getattr(item, "design_save_field",     "-- NOT SAVE --"),
                 "design_column":         getattr(item, "design_column",         1),
+                "design_same_with":      getattr(item, "design_same_with",      ""),
             })
             return base
         if isinstance(item, QGraphicsTextItem):
