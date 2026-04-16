@@ -617,9 +617,6 @@ class TextPropertyEditor(
         self.field_edit.selectionChanged.connect(
             lambda names: setattr(self.item, "design_field", ",".join(names))
         )
-        self.result_combo.currentTextChanged.connect(
-            lambda v: setattr(self.item, "design_result", v)
-        )
 
         def _on_query_changed():
             v = self.table_extra.toPlainText()
@@ -753,7 +750,12 @@ class TextPropertyEditor(
             lambda v: setattr(self.item, "design_format", v)
         )
 
-        self._on_type_changed(getattr(self.item, "design_type", "FIX"))
+        _type_val = getattr(self.item, "design_type", "FIX")
+        # Block group_combo signals so _on_type_changed's enable_for_lookup
+        # doesn't trigger _on_group_changed and wipe restored lookup values
+        self.group_combo.blockSignals(True)
+        self._on_type_changed(_type_val)
+        self.group_combo.blockSignals(False)
 
         stored_same_with_id = getattr(self.item, "design_same_with", "")
         if (stored_same_with_id
