@@ -2071,10 +2071,28 @@ class BarcodePrintPage(QWidget):
         updates: dict[str, str] = {}
 
         # ── LOOKUP field itself ──────────────────────────────────────────────
-        updates[lookup_name] = part_no
+        # ── LOOKUP field itself ──────────────────────────────────────────────
+        lookup_elem = next(
+            (e for e in self._elements
+             if e.get("name") == lookup_name and e.get("type") == "text"),
+            None,
+        )
+        lookup_result_fld = (
+            (lookup_elem.get("design_result") or "").lower().strip()
+            if lookup_elem else ""
+        )
+        if lookup_result_fld:
+            db_key = _MasterItemPickerPopup._MM_TO_KEY.get(lookup_result_fld, lookup_result_fld)
+            lookup_val = str(raw.get(db_key) or raw.get(lookup_result_fld) or part_no)
+        else:
+            lookup_val = part_no
+
+        updates[lookup_name] = lookup_val
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
-            w.setText(part_no)
+            w.setText(lookup_val)
+
+        print(f"  [LOOKUP] {lookup_name!r} ← result_fld={lookup_result_fld!r} → {lookup_val!r}")
 
         # ── LINK fields ──────────────────────────────────────────────────────
         for e in self._elements:
