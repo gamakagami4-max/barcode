@@ -578,11 +578,24 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
                     )
 
         elif kind == "barcode":
+            src = (elem.get("design_same_with") or "").strip()
             barcode_caption = (elem.get("design_caption") or "").strip()
             found = False
             resolved = ""
 
-            if barcode_caption:
+            # 1. Direct lookup by design_same_with (name or component_id) — highest priority
+            if src:
+                ok, val = _lookup_text(src)
+                if ok:
+                    found = True
+                    resolved = val
+                    print(
+                        f"  [SAME WITH] barcode {elem.get('name')!r} ← "
+                        f"design_same_with={src!r} = {resolved!r}"
+                    )
+
+            # 2. Fallback: match by design_caption against text element captions or names
+            if not found and barcode_caption:
                 if barcode_caption in caption_to_text:
                     found = True
                     resolved = caption_to_text[barcode_caption]
@@ -598,6 +611,7 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
                         f"name={barcode_caption!r} = {resolved!r}"
                     )
 
+            # 3. Last resort: first LOOKUP element value
             if not found:
                 if first_lookup_found:
                     found = True
@@ -609,7 +623,7 @@ def _resolve_same_with(elements: list[dict]) -> list[dict]:
                 else:
                     print(
                         f"  [SAME WITH] barcode {elem.get('name')!r} ← "
-                        f"no caption match and no LOOKUP — keeping design_text"
+                        f"no match — keeping design_text"
                     )
 
             if found:
