@@ -2359,8 +2359,14 @@ class BarcodePrintPage(QWidget):
             if resolved:
                 merged_values[ename] = resolved
 
-      # ── 5. BATCH NO: call DB once per element — each needs its own
-        #    sequential value (A, B, C…), so no caching across elements.
+        # ── 5. BATCH NO: deduplicate by (part_no, wh_val) so we commit exactly
+        #    ONE DB call per unique warehouse/part combination, then reuse the
+        #    result for every element that shares the same key.
+        #    wh_val is re-resolved from merged_values at print time (not from
+        #    the stale snapshot captured at item-pick time) so all elements
+        #    sharing the same WH field resolve to the same cache key.
+        _batch_cache: dict[tuple[str, str], str] = {}
+
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2373,8 +2379,14 @@ class BarcodePrintPage(QWidget):
             params = self._pending_batch_params.get(ename)
             if params:
                 part_no_v = params["part_no"]
-                wh_val_v  = params["wh_val"]
-                element   = params["element"]
+                # Re-resolve wh_val from merged_values so all BATCH NO elements
+                # with the same WH field get the same cache key → one DB commit.
+                wh_ref_name = params["element"].get("design_wh", "")
+                wh_val_v = (
+                    merged_values.get(wh_ref_name, params["wh_val"])
+                    if wh_ref_name else params["wh_val"]
+                )
+                element = params["element"]
             else:
                 batch_ref = e.get("design_batch_no", "")
                 wh_ref    = e.get("design_wh", "")
@@ -2386,8 +2398,15 @@ class BarcodePrintPage(QWidget):
                 print(f"  [BATCH NO] skipping {ename!r} — no part_no")
                 continue
 
-            fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", element)
-            print(f"  [BATCH NO PRINT] {ename!r} ← {fresh!r}")
+            cache_key = (part_no_v, wh_val_v)
+            if cache_key in _batch_cache:
+                fresh = _batch_cache[cache_key]
+                print(f"  [BATCH NO REUSE] {ename!r} ← cached {fresh!r} "
+                      f"(part_no={part_no_v!r}, wh={wh_val_v!r})")
+            else:
+                fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", element)
+                _batch_cache[cache_key] = fresh
+                print(f"  [BATCH NO PRINT] {ename!r} ← {fresh!r} (new commit)")
 
             if fresh:
                 merged_values[ename] = fresh
@@ -2502,6 +2521,76 @@ class BarcodePrintPage(QWidget):
             btn_close = QPushButton("Close"); btn_close.clicked.connect(dlg.accept)
             v.addWidget(btn_close)
             dlg.exec()
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def load_design_by_code(self, code: str, name: str = "", row_dict: dict | None = None):
+        if not code:
+            return
+        self._inp_code.setText(code)
+        self._inp_name.setText(name or code)
+        self._btn_print.setEnabled(True)
+        self._lbl_item_code.setText("")
+
+        usrm = ""; itrm = ""
+        if row_dict:
+            self._row_dict = row_dict
+            usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
+            itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
+
+        self._usrm_json = usrm
+        self._itrm_json = itrm
+
+        try:
+            elements = _json.loads(usrm) if usrm else []
+        except Exception:
+            elements = []
+
+        if usrm:
+            self._preview.set_design(usrm, itrm)
+        else:
+            self._preview.clear()
+            self._fetch_and_refresh_preview(code)
+
+        self._build_dynamic_fields(elements)
+
+        initial: dict[str, str] = {
+            e["name"]: str(e.get("text", ""))
+            for e in elements
+            if e.get("type") == "text" and e.get("name")
+        }
+        self._current_values.update(initial)
+
+    def _fetch_and_refresh_preview(self, code: str):
+        try:
+            from server.repositories.mbarcd_repo import fetch_mbarcd_layout
+            layout = fetch_mbarcd_layout(code)
+            if layout:
+                usrm = layout.get("usrm", "")
+                itrm = layout.get("itrm", "")
+                if usrm:
+                    self._usrm_json = usrm
+                    self._itrm_json = itrm
+                    self._preview.set_design(usrm, itrm)
+                    try:
+                        elements = _json.loads(usrm)
+                        self._build_dynamic_fields(elements)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def load_design(self, code: str, name: str = "", row_dict: dict | None = None):
+        self.load_design_by_code(code, name, row_dict)
+
+    def set_com_status(self, timbangan: bool = False, gate: bool = False):
+        def _upd(lbl: QLabel, ok: bool):
+            lbl.setText("CONNECTED" if ok else "NOT CONNECTED")
+            lbl.setStyleSheet(
+                f"color: {_SUCCESS if ok else _DANGER}; font-size: 11px; "
+                "font-weight: 600; background: transparent; border: none;")
+        _upd(self._lbl_timbangan, timbangan)
+        _upd(self._lbl_gate, gate)
             
     # ── Public API ────────────────────────────────────────────────────────────
 
