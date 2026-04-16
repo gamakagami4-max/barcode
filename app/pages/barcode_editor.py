@@ -1004,8 +1004,8 @@ class BarcodeEditorPage(QWidget):
                 "x2":        round(line.x2(), 2),
                 "y2":        round(line.y2(), 2),
                 "thickness": pen.width(),
-                "aabb_w":    round(aabb.width(),  2),   # ← scene bounding-box width
-                "aabb_h":    round(aabb.height(), 2),   # ← scene bounding-box height
+                "aabb_w":    round(aabb.width(),  2),
+                "aabb_h":    round(aabb.height(), 2),
             })
             return base
         if isinstance(item, QGraphicsRectItem):
@@ -1017,8 +1017,8 @@ class BarcodeEditorPage(QWidget):
                 "width":        round(rect.width(),  2),
                 "height":       round(rect.height(), 2),
                 "border_width": pen.width(),
-                "aabb_w":       round(aabb.width(),  2),   # ← scene bounding-box width
-                "aabb_h":       round(aabb.height(), 2),   # ← scene bounding-box height
+                "aabb_w":       round(aabb.width(),  2),
+                "aabb_h":       round(aabb.height(), 2),
             })
             return base
         return None
@@ -1587,13 +1587,18 @@ class BarcodeEditorPage(QWidget):
             if not source or source is si:
                 continue
             if getattr(source, "design_type", "") == "SAME WITH":
-                si.design_same_with = ""; SameWithRegistry.unregister(si); continue
+                si.design_same_with = ""
+                SameWithRegistry.unregister(si)
+                continue
             SameWithRegistry.register(si, source)
-            if si.toPlainText() != source.toPlainText(): si.setPlainText(source.toPlainText())
-            if si.font() != source.font(): si.setFont(source.font())
-            if si.defaultTextColor() != source.defaultTextColor(): si.setDefaultTextColor(source.defaultTextColor())
+            if si.toPlainText() != source.toPlainText():
+                si.setPlainText(source.toPlainText())
+            if si.font() != source.font():
+                si.setFont(source.font())
+            if si.defaultTextColor() != source.defaultTextColor():
+                si.setDefaultTextColor(source.defaultTextColor())
             si.design_inverse = getattr(source, "design_inverse", False)
-            si.design_visible = getattr(source, "design_visible", True)
+            # design_visible intentionally excluded — each item controls its own visibility
 
     def _rebuild_same_with_registry(self):
         id_to_item = {

@@ -44,6 +44,9 @@ class SameWithMixin:
 
     Stores component_id in item.design_same_with (not component_name),
     so links survive component renames.
+
+    Note: design_visible is intentionally NOT synced — each item controls
+    its own visibility independently of its SAME WITH source.
     """
 
     # ── public API called by _on_type_changed ─────────────────────────────────
@@ -119,9 +122,10 @@ class SameWithMixin:
         new_color = source_item.defaultTextColor()
         self.item.setDefaultTextColor(new_color)
         self.item._original_color = new_color
-        for attr in ("design_inverse", "design_visible", "design_alignment",
+        for attr in ("design_inverse", "design_alignment",
                      "design_editor", "design_wrap_text", "design_wrap_width"):
             setattr(self.item, attr, getattr(source_item, attr, ""))
+        # design_visible is intentionally excluded — visibility stays independent
         self.item.design_same_with = source_id
         self._refresh_ui_from_item()
         self._lock_all_fields(True)
@@ -144,7 +148,7 @@ class SameWithMixin:
             target.setDefaultTextColor(new_color)
             target._original_color = new_color
             target.design_inverse = getattr(self.item, "design_inverse", False)
-            target.design_visible = getattr(self.item, "design_visible", True)
+            # design_visible intentionally excluded — each item controls its own visibility
         self.update_callback()
 
     # ── field locking ─────────────────────────────────────────────────────────
@@ -172,12 +176,15 @@ class SameWithMixin:
         self.top_spin.setStyleSheet(MODERN_INPUT_STYLE)
         self.left_spin.setStyleSheet(MODERN_INPUT_STYLE)
 
+        # visible_combo stays enabled regardless — visibility is always independent
+        self.visible_combo.setEnabled(True)
+
         for w in (self.align_combo, self.font_combo, self.angle_combo,
                   self.inverse_combo, self.editor_combo, self.wrap_combo,
                   self.data_type_combo, self.group_combo, self.table_combo,
                   self.field_edit, self.result_combo, self.link_combo,
                   self.merge_combo, self.timbangan_combo, self.weight_combo,
-                  self.um_combo, self.visible_combo, self.save_field_combo,
+                  self.um_combo, self.save_field_combo,
                   self.mandatory_combo, self.batch_no_combo, self.wh_combo):
             w.setEnabled(not locked)
 
