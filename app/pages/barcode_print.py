@@ -391,10 +391,8 @@ class _DesignPickerPopup(QDialog):
             QListWidget::item {{ padding: 0px; border-bottom: 1px solid {_BORDER}; }}
             QListWidget::item:selected {{ background: {_ACCENT_LIGHT}; }}
             QListWidget::item:hover:!selected {{ background: #F8FAFC; }}
-
             QScrollBar:vertical {{
-                background: transparent; width: 6px;
-                margin: 4px 2px 4px 0px;
+                background: transparent; width: 6px; margin: 4px 2px 4px 0px;
             }}
             QScrollBar::handle:vertical {{
                 background: #CBD5E1; border-radius: 3px; min-height: 32px;
@@ -403,10 +401,8 @@ class _DesignPickerPopup(QDialog):
             QScrollBar::handle:vertical:pressed {{ background: #64748B; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
-
             QScrollBar:horizontal {{
-                background: transparent; height: 6px;
-                margin: 0px 0px 2px 0px;
+                background: transparent; height: 6px; margin: 0px 0px 2px 0px;
             }}
             QScrollBar::handle:horizontal {{
                 background: #CBD5E1; border-radius: 3px; min-width: 32px;
@@ -508,7 +504,6 @@ class _DesignPickerPopup(QDialog):
 class _MasterItemPickerPopup(QDialog):
     item_picked = Signal(str, str, str, str, str)  # part_no, item_code, name, qty, whs
 
-    # Maps mm* field names → actual repo dict keys
     _MM_TO_KEY: dict[str, str] = {
         "mmcsap": "sap_code",
         "mmitno": "pk",
@@ -535,7 +530,6 @@ class _MasterItemPickerPopup(QDialog):
         "mmchby": "changed_by",
         "mmchdt": "changed_at",
         "mmchno": "changed_no",
-        # bare DB key pass-throughs
         "sap_code":      "sap_code",
         "pk":            "pk",
         "description":   "description",
@@ -665,10 +659,8 @@ class _MasterItemPickerPopup(QDialog):
             QListWidget::item {{ padding: 0px; border-bottom: 1px solid {_BORDER}; }}
             QListWidget::item:selected {{ background: {_ACCENT_LIGHT}; }}
             QListWidget::item:hover:!selected {{ background: #F8FAFC; }}
-
             QScrollBar:vertical {{
-                background: transparent; width: 6px;
-                margin: 4px 2px 4px 0px;
+                background: transparent; width: 6px; margin: 4px 2px 4px 0px;
             }}
             QScrollBar::handle:vertical {{
                 background: #CBD5E1; border-radius: 3px; min-height: 32px;
@@ -677,10 +669,8 @@ class _MasterItemPickerPopup(QDialog):
             QScrollBar::handle:vertical:pressed {{ background: #64748B; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
-
             QScrollBar:horizontal {{
-                background: transparent; height: 6px;
-                margin: 0px 0px 2px 0px;
+                background: transparent; height: 6px; margin: 0px 0px 2px 0px;
             }}
             QScrollBar::handle:horizontal {{
                 background: #CBD5E1; border-radius: 3px; min-width: 32px;
@@ -732,17 +722,13 @@ class _MasterItemPickerPopup(QDialog):
     def _get_col_specs(self) -> list[tuple[str, str, int]]:
         if not self._dyn_columns:
             return list(self._DEFAULT_COLS)
-
-        specs: list[tuple[str, str, int]] = []
-        specs.append(("mmitno", "ITEM CODE", 190))
-
+        specs: list[tuple[str, str, int]] = [("mmitno", "ITEM CODE", 190)]
         for field in self._dyn_columns:
             field = field.strip()
             if not field or field in ("mmitno", "pk"):
                 continue
             label = self._MM_LABELS.get(field, field.upper().replace("_", " "))
             specs.append((field, label, 140))
-
         return specs
 
     def _rebuild_column_headers(self):
@@ -754,12 +740,6 @@ class _MasterItemPickerPopup(QDialog):
         col_specs = self._get_col_specs()
         total_w = sum(w for _, _, w in col_specs) + 48
 
-        print(f"[HEADER] col_specs={[(k, l, w) for k, l, w in col_specs]}")
-        print(f"[HEADER] total_w={total_w}")
-        print(f"[HEADER] col_hdr_widget size before={self._col_hdr_widget.size()}")
-        print(f"[HEADER] col_hdr_scroll size={self._col_hdr_scroll.size()}")
-        print(f"[HEADER] col_hdr_scroll viewport size={self._col_hdr_scroll.viewport().size()}")
-
         for _key, label, width in col_specs:
             lbl = QLabel(label)
             lbl.setFixedHeight(28)
@@ -768,19 +748,13 @@ class _MasterItemPickerPopup(QDialog):
                 f"letter-spacing: 0.5px; background: #F1F5F9; "
                 f"min-width: {width}px; max-width: {width}px;")
             self._col_hdr_layout.addWidget(lbl)
-            print(f"[HEADER]   added label={label!r} width={width}")
         self._col_hdr_layout.addStretch()
 
         fixed_w = max(total_w, 400)
         self._col_hdr_widget.setFixedWidth(fixed_w)
         self._col_hdr_widget.setFixedHeight(28)
-        print(f"[HEADER] set col_hdr_widget fixedWidth={fixed_w}")
-        print(f"[HEADER] col_hdr_widget size after={self._col_hdr_widget.size()}")
-
-        # Force viewport background
         self._col_hdr_scroll.viewport().setStyleSheet("background: #F1F5F9;")
         self._col_hdr_scroll.viewport().setAutoFillBackground(True)
-        print(f"[HEADER] viewport autoFill={self._col_hdr_scroll.viewport().autoFillBackground()}")
 
     def _rebuild_list(self, records: list[dict]):
         self._list.clear()
@@ -844,17 +818,13 @@ class _MasterItemPickerPopup(QDialog):
         print(f"[_on_select] Raw row: {r}")
 
         if r:
-            # ✅ CRITICAL FIX — store raw record for later use
             self._last_raw_record = r
-
             part_no   = str(r.get("part_no_print") or r.get("po_no") or r.get("upc") or "")
             item_code = str(r.get("pk") or r.get("sap_code") or "")
             name      = str(r.get("name") or r.get("description") or "")
             qty       = str(r.get("qty") or "")
             whs       = str(r.get("warehouse") or r.get("whs") or "")
-
             print(f"[_on_select] Emitting → part_no={part_no!r} item_code={item_code!r} name={name!r} qty={qty!r} whs={whs!r}")
-
             self.item_picked.emit(part_no, item_code, name, qty, whs)
             self.accept()
         else:
@@ -875,7 +845,6 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
     seen_captions: set[str] = set()
     batch_no_results: set[str] = set()
 
-    # ── First pass: collect all BATCH NO covered fields ───────────────────
     for e in elements:
         if e.get("type") != "text":
             continue
@@ -885,21 +854,18 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         if wh_ref:
             batch_no_results.add(wh_ref)
 
-    # ── Second pass: build fields ─────────────────────────────────────────
     for e in elements:
         if e.get("type") != "text":
             continue
 
-        dt  = (e.get("design_type")      or "").upper().strip()
-        ed  = (e.get("design_editor")    or "").upper().strip()
+        dt  = (e.get("design_type")         or "").upper().strip()
+        ed  = (e.get("design_editor")       or "").upper().strip()
         sv  = (e.get("design_system_value") or "").upper().strip()
-        cap = (e.get("design_caption")   or "").strip()
+        cap = (e.get("design_caption")      or "").strip()
 
-        # ── Skip truly invisible (except BATCH NO which has no editor) ────
         if ed == "INVISIBLE":
             continue
 
-        # ── Caption fallback ──────────────────────────────────────────────
         if not cap:
             if dt == "BATCH NO":
                 cap = "QTY"
@@ -919,159 +885,89 @@ def _analyse_fields(elements: list[dict]) -> list[dict]:
         cid  = e.get("component_id", "")
         col  = int(e.get("design_column") or 1)
 
-        # ══════════════════════════════════════════════════════════════════
-        # LOOKUP
-        # ══════════════════════════════════════════════════════════════════
         if dt == "LOOKUP":
             fields.append(dict(
-                type="lookup",
-                caption=cap,
-                name=name,
-                component_id=cid,
-                link_to=None,
-                system_value=None,
-                column=col,
-                batch_ref="",
-                wh_ref="",
+                type="lookup", caption=cap, name=name, component_id=cid,
+                link_to=None, system_value=None, column=col, batch_ref="", wh_ref="",
             ))
 
-        # ══════════════════════════════════════════════════════════════════
-        # LINK
-        # ══════════════════════════════════════════════════════════════════
         elif dt == "LINK":
             design_result = (e.get("design_result") or "").strip()
             if not design_result:
                 continue
-
-            # skip if a BATCH NO field already covers this result
             db_key = _MasterItemPickerPopup._MM_TO_KEY.get(
-                design_result.lower(), design_result.lower()
-            )
+                design_result.lower(), design_result.lower())
             if design_result.lower() in batch_no_results or db_key in batch_no_results:
                 continue
-
-            # skip if caption already shown
             if cap.upper() in seen_captions:
                 continue
-
             link_ftype = "freetext" if ed == "ENABLED" else "autofill"
             fields.append(dict(
-                type=link_ftype,
-                caption=cap,
-                name=name,
-                component_id=cid,
-                link_to=e.get("design_link", ""),
-                system_value=None,
-                column=col,
-                batch_ref="",
-                wh_ref="",
+                type=link_ftype, caption=cap, name=name, component_id=cid,
+                link_to=e.get("design_link", ""), system_value=None,
+                column=col, batch_ref="", wh_ref="",
             ))
             seen_captions.add(cap.upper())
 
-        # ══════════════════════════════════════════════════════════════════
-        # SYSTEM
-        # ══════════════════════════════════════════════════════════════════
         elif dt == "SYSTEM":
             if sv == "LOT NO":
                 fields.append(dict(
-                    type="autofill",
-                    caption=cap,
-                    name=name,
-                    component_id=cid,
-                    link_to=None,
-                    system_value=sv,
-                    column=col,
-                    batch_ref="",
-                    wh_ref="",
+                    type="autofill", caption=cap, name=name, component_id=cid,
+                    link_to=None, system_value=sv, column=col, batch_ref="", wh_ref="",
                 ))
             elif ed == "ENABLED":
                 fields.append(dict(
-                    type="freetext",
-                    caption=cap,
-                    name=name,
-                    component_id=cid,
-                    link_to=None,
-                    system_value=sv,
-                    column=col,
-                    batch_ref="",
-                    wh_ref="",
+                    type="freetext", caption=cap, name=name, component_id=cid,
+                    link_to=None, system_value=sv, column=col, batch_ref="", wh_ref="",
                 ))
 
         elif dt == "INPUT":
             if ed == "INVISIBLE":
                 continue
-
             if cap.upper() in seen_captions:
                 continue
-
             fields.append(dict(
-                type="freetext",
-                caption=cap,
-                name=name,
-                component_id=cid,
-                link_to=None,
-                system_value=None,
-                column=col,
-                batch_ref="",
-                wh_ref="",
+                type="freetext", caption=cap, name=name, component_id=cid,
+                link_to=None, system_value=None, column=col, batch_ref="", wh_ref="",
             ))
             seen_captions.add(cap.upper())
-            
-        # ══════════════════════════════════════════════════════════════════
-        # BATCH NO
-        # ══════════════════════════════════════════════════════════════════
+
         elif dt == "BATCH NO":
             if not cap:
                 cap = "QTY"
-            batch_key = (
-                e.get("design_batch_no", ""),
-                e.get("design_wh", ""),
-                col,
-            )
+            batch_key = (e.get("design_batch_no", ""), e.get("design_wh", ""), col)
             if batch_key in seen_batch_keys:
                 continue
             seen_batch_keys.add(batch_key)
-
-            # skip if caption already shown
             if cap.upper() in seen_captions:
                 continue
-
             fields.append(dict(
-                type="autofill",
-                caption=cap,
-                name=name,
-                component_id=cid,
-                link_to=None,
-                system_value=None,
-                column=col,
-                batch_ref=e.get("design_batch_no", ""),
-                wh_ref=e.get("design_wh", ""),
+                type="autofill", caption=cap, name=name, component_id=cid,
+                link_to=None, system_value=None, column=col,
+                batch_ref=e.get("design_batch_no", ""), wh_ref=e.get("design_wh", ""),
             ))
             seen_captions.add(cap.upper())
 
     fields.sort(key=lambda f: f["column"])
     return fields
 
+
 # ── DB function caller ────────────────────────────────────────────────────────
 
 def _call_db_function(func_name: str, *args) -> str:
-    """Call a PostgreSQL function and return the result as a string."""
     try:
         try:
             from server.db import get_connection
         except ImportError:
             from server.connection import get_connection
-
         conn = get_connection()
         cur = conn.cursor()
-
         cast_args = []
         for a in args:
             if isinstance(a, datetime):
                 cast_args.append(a.strftime("%Y-%m-%d %H:%M:%S"))
             else:
                 cast_args.append(a)
-
         placeholders = ", ".join(["%s::timestamp"] * len(cast_args))
         cur.execute(f"SELECT barcodesap.{func_name}({placeholders})", cast_args)
         row = cur.fetchone()
@@ -1112,7 +1008,6 @@ def _resolve_system_value(design_system_value: str, design_system_extra: str) ->
         if func:
             return _call_db_function(func, datetime.now())
         return ""
-
     elif sv == "DATETIME":
         fmt = design_system_extra or "HH:mm:ss"
         fmt = (fmt
@@ -1124,17 +1019,14 @@ def _resolve_system_value(design_system_value: str, design_system_extra: str) ->
                .replace("MM",    "%m")
                .replace("yyyy",  "%Y"))
         return datetime.now().strftime(fmt)
-
     elif sv == "DATE":
         return datetime.now().strftime("%d-%b-%Y").upper()
-
     elif sv == "USER ID":
         try:
             from server.session import current_user
             return str(current_user() or "")
         except Exception:
             return ""
-
     return ""
 
 
@@ -1145,8 +1037,8 @@ class _CanvasPreview(QWidget):
         super().__init__(parent)
         self._elements: list[dict] = []
         self._text_items: dict[str, QGraphicsTextItem] = {}
-        self._barcode_items: dict[str, object] = {}   # name → BarcodeItem
-        self._same_with_map: dict[str, str] = {}   # target_name → source_name
+        self._barcode_items: dict[str, object] = {}
+        self._same_with_map: dict[str, str] = {}
         self._canvas_w = 600; self._canvas_h = 400
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_ui()
@@ -1205,6 +1097,7 @@ class _CanvasPreview(QWidget):
                 self._tampil = bool(_meta.get("tampil", _DEFAULT_TAMPIL))
             except Exception:
                 pass
+
         self._scene.setSceneRect(QRectF(0, 0, canvas_w, canvas_h))
         bg = self._scene.addRect(
             QRectF(0, 0, canvas_w, canvas_h),
@@ -1224,7 +1117,6 @@ class _CanvasPreview(QWidget):
         for d in sorted(self._elements, key=lambda x: x.get("z", 0)):
             self._add_element(d)
 
-        # Build SAME WITH map FIRST before merge pass
         self._same_with_map = {}
         cid_to_name = {
             e.get("component_id", ""): e.get("name", "")
@@ -1235,18 +1127,16 @@ class _CanvasPreview(QWidget):
                     and (e.get("design_type") or "").upper() == "SAME WITH"):
                 target_name = e.get("name", "")
                 source_cid  = (e.get("design_same_with") or "").strip()
-                source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in {e.get("name","") for e in self._elements} else "")
+                source_name = (cid_to_name.get(source_cid, "")
+                               or (source_cid if source_cid in {e.get("name", "") for e in self._elements} else ""))
                 if target_name and source_name:
                     self._same_with_map[target_name] = source_name
-                    # Seed target with source's current text before merge pass
                     source_item = self._text_items.get(source_name)
                     target_item = self._text_items.get(target_name)
                     if source_item and target_item:
                         target_item.setPlainText(source_item.toPlainText())
 
-        # Now recompute merges — SAME WITH targets already have correct values
         self._recompute_merges()
-
         self._view.setVisible(True); self._placeholder.setVisible(False)
         self._view.resetTransform()
 
@@ -1255,14 +1145,11 @@ class _CanvasPreview(QWidget):
             item = self._text_items.get(name)
             if item is not None:
                 item.setPlainText(str(text))
-
-        # Propagate to SAME WITH targets whose source was just updated
         for target_name, source_name in self._same_with_map.items():
             if source_name in name_to_text:
                 target_item = self._text_items.get(target_name)
                 if target_item is not None:
                     target_item.setPlainText(str(name_to_text[source_name]))
-
         self._recompute_merges()
 
     def _recompute_merges(self):
@@ -1280,11 +1167,7 @@ class _CanvasPreview(QWidget):
                 item = self._text_items.get(d.get("name", ""))
                 if item is not None:
                     item.setPlainText(result)
-                    # Update all_vals so downstream MERGEs and SAME WITH targets
-                    # see the freshly computed value in the same pass
                     all_vals[d.get("name", "")] = result
-
-        # Propagate updated MERGE results to their SAME WITH targets
         for target_name, source_name in self._same_with_map.items():
             source_val = all_vals.get(source_name, "")
             if source_val:
@@ -1301,9 +1184,6 @@ class _CanvasPreview(QWidget):
     def _add_element(self, d: dict):
         kind    = d.get("type")
         visible = d.get("visible", True)
-
-        # If tampil=True (design-level): show all regardless of visible.
-        # If tampil=False: only show items where visible=True.
         should_show = self._tampil or visible
 
         if not should_show:
@@ -1316,9 +1196,9 @@ class _CanvasPreview(QWidget):
                     font.setItalic(d.get("italic", False))
                     ti.setFont(font)
                     ti.document().setDocumentMargin(0)
-                    self._text_items[name] = ti  # register but don't add to scene
+                    self._text_items[name] = ti
             return
-        
+
         x    = d.get("aabb_x", d.get("x", 0))
         y    = d.get("aabb_y", d.get("y", 0))
         z    = d.get("z", 0)
@@ -1354,7 +1234,6 @@ class _CanvasPreview(QWidget):
                 item.container_width = w
                 item.container_height = h
                 item.setRect(w, h)
-                # copy all design attributes
                 from pages.barcode_editor import _BARCODE_DEFAULTS
                 for attr, default in _BARCODE_DEFAULTS.items():
                     setattr(item, attr, d.get(attr, default))
@@ -1424,20 +1303,17 @@ class _BarcodePreviewItem(QGraphicsRectItem):
         painter.drawRect(r)
 
     def _draw_linear(self, painter, r):
-        import hashlib
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:8], 16)
         bar_h = r.height() * 0.72
         bar_top = r.top()
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(Qt.black))
-        x = r.left() + 2
-        i = 0
+        x = r.left() + 2; i = 0
         while x < r.right() - 2:
             bar_w = max(1.0, float(((seed >> (i % 24)) & 3) + 1))
             if i % 2 == 0:
                 painter.drawRect(int(x), int(bar_top), max(1, int(bar_w)), int(bar_h))
-            x += bar_w + 0.8
-            i += 1
+            x += bar_w + 0.8; i += 1
         label_top = bar_top + bar_h + 2
         label_h = r.height() - bar_h - 2
         if label_h > 4:
@@ -1448,30 +1324,22 @@ class _BarcodePreviewItem(QGraphicsRectItem):
                              Qt.AlignHCenter | Qt.AlignVCenter, self._design[:10])
 
     def _draw_qr(self, painter, r):
-        import hashlib
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
         pad = max(2.0, r.width() * 0.05)
-        inner_x = r.left() + pad
-        inner_y = r.top() + pad
-        inner_w = r.width() - 2 * pad
-        inner_h = r.height() - 2 * pad
+        inner_x = r.left() + pad; inner_y = r.top() + pad
+        inner_w = r.width() - 2 * pad; inner_h = r.height() - 2 * pad
         cells = 13
-        cell_w = inner_w / cells
-        cell_h = inner_h / cells
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(Qt.black))
+        cell_w = inner_w / cells; cell_h = inner_h / cells
+        painter.setPen(Qt.NoPen); painter.setBrush(QBrush(Qt.black))
         for row in range(cells):
             for col in range(cells):
                 if (seed >> ((row * cells + col) % 128)) & 1:
                     painter.drawRect(int(inner_x + col * cell_w) + 1,
                                      int(inner_y + row * cell_h) + 1,
-                                     max(1, int(cell_w) - 1),
-                                     max(1, int(cell_h) - 1))
+                                     max(1, int(cell_w) - 1), max(1, int(cell_h) - 1))
         for (fc, fr) in [(0, 0), (cells - 7, 0), (0, cells - 7)]:
-            fx = inner_x + fc * cell_w
-            fy = inner_y + fr * cell_h
-            fw = 7 * cell_w
-            fh = 7 * cell_h
+            fx = inner_x + fc * cell_w; fy = inner_y + fr * cell_h
+            fw = 7 * cell_w; fh = 7 * cell_h
             painter.setBrush(QBrush(Qt.black))
             painter.drawRect(int(fx), int(fy), int(fw), int(fh))
             painter.setBrush(QBrush(Qt.white))
@@ -1482,16 +1350,13 @@ class _BarcodePreviewItem(QGraphicsRectItem):
                              int(3 * cell_w), int(3 * cell_h))
 
     def _draw_datamatrix(self, painter, r):
-        import hashlib
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
         pad = max(2.0, r.width() * 0.05)
         side = min(r.width(), r.height()) - 2 * pad
         ox = r.left() + (r.width() - side) / 2
         oy = r.top() + (r.height() - side) / 2
-        cells = 10
-        cell = side / cells
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(Qt.black))
+        cells = 10; cell = side / cells
+        painter.setPen(Qt.NoPen); painter.setBrush(QBrush(Qt.black))
         for row in range(cells):
             for col in range(cells):
                 if row == cells - 1 or col == 0:
@@ -1501,34 +1366,24 @@ class _BarcodePreviewItem(QGraphicsRectItem):
                 else:
                     filled = bool((seed >> ((row * cells + col) % 128)) & 1)
                 if filled:
-                    painter.drawRect(int(ox + col * cell) + 1,
-                                     int(oy + row * cell) + 1,
-                                     max(1, int(cell) - 1),
-                                     max(1, int(cell) - 1))
+                    painter.drawRect(int(ox + col * cell) + 1, int(oy + row * cell) + 1,
+                                     max(1, int(cell) - 1), max(1, int(cell) - 1))
 
     def _draw_pdf417(self, painter, r):
-        import hashlib
         seed = int(hashlib.md5(self._design.encode()).hexdigest()[:16], 16)
-        pad = 2.0
-        rows = 6
+        pad = 2.0; rows = 6
         row_h = (r.height() - 2 * pad) / rows
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(Qt.black))
+        painter.setPen(Qt.NoPen); painter.setBrush(QBrush(Qt.black))
         for row in range(rows):
             y = r.top() + pad + row * row_h
-            x = r.left() + pad
-            i = 0
+            x = r.left() + pad; i = 0
             while x < r.right() - pad:
                 bar_w = max(1.0, float(((seed >> ((row * 17 + i) % 48)) & 3) + 1))
                 if i % 2 == 0:
-                    painter.drawRect(int(x), int(y), max(1, int(bar_w)),
-                                     max(1, int(row_h) - 1))
-                x += bar_w + 0.5
-                i += 1
-        painter.drawRect(int(r.left() + pad), int(r.top() + pad),
-                         2, int(r.height() - 2 * pad))
-        painter.drawRect(int(r.right() - pad - 2), int(r.top() + pad),
-                         2, int(r.height() - 2 * pad))
+                    painter.drawRect(int(x), int(y), max(1, int(bar_w)), max(1, int(row_h) - 1))
+                x += bar_w + 0.5; i += 1
+        painter.drawRect(int(r.left() + pad), int(r.top() + pad), 2, int(r.height() - 2 * pad))
+        painter.drawRect(int(r.right() - pad - 2), int(r.top() + pad), 2, int(r.height() - 2 * pad))
 
 
 # ── ZPL send helper ───────────────────────────────────────────────────────────
@@ -1549,7 +1404,6 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
         try:
             import win32print
 
-            # ── Printer status constants (raw hex — no win32con dependency) ──
             _PS_OFFLINE        = 0x00000080
             _PS_ERROR          = 0x00000002
             _PS_NOT_AVAILABLE  = 0x00001000
@@ -1560,14 +1414,11 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
             _PS_BIN_FULL       = 0x00000800
             _PS_DOOR_OPEN      = 0x00400000
             _PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x00000080
-
             _BAD_STATUS = (
                 _PS_OFFLINE | _PS_ERROR | _PS_NOT_AVAILABLE | _PS_NO_TONER
                 | _PS_PAPER_JAM | _PS_PAPER_OUT | _PS_PAPER_PROBLEM
                 | _PS_BIN_FULL | _PS_DOOR_OPEN
             )
-
-            # ── Job status constants ──────────────────────────────────────────
             _JS_ERROR        = 0x00000002
             _JS_OFFLINE      = 0x00000020
             _JS_PAPEROUT     = 0x00000040
@@ -1577,7 +1428,6 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
                 _JS_ERROR | _JS_OFFLINE | _JS_PAPEROUT | _JS_BLOCKED | _JS_INTERVENTION
             )
 
-            # ── Find the ZDesigner printer, fall back to default ──────────────
             _target = "ZDesigner"
             _all_printers = [p[2] for p in win32print.EnumPrinters(
                 win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
@@ -1586,7 +1436,6 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
             printer_name = _zdesigner or win32print.GetDefaultPrinter()
             print(f"[PRINTER] Using: {printer_name!r}")
 
-            # ── Check printer status BEFORE sending ───────────────────────────
             hprinter = win32print.OpenPrinter(printer_name)
             try:
                 info = win32print.GetPrinter(hprinter, 2)
@@ -1599,13 +1448,11 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
             if attribs & _PRINTER_ATTRIBUTE_WORK_OFFLINE:
                 return False, (
                     f"Printer \"{printer_name}\" is set to Work Offline.\n"
-                    "Please bring it online and try again."
-                )
+                    "Please bring it online and try again.")
             if status & _PS_OFFLINE:
                 return False, (
                     f"Printer \"{printer_name}\" is offline.\n"
-                    "Check the USB/network cable and power, then try again."
-                )
+                    "Check the USB/network cable and power, then try again.")
             if status & _BAD_STATUS:
                 reasons = []
                 flag_names = {
@@ -1624,10 +1471,8 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
                 reason_str = ", ".join(reasons) or f"status code 0x{status:08X}"
                 return False, (
                     f"Printer \"{printer_name}\" is not ready: {reason_str}.\n"
-                    "Resolve the issue and try again."
-                )
+                    "Resolve the issue and try again.")
 
-            # ── Send the job ──────────────────────────────────────────────────
             hprinter = win32print.OpenPrinter(printer_name)
             try:
                 hjob = win32print.StartDocPrinter(hprinter, 1, ("ZPL Label", None, "RAW"))
@@ -1640,7 +1485,6 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
             finally:
                 win32print.ClosePrinter(hprinter)
 
-            # ── Brief pause then verify the job didn't immediately error ──────
             import time
             time.sleep(0.6)
             hprinter2 = win32print.OpenPrinter(printer_name)
@@ -1663,8 +1507,7 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
                         reason_str = ", ".join(job_reasons) or f"0x{job_status:08X}"
                         return False, (
                             f"Print job queued but printer reported an error: "
-                            f"{reason_str}.\nPrinter: \"{printer_name}\""
-                        )
+                            f"{reason_str}.\nPrinter: \"{printer_name}\"")
             finally:
                 win32print.ClosePrinter(hprinter2)
 
@@ -1674,12 +1517,10 @@ def _send_zpl_to_printer(zpl: str, copies: int = 1) -> tuple[bool, str]:
             return False, (
                 "win32print is not installed.\n"
                 "Please run:  pip install pywin32\n"
-                "Then restart the application."
-            )
+                "Then restart the application.")
         except Exception as exc:
             return False, f"win32print error: {exc}"
 
-    # ── Non-Windows fallback (Linux / macOS) ──────────────────────────────────
     try:
         with tempfile.NamedTemporaryFile(suffix=".zpl", delete=False) as tf:
             tf.write(zpl_bytes)
@@ -1713,8 +1554,6 @@ class BarcodePrintPage(QWidget):
         self._cid_to_name: dict[str, str] = {}
         self._usrm_json: str = ""
         self._itrm_json: str = ""
-        # ── Stores pending batch-no params set when an item is picked.
-        #    Keyed by element name.  The DB is NOT called here — only at print.
         self._pending_batch_params: dict[str, dict] = {}
         self._build_ui()
         self._btn_print.setEnabled(False)
@@ -1724,12 +1563,10 @@ class BarcodePrintPage(QWidget):
         spl = QSplitter(Qt.Horizontal)
         spl.setHandleWidth(1)
         spl.setStyleSheet(f"QSplitter::handle {{ background: {_BORDER}; }}")
-
         left_w = self._build_left()
         right_w = self._build_right()
         left_w.setMinimumWidth(320)
         right_w.setMinimumWidth(260)
-
         spl.addWidget(left_w)
         spl.addWidget(right_w)
         spl.setCollapsible(0, False)
@@ -1883,7 +1720,6 @@ class BarcodePrintPage(QWidget):
         if not fields:
             return
 
-        # ── Compute label width from the longest caption ───────────────────
         _fm = QFontMetrics(QFont())
         _lbl_w = max(
             120,
@@ -1918,8 +1754,7 @@ class BarcodePrintPage(QWidget):
 
             elif ftype == "link_readonly":
                 inp = QLineEdit(); inp.setReadOnly(True); inp.setFocusPolicy(Qt.NoFocus)
-                inp.setPlaceholderText("")
-                inp.setStyleSheet(_AUTOFILL_STYLE)
+                inp.setPlaceholderText(""); inp.setStyleSheet(_AUTOFILL_STYLE)
                 _form_row(f"{cap} :", inp, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
@@ -1927,8 +1762,18 @@ class BarcodePrintPage(QWidget):
                 inp = QLineEdit()
                 inp.setPlaceholderText(f"Enter {cap.lower()}…")
                 inp.setStyleSheet(MODERN_INPUT_STYLE)
-                inp.textChanged.connect(
-                    lambda text, n=name: self._on_field_changed(n, text))
+
+                def _force_upper(text, widget=inp, n=name):
+                    upper = text.upper()
+                    if text != upper:
+                        cursor = widget.cursorPosition()
+                        widget.blockSignals(True)
+                        widget.setText(upper)
+                        widget.setCursorPosition(cursor)
+                        widget.blockSignals(False)
+                    self._on_field_changed(n, upper)
+
+                inp.textChanged.connect(_force_upper)
                 _form_row(f"{cap} :", inp, self._fields_vbox, lbl_width=_lbl_w)
                 self._field_widgets[name] = inp
 
@@ -1938,9 +1783,9 @@ class BarcodePrintPage(QWidget):
                 continue
             if (e.get("design_type") or "").upper() != "SYSTEM":
                 continue
-            ename  = e.get("name", "")
-            sv     = (e.get("design_system_value") or "").upper().strip()
-            ext    = (e.get("design_system_extra") or "").strip()
+            ename    = e.get("name", "")
+            sv       = (e.get("design_system_value") or "").upper().strip()
+            ext      = (e.get("design_system_extra") or "").strip()
             resolved = _resolve_system_value(sv, ext)
             if not resolved:
                 continue
@@ -1977,14 +1822,12 @@ class BarcodePrintPage(QWidget):
             None,
         )
 
-        # Primary: use design_field (the checked fields in the editor)
         dyn_columns: list[str] = []
         if lookup_elem:
             raw_field = (lookup_elem.get("design_field") or "").strip()
             if raw_field:
                 dyn_columns = [f.strip() for f in raw_field.split(",") if f.strip()]
 
-        # Fallback: derive from design_result of linked LINK elements
         if not dyn_columns:
             lookup_cid = fd.get("component_id", "")
             linked_results: list[str] = []
@@ -2005,22 +1848,15 @@ class BarcodePrintPage(QWidget):
 
     @staticmethod
     def _parse_batch_no_result(raw: str) -> str:
-        """Extract batch number from DB result like '(AAAABAZ,0)' → 'AAAABAZ'."""
         raw = raw.strip()
-        # Handle tuple-like string: (AAAABAZ,0) or (AAAABAZ, 0)
         m = re.match(r"^\(?\s*([^,)]+?)\s*,", raw)
         if m:
             return m.group(1).strip()
-        # Strip surrounding parens if no comma found
         if raw.startswith("(") and raw.endswith(")"):
             return raw[1:-1].strip()
         return raw
 
     def _fetch_batch_no(self, part_no: str, wh_val: str, qty: str, element: dict) -> str:
-        """
-        Call new_batch_no and commit. Each call increments the DB counter by 1.
-        Only called from _on_print — never from item-selection handlers.
-        """
         import traceback
         print(f"  [BATCH NO DB] CALLED for part_no={part_no!r} wh={wh_val!r}")
         print(f"  [BATCH NO DB] Call stack:")
@@ -2049,8 +1885,7 @@ class BarcodePrintPage(QWidget):
             return element.get("text", "") or qty
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
-                  name: str, qty: str, whs: str):
-
+                               name: str, qty: str, whs: str):
         print("=" * 60)
         print("[MASTER ITEM PICKED] Raw signal values:")
         print(f"  part_no   = {part_no!r}")
@@ -2075,7 +1910,6 @@ class BarcodePrintPage(QWidget):
         updates: dict[str, str] = {}
 
         # ── LOOKUP field itself ──────────────────────────────────────────────
-        # ── LOOKUP field itself ──────────────────────────────────────────────
         lookup_elem = next(
             (e for e in self._elements
              if e.get("name") == lookup_name and e.get("type") == "text"),
@@ -2095,14 +1929,12 @@ class BarcodePrintPage(QWidget):
         w = self._field_widgets.get(lookup_name)
         if isinstance(w, QLineEdit):
             w.setText(lookup_val)
-
         print(f"  [LOOKUP] {lookup_name!r} ← result_fld={lookup_result_fld!r} → {lookup_val!r}")
 
-        # ── LINK fields ──────────────────────────────────────────────────────
+        # ── LINK and BATCH NO fields ─────────────────────────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
-
             dt    = (e.get("design_type") or "").upper()
             ename = e.get("name", "")
 
@@ -2110,30 +1942,22 @@ class BarcodePrintPage(QWidget):
                 res_fld = (e.get("design_result") or "").lower().strip()
                 if not res_fld:
                     continue
-
                 db_key = _MasterItemPickerPopup._MM_TO_KEY.get(res_fld, res_fld)
                 val = str(raw.get(db_key) or raw.get(res_fld) or "")
-
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
                     widget.setText(val)
-
                 print(f"  [LINK] {ename!r} ← {res_fld!r} (db_key={db_key!r}) → {val!r}")
 
             elif dt == "BATCH NO" and e.get("design_batch_no", "") == lookup_name:
-                # ── Store parameters for deferred DB call at print time ────
-                #    Do NOT call the DB here — that would waste a counter slot.
                 wh_target = e.get("design_wh", "")
                 wh_val = updates.get(wh_target, whs) if wh_target else whs
-
                 self._pending_batch_params[ename] = {
-                    "part_no":  part_no,
-                    "wh_val":   wh_val,
-                    "element":  e,
+                    "part_no": part_no,
+                    "wh_val":  wh_val,
+                    "element": e,
                 }
-
-                # Show a placeholder in the UI so the user sees it will be filled
                 placeholder = "BatchNo"
                 updates[ename] = placeholder
                 widget = self._field_widgets.get(ename)
@@ -2141,8 +1965,7 @@ class BarcodePrintPage(QWidget):
                     widget.setText(placeholder)
                 print(f"  [BATCH NO] {ename!r} → deferred (part_no={part_no!r}, wh={wh_val!r})")
 
-        # ── Barcode field fallback: if mmbaro (BARCODE SPEC) is empty,
-        # use mmbupc or item code so the barcode still scans ──────────────────
+        # ── Barcode mmbaro fallback ──────────────────────────────────────────
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2155,13 +1978,10 @@ class BarcodePrintPage(QWidget):
                 continue
             ename = e.get("name", "")
             if updates.get(ename, "").strip():
-                break  # already has a value, no fallback needed
-            # mmbaro is empty — try fallback fields in order
+                break
             fallback = str(
-                raw.get("mmbaro") or
-                raw.get("upc")    or raw.get("mmbupc") or
-                raw.get("barcode") or
-                raw.get("pk")     or raw.get("mmitno") or ""
+                raw.get("mmbaro") or raw.get("upc") or raw.get("mmbupc") or
+                raw.get("barcode") or raw.get("pk") or raw.get("mmitno") or ""
             )
             if fallback:
                 updates[ename] = fallback
@@ -2171,21 +1991,13 @@ class BarcodePrintPage(QWidget):
                 print(f"  [MMBARO FALLBACK] {ename!r} ← {fallback!r}")
             break
 
-       # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
-        # Build component_id → element name map
-        # AFTER:
-       # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
-        # Build component_id → element name map
+        # ── SAME WITH ────────────────────────────────────────────────────────
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
-            for e in self._elements
-            if e.get("component_id")
+            for e in self._elements if e.get("component_id")
         }
-        # Also build name → element map for quick lookup
         name_to_elem: dict[str, dict] = {
-            e.get("name", ""): e
-            for e in self._elements
-            if e.get("name")
+            e.get("name", ""): e for e in self._elements if e.get("name")
         }
         for e in self._elements:
             etype = e.get("type", "")
@@ -2193,12 +2005,11 @@ class BarcodePrintPage(QWidget):
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
-            source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in name_to_elem else "")
+            source_name = (cid_to_name.get(source_cid, "")
+                           or (source_cid if source_cid in name_to_elem else ""))
             if not source_name:
                 continue
 
-            # For barcodes: look up the source element's design_result field
-            # and fetch that value from the raw record directly
             if etype == "barcode":
                 source_elem = name_to_elem.get(source_name, {})
                 result_fld  = (source_elem.get("design_result") or "").lower().strip()
@@ -2207,7 +2018,6 @@ class BarcodePrintPage(QWidget):
                     val = str(raw.get(db_key) or raw.get(result_fld) or "")
                 else:
                     val = updates.get(source_name, "")
-
                 if val:
                     updates[target_name] = val
                     barcode_item = self._preview._barcode_items.get(target_name)
@@ -2215,20 +2025,16 @@ class BarcodePrintPage(QWidget):
                         barcode_item.design_text = val
                         barcode_item.update()
                     self._current_values[target_name] = val
-                    print(f"  [SAME WITH (barcode)] {target_name!r} ← {source_name!r}.{result_fld!r} (db_key={db_key!r}) = {val!r}")
+                    print(f"  [SAME WITH (barcode)] {target_name!r} ← {source_name!r}.{result_fld!r} = {val!r}")
                 continue
 
-            # For text items: use the already-resolved updates dict
             if source_name not in updates:
                 continue
-
             val = updates[source_name]
             updates[target_name] = val
-
             widget = self._field_widgets.get(target_name)
             if isinstance(widget, QLineEdit):
                 widget.setText(val)
-
             print(f"  [SAME WITH (text)] {target_name!r} ← {source_name!r} = {val!r}")
 
         # ── Finalise ─────────────────────────────────────────────────────────
@@ -2265,7 +2071,6 @@ class BarcodePrintPage(QWidget):
         self._preview = _CanvasPreview()
         inner_v.addWidget(self._preview)
         preview_card_v.addWidget(inner_frame, 1)
-
         vbox.addWidget(preview_card, 5)
 
         part_card = QFrame()
@@ -2288,7 +2093,6 @@ class BarcodePrintPage(QWidget):
         self._lbl_item_code.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._lbl_item_code.setWordWrap(True)
         part_card_v.addWidget(self._lbl_item_code)
-
         vbox.addWidget(part_card)
         return w
 
@@ -2327,17 +2131,14 @@ class BarcodePrintPage(QWidget):
         from pathlib import Path
 
         here = Path(__file__).resolve().parent
-
         candidates = [
             here.parent / "services" / "zpl_generator.py",
             here / "zpl_generator.py",
             here / "zpl_converter.py",
         ]
-
         for candidate in candidates:
             if candidate.exists():
-                spec = importlib.util.spec_from_file_location(
-                    candidate.stem, str(candidate))
+                spec = importlib.util.spec_from_file_location(candidate.stem, str(candidate))
                 mod = importlib.util.module_from_spec(spec)
                 try:
                     spec.loader.exec_module(mod)
@@ -2363,8 +2164,7 @@ class BarcodePrintPage(QWidget):
         expected = here.parent / "services" / "zpl_generator.py"
         QMessageBox.critical(
             self, "Missing Module",
-            f"Cannot find zpl_generator.py.\n\n"
-            f"Expected location:\n  {expected}\n\n"
+            f"Cannot find zpl_generator.py.\n\nExpected location:\n  {expected}\n\n"
             "Make sure app/services/zpl_generator.py exists.")
         return None
 
@@ -2375,42 +2175,40 @@ class BarcodePrintPage(QWidget):
         if not code:
             QMessageBox.warning(self, "No Design", "Please select a design first.")
             return
-
         if not self._usrm_json:
             QMessageBox.warning(self, "No Canvas", "Design canvas is empty — nothing to print.")
             return
 
-        # ── 1. Live canvas text items — single source of truth ───────────────
+        # 1. Live canvas text items
         merged_values: dict[str, str] = {
             name: item.toPlainText()
             for name, item in self._preview._text_items.items()
         }
-
-        # ── 2. _current_values: explicit field-widget state ───────────────────
+        # 2. Explicit field-widget state
         merged_values.update(self._current_values)
 
-        # ── 3. SAME WITH: re-resolve at print time to catch any gaps ─────────
-        # ── 3. SAME WITH: re-resolve at print time to catch any gaps ─────────
+        # 3. SAME WITH re-resolve
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
-            for e in self._elements
-            if e.get("component_id")
+            for e in self._elements if e.get("component_id")
         }
         for e in self._elements:
             if (e.get("design_type") or "").upper() != "SAME WITH":
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
-            source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in cid_to_name.values() or source_cid in {e2.get("name","") for e2 in self._elements} else "")
+            source_name = (cid_to_name.get(source_cid, "")
+                           or (source_cid if source_cid in cid_to_name.values()
+                               or source_cid in {e2.get("name", "") for e2 in self._elements}
+                               else ""))
             if source_name and source_name in merged_values:
                 merged_values[target_name] = merged_values[source_name]
-                # Also push into barcode item so zpl_generator reads the fresh value
                 if e.get("type") == "barcode":
                     barcode_item = self._preview._barcode_items.get(target_name)
                     if barcode_item is not None:
                         barcode_item.design_text = merged_values[source_name]
 
-        # ── 4. SYSTEM values: always re-resolve fresh at print time ──────────
+        # 4. SYSTEM values — always re-resolve fresh
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2425,14 +2223,8 @@ class BarcodePrintPage(QWidget):
             if resolved:
                 merged_values[ename] = resolved
 
-        # ── 5. BATCH NO: deduplicate by (part_no, wh_val) so we commit exactly
-        #    ONE DB call per unique warehouse/part combination, then reuse the
-        #    result for every element that shares the same key.
-        #    wh_val is re-resolved from merged_values at print time (not from
-        #    the stale snapshot captured at item-pick time) so all elements
-        #    sharing the same WH field resolve to the same cache key.
+        # 5. BATCH NO — deduplicated DB calls
         _batch_cache: dict[tuple[str, str], str] = {}
-
         for e in self._elements:
             if e.get("type") != "text":
                 continue
@@ -2444,15 +2236,11 @@ class BarcodePrintPage(QWidget):
 
             params = self._pending_batch_params.get(ename)
             if params:
-                part_no_v = params["part_no"]
-                # Re-resolve wh_val from merged_values so all BATCH NO elements
-                # with the same WH field get the same cache key → one DB commit.
+                part_no_v   = params["part_no"]
                 wh_ref_name = params["element"].get("design_wh", "")
-                wh_val_v = (
-                    merged_values.get(wh_ref_name, params["wh_val"])
-                    if wh_ref_name else params["wh_val"]
-                )
-                element = params["element"]
+                wh_val_v    = (merged_values.get(wh_ref_name, params["wh_val"])
+                               if wh_ref_name else params["wh_val"])
+                element     = params["element"]
             else:
                 batch_ref = e.get("design_batch_no", "")
                 wh_ref    = e.get("design_wh", "")
@@ -2467,8 +2255,7 @@ class BarcodePrintPage(QWidget):
             cache_key = (part_no_v, wh_val_v)
             if cache_key in _batch_cache:
                 fresh = _batch_cache[cache_key]
-                print(f"  [BATCH NO REUSE] {ename!r} ← cached {fresh!r} "
-                      f"(part_no={part_no_v!r}, wh={wh_val_v!r})")
+                print(f"  [BATCH NO REUSE] {ename!r} ← cached {fresh!r}")
             else:
                 fresh = self._fetch_batch_no(part_no_v, wh_val_v, "", element)
                 _batch_cache[cache_key] = fresh
@@ -2508,7 +2295,7 @@ class BarcodePrintPage(QWidget):
         if canvas_to_zpl is None:
             QMessageBox.critical(
                 self, "ZPL Error",
-                f"zpl_generator.py does not expose a recognised entry-point function.\n"
+                "zpl_generator.py does not expose a recognised entry-point function.\n"
                 "Expected one of: canvas_to_zpl, generate_zpl, zpl_generate, convert.")
             return
 
@@ -2526,12 +2313,10 @@ class BarcodePrintPage(QWidget):
                 label_name=code,
                 value_overrides=merged_values,
             )
-
             if margin_left != 0 or margin_top != 0:
                 lh_dots_x = _px_to_dots(margin_left, dpi)
                 lh_dots_y = _px_to_dots(margin_top,  dpi)
                 zpl = zpl.replace("^LH0,0", f"^LH{lh_dots_x},{lh_dots_y}", 1)
-
         except Exception as exc:
             QMessageBox.critical(self, "ZPL Error", f"Failed to generate ZPL:\n{exc}")
             return
@@ -2547,9 +2332,9 @@ class BarcodePrintPage(QWidget):
             import json as _dbg_json
             _elems = _dbg_json.loads(self._usrm_json) if self._usrm_json else []
             for _e in _elems:
-                _t = _e.get("type","?"); _n = _e.get("name","?")
-                _x  = _e.get("x","—");  _y  = _e.get("y","—")
-                _ax = _e.get("aabb_x","—"); _ay = _e.get("aabb_y","—")
+                _t = _e.get("type", "?"); _n = _e.get("name", "?")
+                _x  = _e.get("x", "—");  _y  = _e.get("y", "—")
+                _ax = _e.get("aabb_x", "—"); _ay = _e.get("aabb_y", "—")
                 _r  = _e.get("rotation", 0)
                 print(f"  [{_t}] {_n!r:20s}  x={_x}, y={_y}  |  aabb_x={_ax}, aabb_y={_ay}  rot={_r}")
         except Exception as _dbg_exc:
@@ -2620,82 +2405,28 @@ class BarcodePrintPage(QWidget):
 
         self._build_dynamic_fields(elements)
 
-        initial: dict[str, str] = {
-            e["name"]: str(e.get("text", ""))
-            for e in elements
-            if e.get("type") == "text" and e.get("name")
+        # Collect freetext field names so we can start them blank
+        freetext_names: set[str] = {
+            fd["name"] for fd in self._field_descriptors if fd["type"] == "freetext"
         }
+
+        initial: dict[str, str] = {}
+        preview_overrides: dict[str, str] = {}
+        for e in elements:
+            if e.get("type") != "text" or not e.get("name"):
+                continue
+            ename = e["name"]
+            text  = str(e.get("text", ""))
+            if ename in freetext_names:
+                # Start blank — don't seed the design-time placeholder label
+                initial[ename] = ""
+                preview_overrides[ename] = ""
+            else:
+                initial[ename] = text
+
         self._current_values.update(initial)
-
-    def _fetch_and_refresh_preview(self, code: str):
-        try:
-            from server.repositories.mbarcd_repo import fetch_mbarcd_layout
-            layout = fetch_mbarcd_layout(code)
-            if layout:
-                usrm = layout.get("usrm", "")
-                itrm = layout.get("itrm", "")
-                if usrm:
-                    self._usrm_json = usrm
-                    self._itrm_json = itrm
-                    self._preview.set_design(usrm, itrm)
-                    try:
-                        elements = _json.loads(usrm)
-                        self._build_dynamic_fields(elements)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-    def load_design(self, code: str, name: str = "", row_dict: dict | None = None):
-        self.load_design_by_code(code, name, row_dict)
-
-    def set_com_status(self, timbangan: bool = False, gate: bool = False):
-        def _upd(lbl: QLabel, ok: bool):
-            lbl.setText("CONNECTED" if ok else "NOT CONNECTED")
-            lbl.setStyleSheet(
-                f"color: {_SUCCESS if ok else _DANGER}; font-size: 11px; "
-                "font-weight: 600; background: transparent; border: none;")
-        _upd(self._lbl_timbangan, timbangan)
-        _upd(self._lbl_gate, gate)
-            
-    # ── Public API ────────────────────────────────────────────────────────────
-
-    def load_design_by_code(self, code: str, name: str = "", row_dict: dict | None = None):
-        if not code:
-            return
-        self._inp_code.setText(code)
-        self._inp_name.setText(name or code)
-        self._btn_print.setEnabled(True)
-        self._lbl_item_code.setText("")
-
-        usrm = ""; itrm = ""
-        if row_dict:
-            self._row_dict = row_dict
-            usrm = row_dict.get("usrm") or row_dict.get("bsusrm") or ""
-            itrm = row_dict.get("itrm") or row_dict.get("bsitrm") or ""
-
-        self._usrm_json = usrm
-        self._itrm_json = itrm
-
-        try:
-            elements = _json.loads(usrm) if usrm else []
-        except Exception:
-            elements = []
-
-        if usrm:
-            self._preview.set_design(usrm, itrm)
-        else:
-            self._preview.clear()
-            self._fetch_and_refresh_preview(code)
-
-        self._build_dynamic_fields(elements)
-
-        initial: dict[str, str] = {
-            e["name"]: str(e.get("text", ""))
-            for e in elements
-            if e.get("type") == "text" and e.get("name")
-        }
-        self._current_values.update(initial)
+        if preview_overrides:
+            self._preview.set_values(preview_overrides)
 
     def _fetch_and_refresh_preview(self, code: str):
         try:
