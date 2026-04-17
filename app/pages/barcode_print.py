@@ -505,6 +505,9 @@ class _MasterItemPickerPopup(QDialog):
     item_picked = Signal(str, str, str, str, str)  # part_no, item_code, name, qty, whs
 
     _MM_TO_KEY: dict[str, str] = {
+        "mmbarc": "mmbarc",   # ADD THIS
+        "mmbaro": "mmbaro",   # ADD THIS
+        "mmtbfg": "mmtbfg",   # ADD THIS (used in design_field)
         "mmcsap": "sap_code",
         "mmitno": "pk",
         "mmitds": "description",
@@ -1977,19 +1980,18 @@ class BarcodePrintPage(QWidget):
             if res != "mmbaro":
                 continue
             ename = e.get("name", "")
-            if updates.get(ename, "").strip():
-                break
-            fallback = str(
-                raw.get("mmbaro") or raw.get("upc") or raw.get("mmbupc") or
-                raw.get("barcode") or raw.get("pk") or raw.get("mmitno") or ""
+            # Always overwrite with the correct field — no early-exit guard
+            val = str(
+                raw.get("mmbaro") or raw.get("mmbarc") or raw.get("upc") or
+                raw.get("mmbupc") or raw.get("barcode") or ""
             )
-            if fallback:
-                updates[ename] = fallback
+            if val:
+                updates[ename] = val
                 w = self._field_widgets.get(ename)
                 if isinstance(w, QLineEdit):
-                    w.setText(fallback)
-                print(f"  [MMBARO FALLBACK] {ename!r} ← {fallback!r}")
-            break
+                    w.setText(val)
+                print(f"  [MMBARO] {ename!r} ← {val!r}")
+            # don't break — continue checking other elements
 
         # ── SAME WITH ────────────────────────────────────────────────────────
         cid_to_name: dict[str, str] = {
