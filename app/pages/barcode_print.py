@@ -505,8 +505,8 @@ class _MasterItemPickerPopup(QDialog):
     item_picked = Signal(str, str, str, str, str)  # part_no, item_code, name, qty, whs
 
     _MM_TO_KEY: dict[str, str] = {
-        "mmbarc": "mmbarc",   # ADD THIS
-        "mmbaro": "mmbaro",   # ADD THIS
+        "mmbarc": "barcode_inner",
+        "mmbaro": "barcode_outer",
         "mmtbfg": "mmtbfg",   # ADD THIS (used in design_field)
         "mmcsap": "sap_code",
         "mmitno": "pk",
@@ -1888,7 +1888,7 @@ class BarcodePrintPage(QWidget):
             return element.get("text", "") or qty
 
     def _on_master_item_picked(self, part_no: str, item_code: str,
-                               name: str, qty: str, whs: str):
+                           name: str, qty: str, whs: str):
         print("=" * 60)
         print("[MASTER ITEM PICKED] Raw signal values:")
         print(f"  part_no   = {part_no!r}")
@@ -1906,6 +1906,9 @@ class BarcodePrintPage(QWidget):
         lookup_cid  = fd["component_id"]
         raw = getattr(self._master_item_picker, "_last_raw_record", {})
 
+        # Debug: print raw record keys
+        print(f"\n[RAW RECORD KEYS] {list(raw.keys())}")
+
         print(f"\n[LOOKUP] lookup_name={lookup_name!r}  lookup_cid={lookup_cid!r}")
         print(f"[RAW RECORD KEYS] {list(raw.keys())}")
         print("=" * 60)
@@ -1915,7 +1918,7 @@ class BarcodePrintPage(QWidget):
         # ── LOOKUP field itself ──────────────────────────────────────────────
         lookup_elem = next(
             (e for e in self._elements
-             if e.get("name") == lookup_name and e.get("type") == "text"),
+            if e.get("name") == lookup_name and e.get("type") == "text"),
             None,
         )
         lookup_result_fld = (
@@ -1924,6 +1927,9 @@ class BarcodePrintPage(QWidget):
         )
         if lookup_result_fld:
             db_key = _MasterItemPickerPopup._MM_TO_KEY.get(lookup_result_fld, lookup_result_fld)
+            # Debug: print raw data keys
+            print(f"lookup_result_fld={lookup_result_fld!r}, db_key={db_key!r}")
+            print(f"raw keys for lookup: {list(raw.keys())}")
             lookup_val = str(raw.get(db_key) or raw.get(lookup_result_fld) or part_no)
         else:
             lookup_val = part_no
@@ -1946,7 +1952,9 @@ class BarcodePrintPage(QWidget):
                 if not res_fld:
                     continue
                 db_key = _MasterItemPickerPopup._MM_TO_KEY.get(res_fld, res_fld)
-                val = str(raw.get(db_key) or raw.get(res_fld) or "")
+                print(f"LINK: found for {ename!r}, res_fld={res_fld!r}, db_key={db_key!r}")
+                print(f"raw keys for link: {list(raw.keys())}")
+                val = str(raw.get(db_key) or raw.get(res_fld) or raw.get(res_fld.replace("mm", "", 1)) or "")
                 updates[ename] = val
                 widget = self._field_widgets.get(ename)
                 if isinstance(widget, QLineEdit):
@@ -1968,31 +1976,6 @@ class BarcodePrintPage(QWidget):
                     widget.setText(placeholder)
                 print(f"  [BATCH NO] {ename!r} → deferred (part_no={part_no!r}, wh={wh_val!r})")
 
-        # ── Barcode mmbaro fallback ──────────────────────────────────────────
-        for e in self._elements:
-            if e.get("type") != "text":
-                continue
-            if (e.get("design_type") or "").upper() != "LINK":
-                continue
-            if e.get("design_link", "") != lookup_cid:
-                continue
-            res = (e.get("design_result") or "").lower().strip()
-            if res != "mmbaro":
-                continue
-            ename = e.get("name", "")
-            # Always overwrite with the correct field — no early-exit guard
-            val = str(
-                raw.get("mmbaro") or raw.get("mmbarc") or raw.get("upc") or
-                raw.get("mmbupc") or raw.get("barcode") or ""
-            )
-            if val:
-                updates[ename] = val
-                w = self._field_widgets.get(ename)
-                if isinstance(w, QLineEdit):
-                    w.setText(val)
-                print(f"  [MMBARO] {ename!r} ← {val!r}")
-            # don't break — continue checking other elements
-
         # ── SAME WITH ────────────────────────────────────────────────────────
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
@@ -2008,7 +1991,7 @@ class BarcodePrintPage(QWidget):
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
             source_name = (cid_to_name.get(source_cid, "")
-                           or (source_cid if source_cid in name_to_elem else ""))
+                        or (source_cid if source_cid in name_to_elem else ""))
             if not source_name:
                 continue
 
@@ -2017,6 +2000,8 @@ class BarcodePrintPage(QWidget):
                 result_fld  = (source_elem.get("design_result") or "").lower().strip()
                 if result_fld:
                     db_key = _MasterItemPickerPopup._MM_TO_KEY.get(result_fld, result_fld)
+                    print(f"SAME WITH barcode: source_name={source_name!r}, result_fld={result_fld!r}, db_key={db_key!r}")
+                    print(f"raw keys: {list(raw.keys())}")
                     val = str(raw.get(db_key) or raw.get(result_fld) or "")
                 else:
                     val = updates.get(source_name, "")
