@@ -1004,7 +1004,7 @@ _SYSTEM_EXTRA_TO_FUNC: dict[str, str] = {
 
 def _resolve_system_value(design_system_value: str, design_system_extra: str) -> str:
     sv  = (design_system_value or "").upper().strip()
-    ext = (design_system_extra or "").upper().strip()
+    ext = (design_system_extra or "").strip()
 
     if sv == "LOT NO":
         func = _SYSTEM_EXTRA_TO_FUNC.get(ext)
@@ -1013,14 +1013,20 @@ def _resolve_system_value(design_system_value: str, design_system_extra: str) ->
         return ""
     elif sv == "DATETIME":
         fmt = design_system_extra or "HH:mm:ss"
-        fmt = (fmt
-               .replace("HH",    "%H")
-               .replace("mm",    "%M")
-               .replace("ss",    "%S")
-               .replace("AM/PM", "%p")
-               .replace("dd",    "%d")
-               .replace("MM",    "%m")
-               .replace("yyyy",  "%Y"))
+        # Order matters: longer tokens must be replaced before shorter ones
+        replacements = [
+            ("AM/PM",  "%p"),
+            ("yyyy",   "%Y"),
+            ("MMMM",   "%B"),   # full month name  ← ADD
+            ("MMM",    "%b"),   # abbreviated month ← ADD (before MM)
+            ("MM",     "%m"),   # numeric month
+            ("dd",     "%d"),
+            ("HH",     "%H"),
+            ("mm",     "%M"),
+            ("ss",     "%S"),
+        ]
+        for token, directive in replacements:
+            fmt = fmt.replace(token, directive)
         return datetime.now().strftime(fmt)
     elif sv == "DATE":
         return datetime.now().strftime("%d-%b-%Y").upper()
