@@ -1235,7 +1235,7 @@ class _CanvasPreview(QWidget):
                     and (e.get("design_type") or "").upper() == "SAME WITH"):
                 target_name = e.get("name", "")
                 source_cid  = (e.get("design_same_with") or "").strip()
-                source_name = cid_to_name.get(source_cid, "")
+                source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in {e.get("name","") for e in self._elements} else "")
                 if target_name and source_name:
                     self._same_with_map[target_name] = source_name
                     # Seed target with source's current text before merge pass
@@ -2173,10 +2173,19 @@ class BarcodePrintPage(QWidget):
 
        # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
         # Build component_id → element name map
+        # AFTER:
+       # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
+        # Build component_id → element name map
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
             for e in self._elements
             if e.get("component_id")
+        }
+        # Also build name → element map for quick lookup
+        name_to_elem: dict[str, dict] = {
+            e.get("name", ""): e
+            for e in self._elements
+            if e.get("name")
         }
         for e in self._elements:
             etype = e.get("type", "")
@@ -2184,28 +2193,43 @@ class BarcodePrintPage(QWidget):
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
-            source_name = cid_to_name.get(source_cid, "")
-            if not source_name or source_name not in updates:
+            source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in name_to_elem else "")
+            if not source_name:
+                continue
+
+            # For barcodes: look up the source element's design_result field
+            # and fetch that value from the raw record directly
+            if etype == "barcode":
+                source_elem = name_to_elem.get(source_name, {})
+                result_fld  = (source_elem.get("design_result") or "").lower().strip()
+                if result_fld:
+                    db_key = _MasterItemPickerPopup._MM_TO_KEY.get(result_fld, result_fld)
+                    val = str(raw.get(db_key) or raw.get(result_fld) or "")
+                else:
+                    val = updates.get(source_name, "")
+
+                if val:
+                    updates[target_name] = val
+                    barcode_item = self._preview._barcode_items.get(target_name)
+                    if barcode_item is not None:
+                        barcode_item.design_text = val
+                        barcode_item.update()
+                    self._current_values[target_name] = val
+                    print(f"  [SAME WITH (barcode)] {target_name!r} ← {source_name!r}.{result_fld!r} (db_key={db_key!r}) = {val!r}")
+                continue
+
+            # For text items: use the already-resolved updates dict
+            if source_name not in updates:
                 continue
 
             val = updates[source_name]
             updates[target_name] = val
 
-            # Text field widget (if visible in the form)
             widget = self._field_widgets.get(target_name)
             if isinstance(widget, QLineEdit):
                 widget.setText(val)
 
-            # If the SAME WITH target is a barcode, push the value onto the
-            # item so the ZPL generator can read it, and store in _current_values
-            if etype == "barcode":
-                barcode_item = self._preview._barcode_items.get(target_name)
-                if barcode_item is not None:
-                    barcode_item.design_text = val
-                    barcode_item.update()
-                self._current_values[target_name] = val
-
-            print(f"  [SAME WITH ({etype})] {target_name!r} ← {source_name!r} = {val!r}")
+            print(f"  [SAME WITH (text)] {target_name!r} ← {source_name!r} = {val!r}")
 
         # ── Finalise ─────────────────────────────────────────────────────────
         self._current_values.update(updates)
@@ -2377,7 +2401,7 @@ class BarcodePrintPage(QWidget):
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
-            source_name = cid_to_name.get(source_cid, "")
+            source_name = cid_to_name.get(source_cid, "") or (source_cid if source_cid in cid_to_name.values() or source_cid in {e2.get("name","") for e2 in self._elements} else "")
             if source_name and source_name in merged_values:
                 merged_values[target_name] = merged_values[source_name]
                 # Also push into barcode item so zpl_generator reads the fresh value
