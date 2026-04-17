@@ -28,10 +28,22 @@ class LinkMixin:
                     self.link_combo.setCurrentText(display_name)
                     self.link_combo.blockSignals(False)
                 self._apply_link_fields(stored_id)
+                try:
+                    self.result_combo.currentTextChanged.disconnect()
+                except Exception:
+                    pass
+                self.result_combo.currentTextChanged.connect(self._on_link_result_changed)
             else:
                 self._clear_link_fields()
         else:
             self.item.design_link = ""
+            try:
+                self.result_combo.currentTextChanged.disconnect()
+            except Exception:
+                pass
+            self.result_combo.currentTextChanged.connect(
+                lambda v: setattr(self.item, "design_result", v)
+            )
 
     # ── combo change handler ──────────────────────────────────────────────────
 
@@ -48,6 +60,10 @@ class LinkMixin:
         else:
             self.item.design_link = ""
             self._clear_link_fields()
+
+    def _on_link_result_changed(self, value: str):
+        """Called when user picks a new result column while in LINK mode."""
+        self.item.design_result = value
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -87,11 +103,44 @@ class LinkMixin:
         if not source_item:
             return
 
+        # Skip re-applying if already linked to this source with same table (prevents wiping RESULT)
+        current_link = getattr(self.item, "design_link", "")
+        current_table = getattr(self.item, "design_table", "")
+        source_table = getattr(source_item, "design_table", "")
+        
+        if current_link == source_id and current_table == source_table:
+            # Just ensure controls are disabled correctly, don't wipe values
+            for combo, attr in (
+                (self.group_combo, "design_group"),
+                (self.table_combo, "design_table"),
+            ):
+                combo.setEnabled(False)
+                self._set_combo_value(combo, getattr(self.item, attr, ""))
+            
+            self.table_extra.setEnabled(False)
+            self.table_extra.blockSignals(True)
+            self.table_extra.setText(self.item.design_query)
+            self.table_extra.blockSignals(False)
+            self.table_extra.setStyleSheet(
+                "QTextEdit { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:4px; "
+                "padding:5px; font-size:11px; color:#94A3B8; }"
+            )
+            
+            self.result_combo.setEnabled(True)
+            try:
+                self.result_combo.currentTextChanged.disconnect()
+            except Exception:
+                pass
+            self.result_combo.currentTextChanged.connect(self._on_link_result_changed)
+            self.field_edit.setEnabled(False)
+            self.field_edit._apply_disabled_appearance()
+            return
+
         # Preserve this item's own result BEFORE copying anything from source
         saved_result = getattr(self.item, "design_result", "")
 
         self.item.design_group = getattr(source_item, "design_group", "")
-        self.item.design_table = getattr(source_item, "design_table", "")
+        self.item.design_table = source_table
         self.item.design_query = getattr(source_item, "design_query", "")
         self.item.design_field = getattr(source_item, "design_field", "")
         # Do NOT copy design_result from source — each LINK item picks its own result column
@@ -120,6 +169,11 @@ class LinkMixin:
             self._on_table_changed(table)  # fills _items on field_edit and result_combo
             # _on_table_changed resets result to "" so restore it
             self.item.design_result = saved_result
+            try:
+                self.result_combo.currentTextChanged.disconnect()
+            except Exception:
+                pass
+            self.result_combo.currentTextChanged.connect(self._on_link_result_changed)
             self.result_combo.blockSignals(True)
             self.result_combo.setEnabled(True)
             if saved_result and saved_result in getattr(self.result_combo, "_items", []):
@@ -127,6 +181,11 @@ class LinkMixin:
                 self.result_combo._label.setText(saved_result)
             self.result_combo.blockSignals(False)
         else:
+            try:
+                self.result_combo.currentTextChanged.disconnect()
+            except Exception:
+                pass
+            self.result_combo.currentTextChanged.connect(self._on_link_result_changed)
             self.result_combo.blockSignals(True)
             self.result_combo.setEnabled(True)
             val = getattr(self.item, "design_result", "")

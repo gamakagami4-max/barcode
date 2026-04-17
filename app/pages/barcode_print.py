@@ -1145,6 +1145,7 @@ class _CanvasPreview(QWidget):
         super().__init__(parent)
         self._elements: list[dict] = []
         self._text_items: dict[str, QGraphicsTextItem] = {}
+        self._barcode_items: dict[str, object] = {}   # name → BarcodeItem
         self._same_with_map: dict[str, str] = {}   # target_name → source_name
         self._canvas_w = 600; self._canvas_h = 400
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -1359,6 +1360,8 @@ class _CanvasPreview(QWidget):
                     setattr(item, attr, d.get(attr, default))
             except Exception:
                 item = _BarcodePreviewItem(w, h, d.get("design", "CODE128"))
+            if name:
+                self._barcode_items[name] = item
 
         if item is None:
             return
@@ -1380,6 +1383,7 @@ class _CanvasPreview(QWidget):
 
     def clear(self):
         self._scene.clear(); self._text_items.clear()
+        self._barcode_items.clear()
         self._same_with_map.clear(); self._elements = []
         self._view.setVisible(False); self._placeholder.setVisible(True)
 
@@ -2167,7 +2171,7 @@ class BarcodePrintPage(QWidget):
                 print(f"  [MMBARO FALLBACK] {ename!r} ← {fallback!r}")
             break
 
-        # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
+       # ── SAME WITH: resolve explicitly so canvas + ZPL both get updated ───
         # Build component_id → element name map
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
@@ -2175,18 +2179,33 @@ class BarcodePrintPage(QWidget):
             if e.get("component_id")
         }
         for e in self._elements:
-            if (e.get("type") != "text"
-                    or (e.get("design_type") or "").upper() != "SAME WITH"):
+            etype = e.get("type", "")
+            if (e.get("design_type") or "").upper() != "SAME WITH":
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
             source_name = cid_to_name.get(source_cid, "")
-            if source_name and source_name in updates:
-                updates[target_name] = updates[source_name]
-                widget = self._field_widgets.get(target_name)
-                if isinstance(widget, QLineEdit):
-                    widget.setText(updates[source_name])
-                print(f"  [SAME WITH] {target_name!r} ← {source_name!r} = {updates[source_name]!r}")
+            if not source_name or source_name not in updates:
+                continue
+
+            val = updates[source_name]
+            updates[target_name] = val
+
+            # Text field widget (if visible in the form)
+            widget = self._field_widgets.get(target_name)
+            if isinstance(widget, QLineEdit):
+                widget.setText(val)
+
+            # If the SAME WITH target is a barcode, push the value onto the
+            # item so the ZPL generator can read it, and store in _current_values
+            if etype == "barcode":
+                barcode_item = self._preview._barcode_items.get(target_name)
+                if barcode_item is not None:
+                    barcode_item.design_text = val
+                    barcode_item.update()
+                self._current_values[target_name] = val
+
+            print(f"  [SAME WITH ({etype})] {target_name!r} ← {source_name!r} = {val!r}")
 
         # ── Finalise ─────────────────────────────────────────────────────────
         self._current_values.update(updates)
@@ -2347,20 +2366,25 @@ class BarcodePrintPage(QWidget):
         merged_values.update(self._current_values)
 
         # ── 3. SAME WITH: re-resolve at print time to catch any gaps ─────────
+        # ── 3. SAME WITH: re-resolve at print time to catch any gaps ─────────
         cid_to_name: dict[str, str] = {
             e.get("component_id", ""): e.get("name", "")
             for e in self._elements
             if e.get("component_id")
         }
         for e in self._elements:
-            if (e.get("type") != "text"
-                    or (e.get("design_type") or "").upper() != "SAME WITH"):
+            if (e.get("design_type") or "").upper() != "SAME WITH":
                 continue
             target_name = e.get("name", "")
             source_cid  = (e.get("design_same_with") or "").strip()
             source_name = cid_to_name.get(source_cid, "")
             if source_name and source_name in merged_values:
                 merged_values[target_name] = merged_values[source_name]
+                # Also push into barcode item so zpl_generator reads the fresh value
+                if e.get("type") == "barcode":
+                    barcode_item = self._preview._barcode_items.get(target_name)
+                    if barcode_item is not None:
+                        barcode_item.design_text = merged_values[source_name]
 
         # ── 4. SYSTEM values: always re-resolve fresh at print time ──────────
         for e in self._elements:
