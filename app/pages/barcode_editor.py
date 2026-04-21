@@ -1084,21 +1084,25 @@ class BarcodeEditorPage(QWidget):
                 item.design_column = int(item.design_column or 1)
             if item is None:
                 continue
+
             item.setZValue(d.get("z", 0))
             item.design_visible = d.get("visible", True)
             item.setVisible(True)
+
+            # ── FIXED: match barcode_print _add_element positioning exactly ──
             _rotation = d.get("rotation", 0)
-            item.setRotation(_rotation)
-            if _rotation != 0:
-                br = item.boundingRect()
-                item.setTransformOriginPoint(br.center())
-            item.setPos(0, 0)
-            _aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
-            _off_x = _aabb0.left()
-            _off_y = _aabb0.top()
             _vis_x = d.get("aabb_x") if d.get("aabb_x") is not None else d.get("x", 0)
             _vis_y = d.get("aabb_y") if d.get("aabb_y") is not None else d.get("y", 0)
-            item.setPos(_vis_x - _off_x, _vis_y - _off_y)
+            if _rotation != 0:
+                br = item.boundingRect()
+                item.setTransformOriginPoint(br.center())  # origin BEFORE rotation
+                item.setRotation(_rotation)
+                item.setPos(0, 0)
+                _aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
+                item.setPos(_vis_x - _aabb0.left(), _vis_y - _aabb0.top())
+            else:
+                item.setPos(_vis_x, _vis_y)  # non-rotated: direct placement, same as print
+
             self.scene.addItem(item)
             li = QListWidgetItem(self.get_component_display_name(item))
             li.graphics_item = item
@@ -1548,19 +1552,20 @@ class BarcodeEditorPage(QWidget):
         item.setZValue(data.get('z', 0))
         item.design_visible = data.get('visible', True)
         item.setVisible(True)
+
+        # ── FIXED: match barcode_print _add_element positioning exactly ──
         rotation = data.get('rotation', 0)
-        item.setRotation(rotation)
+        vis_x = data.get('aabb_x', data.get('x', 0))
+        vis_y = data.get('aabb_y', data.get('y', 0))
         if rotation != 0:
             br = item.boundingRect()
-            item.setTransformOriginPoint(br.center())
-
-        item.setPos(0, 0)
-        aabb0  = item.mapToScene(item.boundingRect()).boundingRect()
-        off_x  = aabb0.left()
-        off_y  = aabb0.top()
-        vis_x  = data.get('aabb_x', data.get('x', 0))
-        vis_y  = data.get('aabb_y', data.get('y', 0))
-        item.setPos(vis_x - off_x, vis_y - off_y)
+            item.setTransformOriginPoint(br.center())  # origin BEFORE rotation
+            item.setRotation(rotation)
+            item.setPos(0, 0)
+            aabb0 = item.mapToScene(item.boundingRect()).boundingRect()
+            item.setPos(vis_x - aabb0.left(), vis_y - aabb0.top())
+        else:
+            item.setPos(vis_x, vis_y)  # non-rotated: direct placement, same as print
 
         return item
 
