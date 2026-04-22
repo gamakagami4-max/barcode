@@ -22,10 +22,10 @@ from pages.product_type import ProductTypePage
 from pages.brand_case import BrandCasePage
 from pages.barcode_list import BarcodeListPage
 from pages.barcode_print import BarcodePrintPage
+from layout.login_window import LoginWindow
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE REGISTRY
-# Barcode Editor (id=10) is removed — it lives inside BarcodeListPage now.
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_REGISTRY: dict[int, dict] = {
     0:  {"title": "Dashboard",      "class": None,              "icon": "🏠"},
@@ -38,7 +38,7 @@ PAGE_REGISTRY: dict[int, dict] = {
     7:  {"title": "Item Master",    "class": MasterItemPage,    "icon": "📋"},
     8:  {"title": "Brand Case",     "class": BrandCasePage,     "icon": "🗃️"},
     9:  {"title": "Barcode Design", "class": BarcodeListPage,   "icon": "📊"},
-    10: {"title": "Barcode Print", "class": BarcodePrintPage, "icon": "🖨️"},
+    10: {"title": "Barcode Print",  "class": BarcodePrintPage,  "icon": "🖨️"},
 }
 
 
@@ -301,8 +301,9 @@ def _placeholder_page(title: str, error: bool = False) -> QLabel:
 # DASHBOARD — main window
 # ─────────────────────────────────────────────────────────────────────────────
 class Dashboard(QMainWindow):
-    def __init__(self):
+    def __init__(self, current_user: dict | None = None):
         super().__init__()
+        self._current_user = current_user or {}
         self.setWindowTitle("Barcode System")
         self.resize(1280, 820)
         self.setMinimumSize(900, 600)
@@ -313,7 +314,12 @@ class Dashboard(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self._sidebar = Sidebar(nav_callback=self.navigate_to)
+        # Pass user info to Sidebar so it can display name & handle sign-out
+        self._sidebar = Sidebar(
+            nav_callback=self.navigate_to,
+            current_user=self._current_user,
+            logout_callback=self._on_logout,
+        )
 
         self._dashboard_widget = build_page(0)
         self._tabs = AppTabWidget()
@@ -327,6 +333,11 @@ class Dashboard(QMainWindow):
 
         root.addWidget(self._sidebar)
         root.addWidget(self._stack, stretch=1)
+
+    # ── Logout ─────────────────────────────────────────────────────────────
+    def _on_logout(self):
+        self.close()
+        _launch_login()
 
     # ── Navigation ─────────────────────────────────────────────────────────
     def navigate_to(self, page_id: int):
@@ -349,10 +360,6 @@ class Dashboard(QMainWindow):
             return
 
         page_widget = build_page(page_id)
-
-        # Wire the editor's back button so it returns to the list view
-        # (BarcodeListPage handles this internally — no extra wiring needed here)
-
         idx = self._tabs.addTab(page_widget, title)
         self._stack.setCurrentWidget(self._tabs)
         self._tabs.setCurrentIndex(idx)
@@ -399,6 +406,28 @@ class Dashboard(QMainWindow):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# LAUNCH HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+_dashboard_ref = None  # keep a reference so it isn't garbage-collected
+
+
+def _launch_login():
+    global _dashboard_ref
+    login = LoginWindow()
+
+    def on_success(user: dict):
+        global _dashboard_ref
+        _dashboard_ref = Dashboard(current_user=user)
+        _dashboard_ref.show()
+
+    login.login_success.connect(on_success)
+    login.show()
+    # Keep login window alive until closed
+    login._keep = login
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
@@ -409,8 +438,6 @@ if __name__ == "__main__":
     font.setHintingPreference(QFont.PreferFullHinting)
     app.setFont(font)
 
-    # QPalette is the only reliable way to control tooltip colors under Fusion style.
-    # app.setStyleSheet(QToolTip) gets overridden by Fusion internal palette on some platforms.
     palette = app.palette()
     palette.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
     palette.setColor(QPalette.ToolTipText, QColor("#1E293B"))
@@ -427,6 +454,5 @@ if __name__ == "__main__":
         }
     """)
 
-    window = Dashboard()
-    window.show()
+    _launch_login()
     sys.exit(app.exec())

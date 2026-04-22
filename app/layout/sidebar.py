@@ -229,9 +229,11 @@ class CollapsibleMenu(QWidget):
 class Sidebar(QFrame):
     collapsed_changed = Signal(bool)
 
-    def __init__(self, nav_callback):
+    def __init__(self, nav_callback, current_user: dict | None = None, logout_callback=None):
         super().__init__()
         self.nav_callback = nav_callback
+        self._current_user = current_user or {}
+        self._logout_callback = logout_callback
         self.menus: list[CollapsibleMenu] = []
         self._icon_btns: list[QPushButton] = []
         self.is_collapsed = False
@@ -354,8 +356,10 @@ class Sidebar(QFrame):
         exp_row.setSpacing(0)
 
         avatar_exp = self._make_avatar()
+        display_name = self._current_user.get("description") or self._current_user.get("pk", "User")
         self._user_info = QLabel(
-            "Administrator<br><span style='color:#6B7280;font-size:10px;'>System User</span>"
+            f"{display_name}<br><span style='color:#6B7280;font-size:10px;'>"
+            f"{self._current_user.get('pk', '')}</span>"
         )
         self._user_info.setTextFormat(Qt.RichText)
         self._user_info.setStyleSheet(
@@ -376,6 +380,8 @@ class Sidebar(QFrame):
         exp_row.addWidget(self._user_info)
         exp_row.addStretch()
         exp_row.addWidget(self._exit_btn)
+        if self._logout_callback:
+            self._exit_btn.clicked.connect(self._logout_callback)
 
         # ── Collapsed column (vertical, centered) ─────────────────────────────
         self._user_collapsed = QWidget()
@@ -400,6 +406,8 @@ class Sidebar(QFrame):
         """)
         col_col.addWidget(avatar_col, alignment=Qt.AlignHCenter)
         col_col.addWidget(exit_col, alignment=Qt.AlignHCenter)
+        if self._logout_callback:
+            exit_col.clicked.connect(self._logout_callback)
 
         root_layout.addWidget(self._user_expanded)
         root_layout.addWidget(self._user_collapsed)
