@@ -190,12 +190,6 @@ class LoginWindow(QWidget):
 
         card_layout.addStretch()
 
-        # ── Footer ─────────────────────────────────────────────────────────
-        footer = QLabel("© Barcode System")
-        footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("font-size: 11px; color: #CBD5E1;")
-        card_layout.addWidget(footer)
-
         outer.addWidget(self._card)
 
     def _make_label(self, text: str) -> QLabel:

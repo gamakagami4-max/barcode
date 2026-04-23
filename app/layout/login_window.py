@@ -143,12 +143,6 @@ class LoginWindow(QWidget):
 
         root.addStretch()
 
-        # ── Footer ─────────────────────────────────────────────────────────
-        footer = QLabel("© Barcode System")
-        footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("font-size: 10px; color: #94A3B8; background: transparent;")
-        root.addWidget(footer)
-
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _field_label(self, text: str) -> QLabel:
